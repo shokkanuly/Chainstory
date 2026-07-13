@@ -1,0 +1,82 @@
+/* src/index.css — ChainStory Global Design System */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* ===== CSS VARIABLES ===== */
+:root {
+  /* Backgrounds */
+  --bg-base: #f9fafb;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f3f4f6;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f9fafb;
+
+  /* Border */
+  --border-subtle: #e5e7eb;
+  --border-default: #d1d5db;
+  --border-strong: #9ca3af;
+
+  /* Text */
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
+
+  /* Brand accent */
+  --accent-blue: #2563eb;
+  --accent-blue-glow: transparent;
+  --accent-purple: #7c3aed;
+
+  /* Category colors */
+  --cat-trade: #2563eb;
+  --cat-trade-bg: #eff6ff;
+  --cat-trade-border: #bfdbfe;
+
+  --cat-income: #16a34a;
+  --cat-income-bg: #f0fdf4;
+  --cat-income-border: #bbf7d0;
+
+  --cat-transfer: #4b5563;
+  --cat-transfer-bg: #f9fafb;
+  --cat-transfer-border: #e5e7eb;
+
+  --cat-nft: #7c3aed;
+  --cat-nft-bg: #f5f3ff;
+  --cat-nft-border: #ddd6fe;
+
+  --cat-unknown: #6b7280;
+  --cat-unknown-bg: #f3f4f6;
+  --cat-unknown-border: #e5e7eb;
+
+  /* Semantic */
+  --color-positive: #16a34a;
+  --color-negative: #dc2626;
+  --color-neutral: #4b5563;
+
+  /* Spacing */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* Shadows */
+  --shadow-card: none;
+  --shadow-glow: none;
+}
+
+/* ===== RESET ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent-blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font-family: inherit; cursor: pointer; border: none; }
