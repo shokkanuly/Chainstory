@@ -46,8 +46,12 @@ The project is currently in the **MVP (Minimum Viable Product) / Hackathon Demo 
 - [x] Complete frontend UI with glassmorphism layout, animated background glows, and a responsive timeline.
 - [x] Etherscan API integration for transaction and token transfer history.
 - [x] CoinGecko historical price lookups.
-- [x] Gemini 1.5 Flash client-side classification with concurrency limits to prevent rate limit issues.
-- [x] CSV report generation and download.
+- [x] Decoupled 3-Stage ML/AI Pipeline:
+  - Feature extraction & contract protocol registry (`featureExtractor.ts`, `protocolRegistry.ts`)
+  - Client-side in-browser XGBoost classification via ONNX Runtime Web (`mlClassifier.ts`)
+  - Natural-language summary generation using Google Gemini 1.5 Flash (`descriptionGenerator.ts`)
+- [x] Offline Python training suite (`ml/collect_training_data.py`, `ml/train_classifier.py`) with wallet-level splits & ONNX export.
+- [x] CSV report generation with tax disclaimers and confidence indicators.
 - [x] Standard configuration templates and `.env` setups.
 
 ### **Future Roadmap (Planned Enhancements):**

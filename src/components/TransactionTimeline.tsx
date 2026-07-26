@@ -1,6 +1,6 @@
 // src/components/TransactionTimeline.tsx
 import { useState } from 'react';
-import type { ClassifiedTransaction, TaxCategory } from '../types';
+import type { ClassifiedTransaction, TaxCategory, TimelineViewMode } from '../types';
 import TransactionCard from './TransactionCard';
 import ExportButton from './ExportButton';
 
@@ -17,21 +17,25 @@ const FILTERS: { label: string; value: FilterValue; icon: string }[] = [
   { label: 'Trades', value: 'trade', icon: '💱' },
   { label: 'Income', value: 'income', icon: '💎' },
   { label: 'Transfers', value: 'transfer', icon: '↔️' },
-  { label: 'NFT', value: 'nft', icon: '🖼️' },
+  { label: 'NFT Events', value: 'nft', icon: '🖼️' },
 ];
 
 export default function TransactionTimeline({ transactions, walletAddress, isCapped }: Props) {
   const [activeFilter, setActiveFilter] = useState<FilterValue>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<TimelineViewMode>('classified');
 
   const filtered = transactions.filter(tx => {
     const matchesFilter = activeFilter === 'all' || tx.category === activeFilter;
+    const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
-      !searchQuery ||
-      tx.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tx.hash.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tx.from.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tx.to?.toLowerCase().includes(searchQuery.toLowerCase());
+      !q ||
+      tx.description.toLowerCase().includes(q) ||
+      tx.hash.toLowerCase().includes(q) ||
+      tx.from.toLowerCase().includes(q) ||
+      tx.to?.toLowerCase().includes(q) ||
+      tx.functionName?.toLowerCase().includes(q) ||
+      tx.input?.toLowerCase().includes(q);
     return matchesFilter && matchesSearch;
   });
 
@@ -47,13 +51,46 @@ export default function TransactionTimeline({ transactions, walletAddress, isCap
 
   return (
     <div className="timeline-section">
-      {/* Title header with Export CSV button */}
+      {/* Header Bar */}
       <div className="timeline-header-row">
-        <h2 className="timeline-title">Timeline</h2>
-        <ExportButton transactions={transactions} walletAddress={walletAddress} />
+        <div className="timeline-title-area">
+          <h2 className="timeline-title">Transaction History Timeline</h2>
+          <span className="timeline-subtitle">
+            Chronological wallet activity log
+          </span>
+        </div>
+
+        <div className="timeline-action-group">
+          {/* Raw Data vs Classified View Toggle */}
+          <div className="view-mode-toggle">
+            <button
+              className={`view-mode-btn ${viewMode === 'classified' ? 'active' : ''}`}
+              onClick={() => setViewMode('classified')}
+              title="View plain-English AI descriptions and tax categories"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+              </svg>
+              AI Timeline
+            </button>
+            <button
+              className={`view-mode-btn ${viewMode === 'raw' ? 'active' : ''}`}
+              onClick={() => setViewMode('raw')}
+              title="View raw unclassified blockchain data fields"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+              </svg>
+              Raw Pipeline Data
+            </button>
+          </div>
+
+          <ExportButton transactions={transactions} walletAddress={walletAddress} />
+        </div>
       </div>
 
-      {/* Filter + search bar */}
+      {/* Control Bar: Filters & Search */}
       <div className="timeline-controls">
         <div className="filter-tabs">
           {FILTERS.map(f => (
@@ -71,14 +108,14 @@ export default function TransactionTimeline({ transactions, walletAddress, isCap
         </div>
 
         <div className="timeline-search">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
           <input
             id="timeline-search"
             type="text"
-            placeholder="Search transactions…"
+            placeholder="Search hash, address, method..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="search-input"
@@ -91,27 +128,33 @@ export default function TransactionTimeline({ transactions, walletAddress, isCap
 
       {isCapped && (
         <div className="timeline-capped-note">
-          Showing your 100 most recent transactions.
+          ℹ️ Displaying recent transactions (capped at 100).
         </div>
       )}
 
-      {/* Timeline */}
+      {/* Transaction Scrollable List */}
       <div className="timeline-list">
         {filtered.length === 0 ? (
           <div className="timeline-empty">
             <div className="timeline-empty-icon">🔎</div>
-            <p>No transactions match your filter.</p>
+            <h3>No matching transactions</h3>
+            <p>Try adjusting your category filter or search query.</p>
           </div>
         ) : (
           filtered.map((tx, i) => (
-            <TransactionCard key={tx.hash} tx={tx} index={i} />
+            <TransactionCard
+              key={tx.hash}
+              tx={tx}
+              index={i}
+              viewMode={viewMode}
+            />
           ))
         )}
       </div>
 
       {filtered.length > 0 && (
         <div className="timeline-footer">
-          Showing {filtered.length} of {transactions.length} transactions
+          Showing {filtered.length} of {transactions.length} fetched transactions
         </div>
       )}
     </div>

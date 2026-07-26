@@ -1,18 +1,19 @@
 // src/components/TransactionCard.tsx
-import type { ClassifiedTransaction, TaxCategory } from '../types';
-import { formatAddress } from '../services/etherscan';
+import type { ClassifiedTransaction, TaxCategory, TimelineViewMode } from '../types';
+import { formatAddress, weiToEth } from '../services/etherscan';
 
 interface Props {
   tx: ClassifiedTransaction;
   index: number;
+  viewMode?: TimelineViewMode;
 }
 
 const CATEGORY_META: Record<TaxCategory | 'unknown', { label: string; icon: string; className: string }> = {
   trade: { label: 'Trade', icon: '💱', className: 'cat-trade' },
   income: { label: 'Income', icon: '💎', className: 'cat-income' },
   transfer: { label: 'Transfer', icon: '↔️', className: 'cat-transfer' },
-  nft: { label: 'NFT', icon: '🖼️', className: 'cat-nft' },
-  unknown: { label: 'Unknown', icon: '❓', className: 'cat-unknown' },
+  nft: { label: 'NFT Event', icon: '🖼️', className: 'cat-nft' },
+  unknown: { label: 'Uncategorized', icon: '❓', className: 'cat-unknown' },
 };
 
 function formatDate(date: Date): string {
@@ -37,69 +38,122 @@ function formatUsd(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
-export default function TransactionCard({ tx, index }: Props) {
-  const meta = CATEGORY_META[tx.category];
+export default function TransactionCard({ tx, index, viewMode = 'classified' }: Props) {
+  const meta = CATEGORY_META[tx.category] || CATEGORY_META.unknown;
   const isLoading = tx.status === 'classifying' || tx.status === 'pending';
-  const isError = tx.status === 'error';
   const isFailed = tx.isError === '1';
+  const gasEth = (parseFloat(tx.gasUsed || '0') * parseFloat(tx.gasPrice || '0')) / 1e18;
 
   return (
     <div
       className={`tx-card ${isLoading ? 'tx-card--loading' : ''} ${isFailed ? 'tx-card--failed' : ''}`}
-      style={{ animationDelay: `${Math.min(index * 30, 300)}ms` }}
+      style={{ animationDelay: `${Math.min(index * 25, 250)}ms` }}
     >
       {/* Timeline dot */}
-      <div className={`tx-timeline-dot ${meta.className}`} />
+      <div className={`tx-timeline-dot ${viewMode === 'raw' ? 'cat-raw' : meta.className}`} />
 
       <div className="tx-card-inner">
-        {/* Top row: date + category tag */}
+        {/* Top Header Row */}
         <div className="tx-card-header">
           <div className="tx-date">
             <span className="tx-date-main">{formatDate(tx.date)}</span>
             <span className="tx-date-time">{formatTime(tx.date)}</span>
+            {tx.walletLabel && (
+              <span className="wallet-origin-tag" title={`Fetched for wallet ${tx.walletLabel}`}>
+                Wallet: {formatAddress(tx.walletLabel)}
+              </span>
+            )}
           </div>
+
           <div className="tx-card-right">
-            <span className={`category-tag ${meta.className}`}>
-              {meta.icon} {meta.label}
-            </span>
+            {viewMode === 'raw' ? (
+              <span className="category-tag cat-raw">
+                ⚙️ Raw Block #{tx.blockNumber}
+              </span>
+            ) : (
+              <>
+                <span className={`category-tag ${meta.className}`}>
+                  {meta.icon} {meta.label}
+                </span>
+                {tx.confidence > 0 && tx.confidence < 0.7 && (
+                  <span className="warning-badge" title="Low classification confidence — review manually">
+                    ⚠️ Review
+                  </span>
+                )}
+              </>
+            )}
             {isFailed && <span className="failed-badge">Failed TX</span>}
           </div>
         </div>
 
-        {/* Description */}
-        {isLoading ? (
-          <div className="tx-description skeleton-line" />
+        {/* Content Body: Raw Mode vs Classified Mode */}
+        {viewMode === 'raw' ? (
+          <div className="raw-tx-body">
+            <div className="raw-tx-grid">
+              <div className="raw-field">
+                <span className="raw-label">Function / Method</span>
+                <span className="raw-value code-font">
+                  {tx.functionName || (tx.input && tx.input !== '0x' ? tx.input.slice(0, 10) : 'Standard Transfer')}
+                </span>
+              </div>
+              <div className="raw-field">
+                <span className="raw-label">Raw Value</span>
+                <span className="raw-value">
+                  {tx.value} wei ({weiToEth(tx.value).toFixed(6)} ETH)
+                </span>
+              </div>
+              <div className="raw-field">
+                <span className="raw-label">Gas Fee</span>
+                <span className="raw-value">{gasEth.toFixed(6)} ETH</span>
+              </div>
+              <div className="raw-field">
+                <span className="raw-label">Input Hex</span>
+                <span className="raw-value code-font hash-truncated">
+                  {tx.input || '0x'}
+                </span>
+              </div>
+            </div>
+          </div>
         ) : (
-          <p className={`tx-description ${isError ? 'tx-description--error' : ''}`}>
-            {tx.description}
-          </p>
+          <>
+            {/* Description */}
+            {isLoading ? (
+              <div className="tx-description skeleton-line" />
+            ) : (
+              <p className="tx-description">{tx.description}</p>
+            )}
+
+            {/* Values */}
+            <div className="tx-values">
+              <div className="tx-value-item">
+                <span className="tx-value-label">ETH Amount</span>
+                <span className="tx-value-amount">{tx.ethValue.toFixed(4)} ETH</span>
+              </div>
+
+              {tx.usdValue === null ? (
+                <div className="tx-value-item">
+                  <span className="tx-value-label">USD Value</span>
+                  <span className="tx-value-amount price-pending">
+                    {isLoading ? 'Fetching price…' : 'Historical lookup pending'}
+                  </span>
+                </div>
+              ) : tx.usdValue > 0 ? (
+                <div className="tx-value-item">
+                  <span className="tx-value-label">USD Value</span>
+                  <span className="tx-value-amount usd">{formatUsd(tx.usdValue)}</span>
+                </div>
+              ) : null}
+
+              {isLoading && (
+                <div className="tx-value-item">
+                  <span className="skeleton-line" style={{ width: '80px', height: '16px' }} />
+                </div>
+              )}
+            </div>
+          </>
         )}
 
-        {/* Values */}
-        <div className="tx-values">
-          <div className="tx-value-item">
-            <span className="tx-value-label">ETH</span>
-            <span className="tx-value-amount">{tx.ethValue.toFixed(4)} ETH</span>
-          </div>
-          {tx.usdValue === null ? (
-            <div className="tx-value-item">
-              <span className="tx-value-label">USD at time</span>
-              <span className="tx-value-amount usd price-unavailable">price unavailable</span>
-            </div>
-          ) : tx.usdValue > 0 ? (
-            <div className="tx-value-item">
-              <span className="tx-value-label">USD at time</span>
-              <span className="tx-value-amount usd">{formatUsd(tx.usdValue)}</span>
-            </div>
-          ) : null}
-          {isLoading && (
-            <div className="tx-value-item">
-              <span className="skeleton-line" style={{ width: '80px', height: '16px' }} />
-            </div>
-          )}
-        </div>
-
-        {/* Footer: addresses + tx hash */}
+        {/* Footer Row: Addresses & Block Explorer Link */}
         <div className="tx-footer">
           <div className="tx-addresses">
             <span className="tx-addr-label">From</span>
@@ -111,12 +165,13 @@ export default function TransactionCard({ tx, index }: Props) {
             <span className="tx-addr-label">To</span>
             <span className="tx-addr">{formatAddress(tx.to)}</span>
           </div>
+
           <a
             href={`https://etherscan.io/tx/${tx.hash}`}
             target="_blank"
             rel="noopener noreferrer"
             className="tx-hash-link"
-            title={tx.hash}
+            title={`View tx ${tx.hash} on Etherscan`}
           >
             {tx.hash.slice(0, 8)}…
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -127,11 +182,11 @@ export default function TransactionCard({ tx, index }: Props) {
           </a>
         </div>
 
-        {/* Confidence indicator */}
-        {tx.status === 'classified' && tx.confidence > 0 && (
-          <div className="tx-confidence">
+        {/* Confidence Indicator in Classified Mode */}
+        {viewMode === 'classified' && tx.status === 'classified' && tx.confidence > 0 && (
+          <div className="tx-confidence" title={`Classification confidence: ${Math.round(tx.confidence * 100)}%`}>
             <div
-              className="tx-confidence-bar"
+              className={`tx-confidence-bar ${tx.confidence < 0.7 ? 'low-confidence' : ''}`}
               style={{ width: `${tx.confidence * 100}%` }}
             />
           </div>

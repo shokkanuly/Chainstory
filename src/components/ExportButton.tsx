@@ -59,6 +59,8 @@ export default function ExportButton({ transactions, walletAddress }: Props) {
       `# Wallet: ${walletAddress}`,
       `# Generated: ${new Date().toISOString()}`,
       `# Transactions: ${transactions.length}`,
+      `# DISCLAIMER: This report is generated using AI/ML transaction classification and is NOT official tax advice.`,
+      `# Categories may be misclassified for complex multi-hop DeFi interactions or wrapped tokens. Verify with an accountant.`,
       '',
       headers.map(escapeCSV).join(','),
       ...rows.map(row => row.join(',')),

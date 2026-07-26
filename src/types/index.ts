@@ -2,6 +2,7 @@
 
 export type TaxCategory = 'trade' | 'income' | 'transfer' | 'nft' | 'unknown';
 export type ClassificationStatus = 'pending' | 'classifying' | 'classified' | 'error';
+export type TimelineViewMode = 'classified' | 'raw';
 
 export interface RawTransaction {
   hash: string;
@@ -21,6 +22,7 @@ export interface RawTransaction {
   tokenSymbol?: string;
   tokenDecimal?: string;
   contractAddress?: string;
+  walletLabel?: string; // Originating wallet address label in multi-wallet mode
 }
 
 export interface ClassifiedTransaction extends RawTransaction {
@@ -41,10 +43,17 @@ export interface TaxSummary {
   unknownCount: number;
   totalTransactions: number;
   totalGasSpent: number;
+  totalVolumeUsd: number;
 }
 
 export interface FilterOption {
   label: string;
   value: TaxCategory | 'all';
   count: number;
+}
+
+export interface DemoWalletPreset {
+  label: string;
+  description: string;
+  addresses: string[];
 }
