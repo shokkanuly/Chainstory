@@ -35,6 +35,54 @@
   --radius: 0.625rem;
 }
 
+:root {
+  --bg-base: oklch(7% 0.015 260);
+  --bg-surface: oklch(11% 0.018 260);
+  --bg-elevated: oklch(15% 0.02 260);
+  --bg-card: oklch(11% 0.018 260);
+  --bg-card-hover: oklch(14% 0.02 260);
+
+  --border-subtle: oklch(20% 0.02 260);
+  --border-default: oklch(25% 0.02 260);
+  --border-strong: oklch(35% 0.02 260);
+
+  --text-primary: oklch(95% 0.005 260);
+  --text-secondary: oklch(70% 0.015 260);
+  --text-muted: oklch(55% 0.015 260);
+
+  --accent-blue: oklch(72% 0.19 165);
+  --accent-purple: #7f00ff;
+
+  --cat-trade: #818cf8;
+  --cat-trade-bg: rgba(99, 102, 241, 0.12);
+  --cat-trade-border: rgba(99, 102, 241, 0.3);
+
+  --cat-income: #34d399;
+  --cat-income-bg: rgba(16, 185, 129, 0.12);
+  --cat-income-border: rgba(16, 185, 129, 0.3);
+
+  --cat-transfer: #38bdf8;
+  --cat-transfer-bg: rgba(14, 165, 233, 0.12);
+  --cat-transfer-border: rgba(14, 165, 233, 0.3);
+
+  --cat-nft: #fbbf24;
+  --cat-nft-bg: rgba(245, 158, 11, 0.12);
+  --cat-nft-border: rgba(245, 158, 11, 0.3);
+
+  --cat-unknown: #a1a1aa;
+  --cat-unknown-bg: rgba(161, 161, 170, 0.1);
+  --cat-unknown-border: rgba(161, 161, 170, 0.25);
+
+  --color-positive: #10b981;
+  --color-negative: #f43f5e;
+  --color-neutral: #a1a1aa;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+
 @layer base {
   * {
     border-color: var(--color-border);

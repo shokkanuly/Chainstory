@@ -19,6 +19,7 @@ import { connectWeb3Wallet } from './services/web3Wallet';
 import { calculateFifoTaxReport } from './services/fifoEngine';
 import { simulateTransactionPayload } from './services/b2bSimulation';
 import { CHAIN_CONFIGS } from './services/multiChain';
+import './App.css';
 
 type AppState = 'idle' | 'fetching' | 'classifying' | 'done' | 'error';
 
