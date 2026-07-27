@@ -15,85 +15,44 @@ function formatUsd(value: number): string {
 }
 
 export default function TaxDashboard({ summary }: Props) {
-  const netGainLoss = (summary.realizedGainTotal || 0) - (summary.realizedLossTotal || 0);
-
   return (
     <div className="dashboard">
-      <div className="dashboard-title-row">
-        <h3 className="dashboard-section-title">FIFO Tax &amp; Portfolio Summary Dashboard</h3>
-        <span className="dashboard-pill">IRS 1099-DA Ready</span>
-      </div>
-
-      {/* Main Stat Cards Grid */}
+      {/* Stat cards */}
       <div className="stat-cards">
         <div className="stat-card">
-          <div className="stat-card-header">
-            <span className="stat-card-label">Realized Capital Gain/Loss</span>
-            <span className="stat-card-badge trade-badge">FIFO Lots</span>
+          <div className="stat-card-label">Capital gains</div>
+          <div className={`stat-card-value ${summary.tradeTotal > 0 ? 'positive' : summary.tradeTotal < 0 ? 'negative' : 'neutral'}`}>
+            {summary.tradeTotal > 0 ? '+' : ''}{formatUsd(summary.tradeTotal)}
           </div>
-          <div className={`stat-card-value ${netGainLoss > 0 ? 'positive' : netGainLoss < 0 ? 'negative' : 'neutral'}`}>
-            {netGainLoss > 0 ? '+' : ''}{formatUsd(netGainLoss)}
-          </div>
-          <div className="stat-card-sub">
-            Gains: +{formatUsd(summary.realizedGainTotal || 0)} | Losses: -{formatUsd(summary.realizedLossTotal || 0)}
-          </div>
+          <div className="stat-card-sub">from trades &amp; swaps</div>
         </div>
 
         <div className="stat-card">
-          <div className="stat-card-header">
-            <span className="stat-card-label">Staking &amp; Rewards Income</span>
-            <span className="stat-card-badge income-badge">Ordinary Income</span>
-          </div>
+          <div className="stat-card-label">Income events</div>
           <div className={`stat-card-value ${summary.incomeTotal > 0 ? 'positive' : 'neutral'}`}>
             {formatUsd(summary.incomeTotal)}
           </div>
-          <div className="stat-card-sub">Staking, yield farming &amp; airdrops</div>
+          <div className="stat-card-sub">staking, airdrops, rewards</div>
         </div>
 
         <div className="stat-card">
-          <div className="stat-card-header">
-            <span className="stat-card-label">Transfers &amp; Wraps</span>
-            <span className="stat-card-badge transfer-badge">Non-Taxable</span>
-          </div>
+          <div className="stat-card-label">Transfers</div>
           <div className="stat-card-value neutral">{summary.transferCount}</div>
-          <div className="stat-card-sub">Wallet-to-wallet &amp; WETH wrapping</div>
+          <div className="stat-card-sub">non-taxable events</div>
         </div>
 
         <div className="stat-card">
-          <div className="stat-card-header">
-            <span className="stat-card-label">NFT Events</span>
-            <span className="stat-card-badge nft-badge">Mints &amp; Sales</span>
-          </div>
+          <div className="stat-card-label">NFT Events</div>
           <div className="stat-card-value neutral">{summary.nftCount}</div>
-          <div className="stat-card-sub">NFT mints, purchases &amp; sales</div>
+          <div className="stat-card-sub">mints, sales, transfers</div>
         </div>
       </div>
 
-      {/* Gas & Volume Summary Bar */}
-      <div className="metrics-bar">
-        <div className="metric-item">
-          <span className="metric-icon">⛽</span>
-          <div className="metric-text">
-            <span className="metric-label">Deductible Network Gas Fees</span>
-            <span className="metric-value">{summary.totalGasSpent.toFixed(4)} ETH</span>
-          </div>
-        </div>
-
-        <div className="metric-item">
-          <span className="metric-icon">📊</span>
-          <div className="metric-text">
-            <span className="metric-label">Total Asset Cost Basis</span>
-            <span className="metric-value">{formatUsd(summary.totalCostBasis || 0)}</span>
-          </div>
-        </div>
-
-        <div className="metric-item">
-          <span className="metric-icon">🧾</span>
-          <div className="metric-text">
-            <span className="metric-label">Total Transactions</span>
-            <span className="metric-value">{summary.totalTransactions} txs</span>
-          </div>
-        </div>
+      {/* Gas summary */}
+      <div className="gas-summary">
+        <span className="gas-icon">⛽</span>
+        <span>Total gas spent: <strong>{summary.totalGasSpent.toFixed(4)} ETH</strong></span>
+        <span className="gas-note">(may be tax-deductible in some jurisdictions)</span>
       </div>
     </div>
   );
@@ -106,26 +65,14 @@ export function computeSummary(transactions: ClassifiedTransaction[]): TaxSummar
   let nftCount = 0;
   let unknownCount = 0;
   let totalGasSpent = 0;
-  let totalVolumeUsd = 0;
-  let realizedGainTotal = 0;
-  let realizedLossTotal = 0;
-  let totalCostBasis = 0;
 
   for (const tx of transactions) {
-    const gasEth = (parseFloat(tx.gasUsed || '0') * parseFloat(tx.gasPrice || '0')) / 1e18;
+    const gasEth = (parseFloat(tx.gasUsed) * parseFloat(tx.gasPrice)) / 1e18;
     totalGasSpent += gasEth;
 
-    if (tx.usdValue !== null && tx.usdValue > 0) {
-      totalVolumeUsd += tx.usdValue;
-    }
-
-    if (tx.realizedGainLoss) {
-      if (tx.realizedGainLoss.gainLossUsd >= 0) {
-        realizedGainTotal += tx.realizedGainLoss.gainLossUsd;
-      } else {
-        realizedLossTotal += Math.abs(tx.realizedGainLoss.gainLossUsd);
-      }
-      totalCostBasis += tx.realizedGainLoss.costBasisUsd;
+    if (tx.status !== 'classified') {
+      unknownCount++;
+      continue;
     }
 
     switch (tx.category) {
@@ -158,10 +105,6 @@ export function computeSummary(transactions: ClassifiedTransaction[]): TaxSummar
     unknownCount,
     totalTransactions: transactions.length,
     totalGasSpent,
-    totalVolumeUsd,
-    realizedGainTotal,
-    realizedLossTotal,
-    totalCostBasis,
-    netTaxableIncome: realizedGainTotal - realizedLossTotal,
+    totalVolumeUsd: 0,
   };
 }
