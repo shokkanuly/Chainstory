@@ -1,7 +1,8 @@
-// src/App.tsx — 1:1 Website-Source UI with Live Multi-Chain Engine
+// src/App.tsx — Blockchair Explorer UI & Multi-Chain AI Tax Engine
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import Hero from '@/components/Hero';
+import NetworkTicker from '@/components/NetworkTicker';
 import Features from '@/components/Features';
 import Architecture from '@/components/Architecture';
 import HowItWorks from '@/components/HowItWorks';
@@ -15,7 +16,6 @@ import TransactionTimeline from './components/TransactionTimeline';
 import type { ChainId, ClassifiedTransaction, RawTransaction, B2BSimulationResult } from './types';
 import { fetchMultiWalletTransactions, weiToEth, formatAddress } from './services/etherscan';
 import { classifyAll } from './services/classifier';
-import { connectWeb3Wallet } from './services/web3Wallet';
 import { calculateFifoTaxReport } from './services/fifoEngine';
 import { simulateTransactionPayload } from './services/b2bSimulation';
 import { CHAIN_CONFIGS } from './services/multiChain';
@@ -243,22 +243,28 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground selection:bg-chain/30 selection:text-chain">
-      {/* 1:1 Website-Source Header */}
+      {/* Top Navbar */}
       <Navbar />
 
-      {/* 1:1 Website-Source Hero */}
-      <Hero />
+      {/* Blockchair Hero */}
+      <Hero onAnalyze={handleAnalyze} />
 
-      {/* Interactive Application Workspace Section */}
+      {/* Main Block Explorer & Tax Workspace */}
       <section id="app-workspace" className="relative py-12 border-t border-border bg-card/20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-6">
+          {/* Blockchair Multi-Chain Network Stats Grid */}
+          <NetworkTicker
+            selectedChain={selectedChain}
+            onSelectChain={(id) => setSelectedChain(id as ChainId)}
+          />
+
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-6 pt-4">
             <div>
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
-                Live Transaction &amp; <span className="text-gradient-chain">Tax Analyzer</span>
+                Multi-Chain <span className="text-gradient-chain">Block Explorer &amp; Tax Engine</span>
               </h2>
               <p className="text-muted-foreground text-sm mt-1">
-                Enter any EVM address or ENS domain to run full local classification &amp; Form 8949 tax lot calculation.
+                Enter EVM addresses or ENS domains to run local classification &amp; Form 8949 cost basis lot reports.
               </p>
             </div>
 
@@ -267,20 +273,20 @@ export default function App() {
                 onClick={handleTestB2BSimulate}
                 className="inline-flex items-center gap-2 rounded-lg border border-signal-red/30 bg-signal-red/10 px-3.5 py-2 text-xs font-semibold text-signal-red hover:bg-signal-red/20 transition-colors"
               >
-                🛡️ Test Security API
+                🛡️ Test B2B Pre-Sign API
               </button>
             </div>
           </div>
 
           {/* Network Selector Chips */}
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider mr-2">
-              Network:
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mr-2">
+              Select Chain:
             </span>
             <button
-              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                 selectedChain === 'all'
-                  ? 'border-chain bg-chain/10 text-chain font-semibold glow-chain'
+                  ? 'border-chain bg-chain text-primary-foreground glow-chain'
                   : 'border-border bg-secondary/50 text-muted-foreground hover:text-foreground'
               }`}
               onClick={() => setSelectedChain('all')}
@@ -290,9 +296,9 @@ export default function App() {
             {Object.values(CHAIN_CONFIGS).map((chain) => (
               <button
                 key={chain.id}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 ${
                   selectedChain === chain.id
-                    ? 'border-chain bg-chain/10 text-chain font-semibold glow-chain'
+                    ? 'border-chain bg-chain text-primary-foreground glow-chain'
                     : 'border-border bg-secondary/50 text-muted-foreground hover:text-foreground'
                 }`}
                 onClick={() => setSelectedChain(chain.id)}
@@ -333,11 +339,11 @@ export default function App() {
           {appState === 'fetching' && (
             <div className="py-12 text-center text-muted-foreground space-y-3">
               <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-chain border-t-transparent" />
-              <p className="text-sm">Fetching multi-chain history and historical DefiLlama pricing...</p>
+              <p className="text-sm">Connecting to Multi-Chain Indexer &amp; DefiLlama Oracle...</p>
             </div>
           )}
 
-          {/* Results Analysis Dashboard & Timeline */}
+          {/* Analysis Dashboard & Explorer Timeline */}
           {appState !== 'fetching' && appState !== 'error' && (
             <div className="space-y-8">
               <TaxDashboard summary={summary} />
@@ -351,7 +357,7 @@ export default function App() {
         </div>
       </section>
 
-      {/* 1:1 Website-Source Sections */}
+      {/* Website Sections */}
       <Features />
       <Architecture />
       <HowItWorks />
@@ -361,7 +367,7 @@ export default function App() {
 
       {/* Security Simulation Modal */}
       {showSimModal && simResult && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowSimModal(false)}>
+        <div className="modal-overlay" onClick={() => setShowSimModal(false)}>
           <div className="bg-card border border-border rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-border pb-3">
               <h3 className="font-bold flex items-center gap-2 text-foreground">
