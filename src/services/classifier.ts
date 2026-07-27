@@ -16,12 +16,13 @@ import { classifyWithML, classifyWithRules } from './mlClassifier';
 import { generateDescription } from './descriptionGenerator';
 
 // -------------------------------------------------------------------
-// Legacy Gemini classifier (kept as fallback when ML model isn't loaded
-// and for comparison/validation during development)
+// Legacy Gemini classifier fallback
 // -------------------------------------------------------------------
 
-const GEMINI_API_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_API_URLS = [
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
+];
 
 function getGeminiKey(): string {
   const key = import.meta.env.VITE_GEMINI_API_KEY;
@@ -31,7 +32,6 @@ function getGeminiKey(): string {
   return key;
 }
 
-// Human-readable method signature hints for the legacy Gemini prompt
 const METHOD_HINTS: Record<string, string> = {
   '0xa9059cbb': 'ERC-20 token transfer',
   '0x23b872dd': 'ERC-20 transferFrom',
@@ -89,48 +89,48 @@ Output ONLY this JSON (no markdown, no extra text):
 }
 
 async function callGeminiLegacy(prompt: string): Promise<{ description: string; category: TaxCategory; confidence: number }> {
-  const apiKey = getGeminiKey();
-
-  const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 150,
-      },
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Gemini API error ${res.status}: ${err}`);
-  }
-
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
-
+  let apiKey: string;
   try {
-    const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const parsed = JSON.parse(cleaned);
-
-    return {
-      description: parsed.description || 'Transaction details unavailable',
-      category: (['trade', 'income', 'transfer', 'nft'].includes(parsed.category)
-        ? parsed.category
-        : 'unknown') as TaxCategory,
-      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
-    };
-  } catch (jsonErr) {
-    console.error('Failed to parse Gemini JSON response', text, jsonErr);
-    throw new Error('Invalid JSON response from AI');
+    apiKey = getGeminiKey();
+  } catch {
+    return { description: 'Transaction processed locally', category: 'unknown', confidence: 0.5 };
   }
-}
 
-// -------------------------------------------------------------------
-// Concurrency limiter — max N parallel Gemini calls
-// -------------------------------------------------------------------
+  for (const apiUrl of GEMINI_API_URLS) {
+    try {
+      const res = await fetch(`${apiUrl}?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 150,
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
+        const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+
+        return {
+          description: parsed.description || 'Transaction details processed',
+          category: (['trade', 'income', 'transfer', 'nft'].includes(parsed.category)
+            ? parsed.category
+            : 'unknown') as TaxCategory,
+          confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
+        };
+      }
+    } catch {
+      // Continue to next endpoint
+    }
+  }
+
+  return { description: 'Transaction processed locally', category: 'unknown', confidence: 0.5 };
+}
 
 function createConcurrencyLimiter(maxConcurrent: number) {
   let running = 0;
@@ -160,10 +160,6 @@ function createConcurrencyLimiter(maxConcurrent: number) {
 
 const limit = createConcurrencyLimiter(3);
 
-// -------------------------------------------------------------------
-// New 3-stage pipeline: Extract → Classify (ML) → Describe (Gemini)
-// -------------------------------------------------------------------
-
 export async function classifyTransaction(
   tx: RawTransaction,
   walletAddress: string,
@@ -172,7 +168,6 @@ export async function classifyTransaction(
   const ethValue = weiToEth(tx.value);
   const date = new Date(parseInt(tx.timeStamp) * 1000);
 
-  // Base result with pending status
   const base: ClassifiedTransaction = {
     ...tx,
     description: 'Classifying…',
@@ -185,7 +180,7 @@ export async function classifyTransaction(
   };
 
   try {
-    // Step 1: Get historical ETH price (shared by all paths)
+    // Step 1: Get historical ETH price (DefiLlama + IndexedDB)
     const ethUsdPrice = await getHistoricalPrice('ETH', tx.timeStamp);
     const usdValue = ethUsdPrice !== null ? ethValue * ethUsdPrice : null;
 
@@ -200,19 +195,17 @@ export async function classifyTransaction(
     const mlResult = await classifyWithML(features);
 
     if (mlResult) {
-      // ML model available → use XGBoost classification
       category = mlResult.category;
       confidence = mlResult.confidence;
       classificationSource = 'ml';
     } else {
-      // ML not available → use rule-based heuristics
       const rulesResult = classifyWithRules(features);
       category = rulesResult.category;
       confidence = rulesResult.confidence;
       classificationSource = 'rules';
     }
 
-    // Step 4: Generate description via Gemini (simpler prompt since category is known)
+    // Step 4: Generate description via Gemini (with local fallback)
     let description: string;
     try {
       description = await limit(() =>
@@ -220,7 +213,6 @@ export async function classifyTransaction(
       );
     } catch (descErr) {
       console.warn('Description generation failed, using fallback', descErr);
-      // Fallback description based on classification
       const inputPrefix = tx.input?.slice(0, 10) || '0x';
       const methodHint = METHOD_HINTS[inputPrefix];
       description = methodHint
@@ -244,7 +236,6 @@ export async function classifyTransaction(
   } catch (err) {
     console.error('Classification failed for tx', tx.hash, err);
 
-    // Last resort: try the legacy full-Gemini path
     try {
       const ethUsdPrice = await getHistoricalPrice('ETH', tx.timeStamp);
       const usdValue = ethUsdPrice !== null ? ethValue * ethUsdPrice : null;
@@ -262,8 +253,7 @@ export async function classifyTransaction(
 
       if (onProgress) onProgress(classified);
       return classified;
-    } catch (legacyErr) {
-      console.error('Legacy Gemini classification also failed', legacyErr);
+    } catch {
       const failed: ClassifiedTransaction = {
         ...base,
         description: `Uncategorized transaction (${ethValue.toFixed(4)} ETH)`,

@@ -1,16 +1,16 @@
 // src/services/descriptionGenerator.ts
 //
-// Simplified Gemini integration for description-only generation.
-// The category is already decided by the XGBoost classifier, so the prompt
-// is much simpler — Gemini just writes a plain-English summary given the
-// category as context. This is cheaper and faster per call than the
-// original combined classify+describe prompt.
+// Gemini integration for description-only generation.
+// The category is already decided by the XGBoost classifier, so Gemini writes a plain-English summary.
+// Includes graceful fallback to deterministic descriptions if Gemini API returns 404 / rate limits.
 
 import type { RawTransaction, TaxCategory } from '../types';
 import { METHOD_HINTS } from './featureExtractor';
 
-const GEMINI_API_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_API_URLS = [
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
+];
 
 function getGeminiKey(): string {
   const key = import.meta.env.VITE_GEMINI_API_KEY;
@@ -20,7 +20,6 @@ function getGeminiKey(): string {
   return key;
 }
 
-// Human-readable category labels for the prompt
 const CATEGORY_LABELS: Record<TaxCategory, string> = {
   trade: 'a crypto trade/swap (exchanging one asset for another)',
   income: 'crypto income (staking reward, airdrop, yield farming)',
@@ -66,34 +65,66 @@ export async function generateDescription(
   ethValue: number,
   usdValue: number | null
 ): Promise<string> {
-  const apiKey = getGeminiKey();
-  const prompt = buildDescriptionPrompt(tx, category, ethValue, usdValue);
-
-  const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 80,
-      },
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Gemini API error ${res.status}: ${err}`);
+  let apiKey: string;
+  try {
+    apiKey = getGeminiKey();
+  } catch {
+    return generateFallbackDescription(tx, category, ethValue);
   }
 
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
+  const prompt = buildDescriptionPrompt(tx, category, ethValue, usdValue);
 
-  // Clean up: strip any quotes or markdown the model might add
-  const cleaned = text
-    .replace(/^["']|["']$/g, '')
-    .replace(/```.*$/gm, '')
-    .trim();
+  // Try API URLs in sequence
+  for (const apiUrl of GEMINI_API_URLS) {
+    try {
+      const res = await fetch(`${apiUrl}?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 80,
+          },
+        }),
+      });
 
-  return cleaned || `${category} transaction (${ethValue.toFixed(4)} ETH)`;
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
+        const cleaned = text
+          .replace(/^["']|["']$/g, '')
+          .replace(/```.*$/gm, '')
+          .trim();
+        if (cleaned) return cleaned;
+      }
+    } catch {
+      // Continue to next endpoint or fallback
+    }
+  }
+
+  return generateFallbackDescription(tx, category, ethValue);
+}
+
+function generateFallbackDescription(
+  tx: RawTransaction,
+  category: TaxCategory,
+  ethValue: number
+): string {
+  const methodSignature = tx.input?.slice(0, 10) || '0x';
+  const methodHint = METHOD_HINTS[methodSignature];
+
+  if (methodHint) {
+    return `${methodHint} (${ethValue > 0 ? ethValue.toFixed(4) + ' ETH' : 'Token Activity'})`;
+  }
+
+  if (category === 'trade') {
+    return `Token swap transaction (${ethValue.toFixed(4)} ETH)`;
+  } else if (category === 'income') {
+    return `Staking / Reward income claim (${ethValue.toFixed(4)} ETH)`;
+  } else if (category === 'nft') {
+    return `NFT collectible transaction (${ethValue.toFixed(4)} ETH)`;
+  }
+
+  return `Transferred ${ethValue > 0 ? ethValue.toFixed(4) + ' ETH' : 'tokens'}`;
 }
