@@ -1,11 +1,13 @@
 // src/services/coingecko.ts
+//
+// Unthrottled price oracle gateway using DefiLlama + IndexedDB client-side cache
+// with legacy CoinGecko fallback.
+
+import { getDefiLlamaHistoricalPrice, getCurrentDefiLlamaPrice } from './defillama';
 
 const BASE_URL = 'https://api.coingecko.com/api/v3';
-
-// Cache to avoid redundant calls
 const priceCache = new Map<string, number>();
 
-// Symbol to CoinGecko ID mapping (common tokens)
 const TOKEN_ID_MAP: Record<string, string> = {
   ETH: 'ethereum',
   WETH: 'weth',
@@ -21,17 +23,7 @@ const TOKEN_ID_MAP: Record<string, string> = {
   ARB: 'arbitrum',
   OP: 'optimism',
   CRV: 'curve-dao-token',
-  SNX: 'havven',
-  MKR: 'maker',
-  COMP: 'compound-governance-token',
-  SUSHI: 'sushi',
-  '1INCH': '1inch',
   LDO: 'lido-dao',
-  RPL: 'rocket-pool',
-  STETH: 'staked-ether',
-  FTM: 'fantom',
-  SHIB: 'shiba-inu',
-  APE: 'apecoin',
 };
 
 function formatDateForCoinGecko(timestamp: string): string {
@@ -46,17 +38,17 @@ export async function getHistoricalPrice(
   symbol: string,
   timestamp: string
 ): Promise<number | null> {
-  const upperSymbol = upperSymbolOrBlank(symbol);
+  const upperSymbol = (symbol || 'ETH').toUpperCase();
 
-  // Stablecoins — always $1
-  if (['USDC', 'USDT', 'DAI', 'BUSD', 'FRAX', 'LUSD', 'TUSD'].includes(upperSymbol)) {
-    return 1.0;
+  // 1. Primary unthrottled path: DefiLlama + Persistent IndexedDB cache
+  const defiLlamaPrice = await getDefiLlamaHistoricalPrice(upperSymbol, timestamp);
+  if (defiLlamaPrice !== null) {
+    return defiLlamaPrice;
   }
 
+  // 2. Secondary fallback path: CoinGecko API
   const coinId = TOKEN_ID_MAP[upperSymbol];
-  if (!coinId) {
-    return null; // Unknown token — return null to flag unavailable
-  }
+  if (!coinId) return null;
 
   const dateStr = formatDateForCoinGecko(timestamp);
   const cacheKey = `${coinId}-${dateStr}`;
@@ -69,10 +61,7 @@ export async function getHistoricalPrice(
     const url = `${BASE_URL}/coins/${coinId}/history?date=${dateStr}&localization=false`;
     const res = await fetch(url);
 
-    if (!res.ok) {
-      console.warn(`CoinGecko price fetch failed for ${coinId} on ${dateStr}: ${res.status}`);
-      return null;
-    }
+    if (!res.ok) return null;
 
     const data = await res.json();
     const price = data?.market_data?.current_price?.usd ?? null;
@@ -81,12 +70,15 @@ export async function getHistoricalPrice(
     }
     return price;
   } catch (err) {
-    console.warn(`CoinGecko error for ${coinId}:`, err);
+    console.warn(`CoinGecko fallback error for ${coinId}:`, err);
     return null;
   }
 }
 
 export async function getCurrentEthPrice(): Promise<number | null> {
+  const defiLlamaPrice = await getCurrentDefiLlamaPrice('ETH');
+  if (defiLlamaPrice !== null) return defiLlamaPrice;
+
   const cacheKey = 'ethereum-current';
   if (priceCache.has(cacheKey)) return priceCache.get(cacheKey)!;
 
@@ -101,8 +93,4 @@ export async function getCurrentEthPrice(): Promise<number | null> {
   } catch {
     return null;
   }
-}
-
-function upperSymbolOrBlank(symbol: string): string {
-  return (symbol || '').toUpperCase();
 }
