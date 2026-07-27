@@ -1,5 +1,5 @@
 // src/App.tsx
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import WalletInput from './components/WalletInput';
 import TaxDashboard, { computeSummary } from './components/TaxDashboard';
 import TransactionTimeline from './components/TransactionTimeline';
@@ -124,6 +124,17 @@ export default function App() {
   const [connectedWallet, setConnectedWallet] = useState<string | null>(null);
   const [showSimModal, setShowSimModal] = useState(false);
   const [simResult, setSimResult] = useState<B2BSimulationResult | null>(null);
+
+  // Keyboard shortcut listener for closing modals (Escape key)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showSimModal) {
+        setShowSimModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showSimModal]);
 
   const filteredTransactions = useMemo(() => {
     if (selectedChain === 'all') return transactions;
@@ -323,7 +334,7 @@ export default function App() {
           <div className="error-banner">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12" />
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
             <span className="error-message-text">{error}</span>
@@ -425,7 +436,7 @@ export default function App() {
 
               <div className="sim-modal-footer">
                 <button className="sim-close-action" onClick={() => setShowSimModal(false)}>
-                  Close Preview
+                  Close Preview (Esc)
                 </button>
               </div>
             </div>

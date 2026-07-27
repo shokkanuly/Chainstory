@@ -118,6 +118,11 @@ export default function WalletInput({
     }
   };
 
+  const handleClearInput = () => {
+    setValue('');
+    setValidationError('');
+  };
+
   const displayError = validationError || error;
 
   return (
@@ -175,20 +180,31 @@ export default function WalletInput({
         </div>
 
         <div className="input-group-wrapper">
-          <textarea
-            id="wallet-address-input"
-            className={`wallet-address-input ${displayError ? 'input-error' : ''}`}
-            placeholder="e.g. 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045, vitalik.eth"
-            value={value}
-            onChange={e => {
-              setValue(e.target.value);
-              setValidationError('');
-            }}
-            onKeyDown={handleKeyDown}
-            disabled={isLoading}
-            rows={parsedAddresses.length > 1 ? 3 : 1}
-            spellCheck={false}
-          />
+          <div className="wallet-input-box-relative">
+            <textarea
+              id="wallet-address-input"
+              className={`wallet-address-input ${displayError ? 'input-error' : ''}`}
+              placeholder="e.g. 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045, vitalik.eth"
+              value={value}
+              onChange={e => {
+                setValue(e.target.value);
+                setValidationError('');
+              }}
+              onKeyDown={handleKeyDown}
+              disabled={isLoading}
+              rows={parsedAddresses.length > 1 ? 3 : 1}
+              spellCheck={false}
+            />
+            {value.trim().length > 0 && (
+              <button
+                className="input-clear-btn"
+                onClick={handleClearInput}
+                title="Clear input"
+              >
+                ×
+              </button>
+            )}
+          </div>
 
           <button
             id="analyze-btn"

@@ -10,10 +10,34 @@
     <meta property="og:description" content="Decoupled local ONNX ML + Gemini AI blockchain transaction classifier and Form 8949 FIFO tax accounting engine." />
     <meta name="theme-color" content="#090a10" />
 
-    <!-- Google Fonts: Outfit, Inter, JetBrains Mono -->
+    <!-- Google Fonts Preload & Style Links -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Font Gating Script for Zero FOUT -->
+    <script>
+      (function() {
+        document.documentElement.classList.add('fonts-pending');
+        if ('fonts' in document) {
+          Promise.all([
+            document.fonts.load('600 1em Outfit'),
+            document.fonts.load('400 1em Inter')
+          ]).then(function() {
+            document.documentElement.classList.remove('fonts-pending');
+            document.documentElement.classList.add('fonts-ready');
+          }).catch(function() {
+            document.documentElement.classList.remove('fonts-pending');
+          });
+        } else {
+          document.documentElement.classList.remove('fonts-pending');
+        }
+        setTimeout(function() {
+          document.documentElement.classList.remove('fonts-pending');
+        }, 2000);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

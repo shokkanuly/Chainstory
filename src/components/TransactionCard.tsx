@@ -1,4 +1,5 @@
 // src/components/TransactionCard.tsx
+import { useState } from 'react';
 import type { ClassifiedTransaction, TaxCategory, TimelineViewMode } from '../types';
 import { formatAddress, weiToEth } from '../services/etherscan';
 
@@ -39,10 +40,18 @@ function formatUsd(value: number): string {
 }
 
 export default function TransactionCard({ tx, index, viewMode = 'classified' }: Props) {
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
   const meta = CATEGORY_META[tx.category] || CATEGORY_META.unknown;
   const isLoading = tx.status === 'classifying' || tx.status === 'pending';
   const isFailed = tx.isError === '1';
   const gasEth = (parseFloat(tx.gasUsed || '0') * parseFloat(tx.gasPrice || '0')) / 1e18;
+
+  const handleCopy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 1200);
+  };
 
   return (
     <div
@@ -157,29 +166,55 @@ export default function TransactionCard({ tx, index, viewMode = 'classified' }: 
         <div className="tx-footer">
           <div className="tx-addresses">
             <span className="tx-addr-label">From</span>
-            <span className="tx-addr">{formatAddress(tx.from)}</span>
+            <button
+              className="copy-btn"
+              onClick={() => handleCopy(tx.from, `from_${tx.hash}`)}
+              title="Copy Sender Address"
+            >
+              <span className="tx-addr">{formatAddress(tx.from)}</span>
+              {copiedKey === `from_${tx.hash}` && <span className="copy-toast">Copied!</span>}
+            </button>
+
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="tx-arrow">
               <line x1="5" y1="12" x2="19" y2="12" />
               <polyline points="12 5 19 12 12 19" />
             </svg>
+
             <span className="tx-addr-label">To</span>
-            <span className="tx-addr">{formatAddress(tx.to)}</span>
+            <button
+              className="copy-btn"
+              onClick={() => handleCopy(tx.to, `to_${tx.hash}`)}
+              title="Copy Recipient Address"
+            >
+              <span className="tx-addr">{formatAddress(tx.to)}</span>
+              {copiedKey === `to_${tx.hash}` && <span className="copy-toast">Copied!</span>}
+            </button>
           </div>
 
-          <a
-            href={`https://etherscan.io/tx/${tx.hash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="tx-hash-link"
-            title={`View tx ${tx.hash} on Etherscan`}
-          >
-            {tx.hash.slice(0, 8)}…
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              <polyline points="15 3 21 3 21 9" />
-              <line x1="10" y1="14" x2="21" y2="3" />
-            </svg>
-          </a>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              className="copy-btn"
+              onClick={() => handleCopy(tx.hash, `hash_${tx.hash}`)}
+              title="Copy Transaction Hash"
+            >
+              <span style={{ fontFamily: 'var(--font-mono)' }}>{tx.hash.slice(0, 8)}…</span>
+              {copiedKey === `hash_${tx.hash}` && <span className="copy-toast">Copied!</span>}
+            </button>
+
+            <a
+              href={`https://etherscan.io/tx/${tx.hash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="tx-hash-link"
+              title={`View tx ${tx.hash} on Etherscan`}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+            </a>
+          </div>
         </div>
 
         {/* Confidence Indicator in Classified Mode */}
