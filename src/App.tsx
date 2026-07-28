@@ -250,65 +250,40 @@ export default function App() {
       <Hero onAnalyze={handleAnalyze} />
 
       {/* Main Block Explorer & Tax Workspace */}
-      <section id="app-workspace" className="relative py-12 border-t border-border bg-card/20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
-          {/* Blockchair Multi-Chain Network Stats Grid */}
+      <section id="app-workspace" className="relative py-16 border-t border-border/50">
+        {/* Subtle background wash */}
+        <div className="absolute inset-0 bg-gradient-to-b from-card/30 via-transparent to-transparent pointer-events-none" />
+
+        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
+          {/* Section Header */}
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-5">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary/40 px-3.5 py-1 text-[11px] font-semibold text-muted-foreground mb-4 uppercase tracking-wider">
+                Block Explorer
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-bold tracking-[-0.03em] leading-tight">
+                Multi-Chain <span className="text-gradient-chain">Tax Engine</span>
+              </h2>
+              <p className="text-muted-foreground text-sm mt-1.5 max-w-lg">
+                Enter EVM addresses or ENS domains for local AI classification &amp; Form 8949 cost basis reports.
+              </p>
+            </div>
+
+            <button
+              onClick={handleTestB2BSimulate}
+              className="inline-flex items-center gap-2 rounded-xl border border-signal-red/25 bg-signal-red/8 px-4 py-2.5 text-xs font-semibold text-signal-red hover:bg-signal-red/15 transition-all duration-200 shrink-0"
+            >
+              🛡️ Test B2B Pre-Sign API
+            </button>
+          </div>
+
+          {/* Network Stats Ticker */}
           <NetworkTicker
             selectedChain={selectedChain}
             onSelectChain={(id) => setSelectedChain(id as ChainId)}
           />
 
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-6 pt-4">
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
-                Multi-Chain <span className="text-gradient-chain">Block Explorer &amp; Tax Engine</span>
-              </h2>
-              <p className="text-muted-foreground text-sm mt-1">
-                Enter EVM addresses or ENS domains to run local classification &amp; Form 8949 cost basis lot reports.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleTestB2BSimulate}
-                className="inline-flex items-center gap-2 rounded-lg border border-signal-red/30 bg-signal-red/10 px-3.5 py-2 text-xs font-semibold text-signal-red hover:bg-signal-red/20 transition-colors"
-              >
-                🛡️ Test B2B Pre-Sign API
-              </button>
-            </div>
-          </div>
-
-          {/* Network Selector Chips */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mr-2">
-              Select Chain:
-            </span>
-            <button
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                selectedChain === 'all'
-                  ? 'border-chain bg-chain text-primary-foreground glow-chain'
-                  : 'border-border bg-secondary/50 text-muted-foreground hover:text-foreground'
-              }`}
-              onClick={() => setSelectedChain('all')}
-            >
-              🌐 All Networks
-            </button>
-            {Object.values(CHAIN_CONFIGS).map((chain) => (
-              <button
-                key={chain.id}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 ${
-                  selectedChain === chain.id
-                    ? 'border-chain bg-chain text-primary-foreground glow-chain'
-                    : 'border-border bg-secondary/50 text-muted-foreground hover:text-foreground'
-                }`}
-                onClick={() => setSelectedChain(chain.id)}
-              >
-                <span>{chain.icon}</span> {chain.name}
-              </button>
-            ))}
-          </div>
-
-          {/* Wallet Address Input Component */}
+          {/* Wallet Search Input */}
           <WalletInput
             onSubmit={handleAnalyze}
             isLoading={isLoading}
@@ -319,33 +294,33 @@ export default function App() {
 
           {/* Error Banner */}
           {error && (
-            <div className="rounded-lg border border-signal-red/40 bg-signal-red/10 p-4 text-signal-red text-sm flex items-center justify-between">
-              <span>⚠️ {error}</span>
-              <button onClick={() => setError(null)} className="text-muted-foreground hover:text-foreground font-bold">×</button>
+            <div className="rounded-xl border border-signal-red/30 bg-signal-red/8 p-4 text-signal-red text-sm flex items-center justify-between">
+              <span className="flex items-center gap-2">⚠️ {error}</span>
+              <button onClick={() => setError(null)} className="text-muted-foreground hover:text-foreground text-lg leading-none">×</button>
             </div>
           )}
 
           {/* Progress Banner */}
           {appState === 'classifying' && (
-            <div className="rounded-lg border border-chain/30 bg-chain/10 p-4 text-chain text-sm flex items-center gap-3 font-medium glow-chain">
+            <div className="rounded-xl border border-chain/25 bg-chain/8 p-4 text-chain text-sm flex items-center gap-3 font-medium">
               <span className="relative flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-chain opacity-75" />
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-chain" />
               </span>
-              <span>Running ONNX Classifier &amp; AI: {classifiedCount} of {rawTransactions.length} transactions processed</span>
+              <span>Classifying: {classifiedCount} / {rawTransactions.length} transactions</span>
             </div>
           )}
 
           {appState === 'fetching' && (
-            <div className="py-12 text-center text-muted-foreground space-y-3">
+            <div className="py-16 text-center text-muted-foreground space-y-4">
               <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-chain border-t-transparent" />
-              <p className="text-sm">Connecting to Multi-Chain Indexer &amp; DefiLlama Oracle...</p>
+              <p className="text-sm">Connecting to Multi-Chain Indexer…</p>
             </div>
           )}
 
-          {/* Analysis Dashboard & Explorer Timeline */}
+          {/* Dashboard & Timeline */}
           {appState !== 'fetching' && appState !== 'error' && (
-            <div className="space-y-8">
+            <div className="space-y-6">
               <TaxDashboard summary={summary} />
               <TransactionTimeline
                 transactions={filteredTransactions}
@@ -368,48 +343,48 @@ export default function App() {
       {/* Security Simulation Modal */}
       {showSimModal && simResult && (
         <div className="modal-overlay" onClick={() => setShowSimModal(false)}>
-          <div className="bg-card border border-border rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h3 className="font-bold flex items-center gap-2 text-foreground">
-                🛡️ B2B Pre-Sign Security Narrative
+          <div className="bg-card border border-border rounded-2xl max-w-lg w-full p-7 space-y-5 shadow-2xl shadow-black/40" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-[15px] flex items-center gap-2.5 text-foreground">
+                🛡️ Pre-Sign Security Report
               </h3>
-              <button onClick={() => setShowSimModal(false)} className="text-muted-foreground hover:text-foreground font-bold">×</button>
+              <button onClick={() => setShowSimModal(false)} className="text-muted-foreground hover:text-foreground text-lg leading-none p-1 rounded-lg hover:bg-secondary transition-colors">×</button>
             </div>
 
-            <div className="space-y-3">
-              <div className="inline-block text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border border-signal-red/30 bg-signal-red/10 text-signal-red">
-                {simResult.severity.toUpperCase()} RISK DETECTED
+            <div className="space-y-4">
+              <div className="inline-block text-[10px] font-bold uppercase tracking-[0.1em] px-3 py-1 rounded-md border border-signal-red/25 bg-signal-red/8 text-signal-red">
+                {simResult.severity.toUpperCase()} RISK
               </div>
-              <h4 className="font-semibold text-base text-foreground">{simResult.headline}</h4>
+              <h4 className="font-semibold text-base text-foreground leading-snug">{simResult.headline}</h4>
               <p className="text-sm text-muted-foreground leading-relaxed">{simResult.plainEnglishDescription}</p>
 
-              <div className="grid grid-cols-2 gap-3 text-xs font-mono bg-secondary/50 p-3 rounded-lg border border-border">
+              <div className="grid grid-cols-2 gap-4 text-xs font-mono bg-secondary/40 p-4 rounded-xl border border-border">
                 <div>
-                  <span className="text-muted-foreground block text-[10px]">Method</span>
-                  <span className="text-foreground">{simResult.decodedMethod}</span>
+                  <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Method</span>
+                  <span className="text-foreground font-medium">{simResult.decodedMethod}</span>
                 </div>
                 <div>
-                  <span className="text-muted-foreground block text-[10px]">Est. Gas</span>
-                  <span className="text-foreground">${simResult.estimatedGasUsd.toFixed(2)}</span>
+                  <span className="text-muted-foreground block text-[10px] uppercase tracking-wider mb-1">Est. Gas</span>
+                  <span className="text-foreground font-medium">${simResult.estimatedGasUsd.toFixed(2)}</span>
                 </div>
               </div>
 
               {simResult.riskWarnings.length > 0 && (
-                <div className="space-y-1 bg-signal-amber/10 border border-signal-amber/20 p-3 rounded-lg text-xs text-signal-amber">
-                  <div className="font-semibold mb-1">Warnings:</div>
+                <div className="space-y-1.5 bg-signal-amber/8 border border-signal-amber/15 p-4 rounded-xl text-xs text-signal-amber">
+                  <div className="font-semibold mb-1">⚠️ Warnings</div>
                   {simResult.riskWarnings.map((w, i) => (
-                    <div key={i}>⚠️ {w}</div>
+                    <div key={i} className="pl-5">{w}</div>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="pt-2 text-right">
+            <div className="pt-1 flex justify-end">
               <button
                 onClick={() => setShowSimModal(false)}
-                className="bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold px-4 py-2 rounded-lg border border-border transition-colors"
+                className="bg-secondary hover:bg-secondary/70 text-foreground text-[13px] font-semibold px-5 py-2.5 rounded-xl border border-border transition-all duration-200"
               >
-                Close Preview
+                Close
               </button>
             </div>
           </div>

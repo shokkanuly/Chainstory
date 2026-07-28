@@ -1,4 +1,4 @@
-// src/components/TransactionTimeline.tsx
+// src/components/TransactionTimeline.tsx — Premium Transaction Explorer
 import { useState } from 'react';
 import type { ClassifiedTransaction, TaxCategory } from '../types';
 import TransactionCard from './TransactionCard';
@@ -13,7 +13,7 @@ interface Props {
 type FilterValue = TaxCategory | 'all';
 
 const FILTERS: { label: string; value: FilterValue; icon: string }[] = [
-  { label: 'All', value: 'all', icon: '🔍' },
+  { label: 'All', value: 'all', icon: '⬡' },
   { label: 'Trades', value: 'trade', icon: '💱' },
   { label: 'Income', value: 'income', icon: '💎' },
   { label: 'Transfers', value: 'transfer', icon: '↔️' },
@@ -47,13 +47,18 @@ export default function TransactionTimeline({ transactions, walletAddress, isCap
 
   return (
     <div className="timeline-section">
-      {/* Title header with Export CSV button */}
+      {/* Header */}
       <div className="timeline-header-row">
-        <h2 className="timeline-title">Timeline</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="timeline-title">Transaction Explorer</h2>
+          <span className="text-[11px] font-medium text-muted-foreground bg-secondary/60 px-2.5 py-1 rounded-md">
+            {transactions.length} txns
+          </span>
+        </div>
         <ExportButton transactions={transactions} walletAddress={walletAddress} />
       </div>
 
-      {/* Filter + search bar */}
+      {/* Filters + Search */}
       <div className="timeline-controls">
         <div className="filter-tabs">
           {FILTERS.map(f => (
@@ -71,7 +76,7 @@ export default function TransactionTimeline({ transactions, walletAddress, isCap
         </div>
 
         <div className="timeline-search">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
@@ -91,16 +96,16 @@ export default function TransactionTimeline({ transactions, walletAddress, isCap
 
       {isCapped && (
         <div className="timeline-capped-note">
-          Showing your 100 most recent transactions.
+          ℹ️ Showing your 100 most recent transactions.
         </div>
       )}
 
-      {/* Timeline */}
+      {/* Cards */}
       <div className="timeline-list">
         {filtered.length === 0 ? (
           <div className="timeline-empty">
             <div className="timeline-empty-icon">🔎</div>
-            <p>No transactions match your filter.</p>
+            <p className="text-sm text-muted-foreground">No transactions match your filter.</p>
           </div>
         ) : (
           filtered.map((tx, i) => (

@@ -1,85 +1,85 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-  
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+
   --color-background: #0b0f19;
-  --color-foreground: #ffffff;
-  --color-card: #162032;
-  --color-card-foreground: #ffffff;
-  --color-popover: #162032;
-  --color-popover-foreground: #ffffff;
-  --color-primary: #2170FF;
+  --color-foreground: #f1f5f9;
+  --color-card: #111827;
+  --color-card-foreground: #f1f5f9;
+  --color-popover: #111827;
+  --color-popover-foreground: #f1f5f9;
+  --color-primary: #3b82f6;
   --color-primary-foreground: #ffffff;
   --color-secondary: #1e293b;
   --color-secondary-foreground: #94a3b8;
   --color-muted: #1e293b;
   --color-muted-foreground: #64748b;
-  --color-accent: #2170FF;
+  --color-accent: #3b82f6;
   --color-accent-foreground: #ffffff;
   --color-destructive: #ef4444;
   --color-destructive-foreground: #ffffff;
-  --color-border: #24324a;
+  --color-border: #1e293b;
   --color-input: #1e293b;
-  --color-ring: #2170FF;
+  --color-ring: #3b82f6;
 
-  --color-chain: #2170FF;
-  --color-chain-dim: #1d4ed8;
+  --color-chain: #3b82f6;
+  --color-chain-dim: #2563eb;
   --color-signal-green: #10b981;
   --color-signal-amber: #f59e0b;
   --color-signal-red: #ef4444;
-  --color-glow: rgba(33, 112, 255, 0.2);
+  --color-glow: rgba(59, 130, 246, 0.15);
 
-  --radius: 0.5rem;
+  --radius: 0.75rem;
 }
 
 :root {
   --bg-base: #0b0f19;
-  --bg-surface: #162032;
-  --bg-elevated: #1e2d42;
-  --bg-card: #162032;
-  --bg-card-hover: #1c2b42;
+  --bg-surface: #111827;
+  --bg-elevated: #1e293b;
+  --bg-card: #111827;
+  --bg-card-hover: #162032;
 
-  --border-subtle: #24324a;
-  --border-default: #2e405e;
-  --border-strong: #3b5278;
+  --border-subtle: #1e293b;
+  --border-default: #334155;
+  --border-strong: #475569;
 
-  --text-primary: #ffffff;
+  --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
 
-  --accent-blue: #2170FF;
+  --accent-blue: #3b82f6;
   --accent-purple: #8b5cf6;
 
-  --cat-trade: #60a5fa;
-  --cat-trade-bg: rgba(37, 99, 235, 0.15);
-  --cat-trade-border: rgba(37, 99, 235, 0.35);
+  --cat-trade: #818cf8;
+  --cat-trade-bg: rgba(129, 140, 248, 0.12);
+  --cat-trade-border: rgba(129, 140, 248, 0.25);
 
   --cat-income: #34d399;
-  --cat-income-bg: rgba(16, 185, 129, 0.15);
-  --cat-income-border: rgba(16, 185, 129, 0.35);
+  --cat-income-bg: rgba(52, 211, 153, 0.12);
+  --cat-income-border: rgba(52, 211, 153, 0.25);
 
   --cat-transfer: #38bdf8;
-  --cat-transfer-bg: rgba(14, 165, 233, 0.15);
-  --cat-transfer-border: rgba(14, 165, 233, 0.35);
+  --cat-transfer-bg: rgba(56, 189, 248, 0.12);
+  --cat-transfer-border: rgba(56, 189, 248, 0.25);
 
   --cat-nft: #fbbf24;
-  --cat-nft-bg: rgba(245, 158, 11, 0.15);
-  --cat-nft-border: rgba(245, 158, 11, 0.35);
+  --cat-nft-bg: rgba(251, 191, 36, 0.12);
+  --cat-nft-border: rgba(251, 191, 36, 0.25);
 
   --cat-unknown: #94a3b8;
-  --cat-unknown-bg: rgba(148, 163, 184, 0.12);
-  --cat-unknown-border: rgba(148, 163, 184, 0.25);
+  --cat-unknown-bg: rgba(148, 163, 184, 0.08);
+  --cat-unknown-border: rgba(148, 163, 184, 0.2);
 
-  --color-positive: #10b981;
-  --color-negative: #ef4444;
+  --color-positive: #34d399;
+  --color-negative: #f87171;
   --color-neutral: #94a3b8;
 
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
 }
 
 @layer base {
@@ -92,23 +92,79 @@
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv11", "ss01";
+    letter-spacing: -0.011em;
   }
 
   ::selection {
-    background: rgba(33, 112, 255, 0.3);
+    background: rgba(59, 130, 246, 0.25);
+  }
+
+  /* Hide scrollbar but keep functionality */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.15);
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.3);
   }
 }
 
 @layer utilities {
   .glow-chain {
-    box-shadow: 0 0 20px rgba(33, 112, 255, 0.25);
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.2), 0 0 4px rgba(59, 130, 246, 0.15);
   }
   .glow-chain-strong {
-    box-shadow: 0 0 30px rgba(33, 112, 255, 0.4);
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.35), 0 0 8px rgba(59, 130, 246, 0.2);
   }
   .text-gradient-chain {
-    background: linear-gradient(135deg, #60a5fa 0%, #2170FF 50%, #8b5cf6 100%);
+    background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 40%, #8b5cf6 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
+  .bg-grid {
+    background-image:
+      linear-gradient(rgba(30, 41, 59, 0.5) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(30, 41, 59, 0.5) 1px, transparent 1px);
+    background-size: 64px 64px;
+  }
+  .bg-radial-glow {
+    background: radial-gradient(ellipse 700px 500px at 50% 0%, rgba(59, 130, 246, 0.08), transparent);
+  }
+  .animate-float {
+    animation: float 8s ease-in-out infinite;
+  }
+  .glass {
+    background: rgba(17, 24, 39, 0.6);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+  .glass-strong {
+    background: rgba(17, 24, 39, 0.85);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }

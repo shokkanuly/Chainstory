@@ -1,45 +1,45 @@
-import { Zap } from 'lucide-react'
-
-const footerLinks = {
-  Product: ['Features', 'Architecture', 'Tax Reports', 'Security API', 'Pricing'],
-  Developers: ['Documentation', 'API Reference', 'GitHub', 'NPM Package', 'Changelog'],
-  Resources: ['Blog', 'Tax Guide', 'DeFi Glossary', 'Changelog', 'Status'],
-  Legal: ['Privacy Policy', 'Terms of Service', 'Disclaimer', 'License'],
-}
-
+// src/components/Footer.tsx — Premium Footer
 export default function Footer() {
+  const footerLinks = {
+    Product: ['Features', 'Architecture', 'Tax Reports', 'Security API'],
+    Developers: ['GitHub', 'API Reference', 'Documentation', 'Changelog'],
+    Resources: ['Tax Guide', 'DeFi Glossary', 'Blog', 'Status'],
+    Legal: ['Privacy Policy', 'Terms of Service', 'Disclaimer'],
+  }
+
   return (
-    <footer className="border-t border-border bg-background">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
+    <footer className="border-t border-border bg-card/20">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-14 sm:py-16">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-10">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
             <a href="#" className="flex items-center gap-2 mb-4">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-chain/10 border border-chain/20">
-                <Zap className="h-3.5 w-3.5 text-chain" />
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-chain">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                </svg>
               </div>
-              <span className="text-base font-bold">
+              <span className="text-[15px] font-bold tracking-tight">
                 Chain<span className="text-chain">Story</span>
               </span>
             </a>
-            <p className="text-xs text-muted-foreground leading-relaxed max-w-[200px]">
-              Multi-chain plain-English tax & pre-sign security engine.
-              Browser-first. Privacy-first.
+            <p className="text-xs text-muted-foreground leading-relaxed max-w-[220px]">
+              Multi-chain plain-English tax & pre-sign security engine. Browser-first. Privacy-first.
             </p>
           </div>
 
           {/* Link columns */}
           {Object.entries(footerLinks).map(([category, links]) => (
             <div key={category}>
-              <h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+              <h4 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-4">
                 {category}
               </h4>
-              <ul className="space-y-2">
+              <ul className="space-y-2.5">
                 {links.map((link) => (
                   <li key={link}>
                     <a
                       href="#"
-                      className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      className="text-[13px] text-muted-foreground hover:text-foreground transition-colors"
                     >
                       {link}
                     </a>
@@ -51,11 +51,11 @@ export default function Footer() {
         </div>
 
         {/* Bottom bar */}
-        <div className="mt-12 pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="mt-14 pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs text-muted-foreground">
             © 2026 ChainStory. All rights reserved.
           </p>
-          <p className="text-[10px] text-muted-foreground/60 max-w-md text-center sm:text-right">
+          <p className="text-[11px] text-muted-foreground/50 max-w-lg text-center sm:text-right leading-relaxed">
             Disclaimer: ChainStory provides AI/ML transaction classification and FIFO lot
             accounting estimates for informational purposes. Not financial or tax advice.
           </p>

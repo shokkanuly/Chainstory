@@ -1,4 +1,4 @@
-// src/components/TransactionCard.tsx
+// src/components/TransactionCard.tsx — Premium Transaction Card
 import type { ClassifiedTransaction, TaxCategory } from '../types';
 import { formatAddress } from '../services/etherscan';
 
@@ -40,19 +40,15 @@ function formatUsd(value: number): string {
 export default function TransactionCard({ tx, index }: Props) {
   const meta = CATEGORY_META[tx.category];
   const isLoading = tx.status === 'classifying' || tx.status === 'pending';
-  const isError = tx.status === 'error';
   const isFailed = tx.isError === '1';
 
   return (
     <div
       className={`tx-card ${isLoading ? 'tx-card--loading' : ''} ${isFailed ? 'tx-card--failed' : ''}`}
-      style={{ animationDelay: `${Math.min(index * 30, 300)}ms` }}
+      style={{ animationDelay: `${Math.min(index * 40, 400)}ms` }}
     >
-      {/* Timeline dot */}
-      <div className={`tx-timeline-dot ${meta.className}`} />
-
       <div className="tx-card-inner">
-        {/* Top row: date + category tag */}
+        {/* Header: date + category */}
         <div className="tx-card-header">
           <div className="tx-date">
             <span className="tx-date-main">{formatDate(tx.date)}</span>
@@ -62,17 +58,15 @@ export default function TransactionCard({ tx, index }: Props) {
             <span className={`category-tag ${meta.className}`}>
               {meta.icon} {meta.label}
             </span>
-            {isFailed && <span className="failed-badge">Failed TX</span>}
+            {isFailed && <span className="failed-badge">Failed</span>}
           </div>
         </div>
 
         {/* Description */}
         {isLoading ? (
-          <div className="tx-description skeleton-line" />
+          <div className="skeleton-line" />
         ) : (
-          <p className={`tx-description ${isError ? 'tx-description--error' : ''}`}>
-            {tx.description}
-          </p>
+          <p className="tx-description">{tx.description}</p>
         )}
 
         {/* Values */}
@@ -84,7 +78,7 @@ export default function TransactionCard({ tx, index }: Props) {
           {tx.usdValue === null ? (
             <div className="tx-value-item">
               <span className="tx-value-label">USD at time</span>
-              <span className="tx-value-amount usd price-unavailable">price unavailable</span>
+              <span className="tx-value-amount price-unavailable">price unavailable</span>
             </div>
           ) : tx.usdValue > 0 ? (
             <div className="tx-value-item">
@@ -99,7 +93,7 @@ export default function TransactionCard({ tx, index }: Props) {
           )}
         </div>
 
-        {/* Footer: addresses + tx hash */}
+        {/* Footer */}
         <div className="tx-footer">
           <div className="tx-addresses">
             <span className="tx-addr-label">From</span>
@@ -118,8 +112,8 @@ export default function TransactionCard({ tx, index }: Props) {
             className="tx-hash-link"
             title={tx.hash}
           >
-            {tx.hash.slice(0, 8)}…
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            {tx.hash.slice(0, 10)}…
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
               <polyline points="15 3 21 3 21 9" />
               <line x1="10" y1="14" x2="21" y2="3" />
@@ -127,13 +121,10 @@ export default function TransactionCard({ tx, index }: Props) {
           </a>
         </div>
 
-        {/* Confidence indicator */}
+        {/* Confidence bar */}
         {tx.status === 'classified' && tx.confidence > 0 && (
           <div className="tx-confidence">
-            <div
-              className="tx-confidence-bar"
-              style={{ width: `${tx.confidence * 100}%` }}
-            />
+            <div className="tx-confidence-bar" style={{ width: `${tx.confidence * 100}%` }} />
           </div>
         )}
       </div>
