@@ -85,12 +85,18 @@ export default function TaxDashboard({ summary }: Props) {
         })}
       </div>
 
-      <div className="gas-summary">
+      <div className="gas-summary flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="gas-icon">⛽</span>
           <span>Total gas spent: <strong className="text-foreground">{summary.totalGasSpent.toFixed(4)} ETH</strong></span>
+          <span className="gas-note">(may be tax-deductible)</span>
         </div>
-        <span className="gas-note">(may be tax-deductible)</span>
+
+        {summary.missingPriceCount && summary.missingPriceCount > 0 ? (
+          <div className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-1 rounded-lg">
+            ⚠️ Price data unavailable for {summary.missingPriceCount} transaction(s).
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -103,10 +109,15 @@ export function computeSummary(transactions: ClassifiedTransaction[]): TaxSummar
   let nftCount = 0;
   let unknownCount = 0;
   let totalGasSpent = 0;
+  let missingPriceCount = 0;
 
   for (const tx of transactions) {
-    const gasEth = (parseFloat(tx.gasUsed) * parseFloat(tx.gasPrice)) / 1e18;
+    const gasEth = (parseFloat(tx.gasUsed || '0') * parseFloat(tx.gasPrice || '0')) / 1e18;
     totalGasSpent += gasEth;
+
+    if (tx.usdValue === null || tx.usdValue === undefined) {
+      missingPriceCount++;
+    }
 
     if (tx.status !== 'classified') {
       unknownCount++;
@@ -140,5 +151,6 @@ export function computeSummary(transactions: ClassifiedTransaction[]): TaxSummar
     totalTransactions: transactions.length,
     totalGasSpent,
     totalVolumeUsd: 0,
+    missingPriceCount,
   };
 }

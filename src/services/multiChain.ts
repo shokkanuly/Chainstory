@@ -5,6 +5,7 @@
 
 import type { ChainConfig, ChainId, RawTransaction } from '../types';
 import { decodeAbiData } from './abiDecoder';
+import { fetchWithRetry } from './etherscan';
 
 export const CHAIN_CONFIGS: Record<ChainId, ChainConfig> = {
   ethereum: {
@@ -58,9 +59,33 @@ export function getChainConfig(chainId: ChainId = 'ethereum'): ChainConfig {
   return CHAIN_CONFIGS[chainId] || CHAIN_CONFIGS.ethereum;
 }
 
-export function getEtherscanApiKey(): string | null {
-  const key = import.meta.env.VITE_ETHERSCAN_API_KEY;
-  if (!key || key === 'your_etherscan_api_key_here' || key.trim() === '') {
+export function getChainApiKey(chainId: ChainId = 'ethereum'): string | null {
+  const getEnv = (key: string): string | undefined => {
+    try {
+      if (typeof import.meta !== 'undefined' && import.meta?.env) {
+        return import.meta.env[key];
+      }
+    } catch (_) {}
+    try {
+      const gProcess = (globalThis as any).process;
+      if (gProcess && gProcess.env) {
+        return gProcess.env[key];
+      }
+    } catch (_) {}
+    return undefined;
+  };
+
+  const ethKey = getEnv('VITE_ETHERSCAN_API_KEY');
+  const envKeyMap: Record<ChainId, string | undefined> = {
+    ethereum: ethKey,
+    arbitrum: getEnv('VITE_ARBISCAN_API_KEY') || ethKey,
+    base: getEnv('VITE_BASESCAN_API_KEY') || ethKey,
+    optimism: getEnv('VITE_OPTIMISM_API_KEY') || ethKey,
+    polygon: getEnv('VITE_POLYGONSCAN_API_KEY') || ethKey,
+  };
+
+  const key = envKeyMap[chainId] || ethKey;
+  if (!key || key.includes('your_') || key.trim() === '') {
     return null;
   }
   return key;
@@ -70,11 +95,10 @@ export async function fetchChainTransactions(
   address: string,
   chainId: ChainId = 'ethereum'
 ): Promise<RawTransaction[]> {
-  const apiKey = getEtherscanApiKey();
+  const apiKey = getChainApiKey(chainId);
   const chain = getChainConfig(chainId);
 
   if (!apiKey) {
-    // If no key set, fallback to mainnet demo transactions tagged with target chainId
     return [];
   }
 
@@ -90,10 +114,7 @@ export async function fetchChainTransactions(
   url.searchParams.set('apikey', apiKey);
 
   try {
-    const res = await fetch(url.toString());
-    if (!res.ok) return [];
-
-    const data = await res.json();
+    const data = await fetchWithRetry(url.toString());
     if (data.status === '0') return [];
 
     const txs = (data.result as RawTransaction[]).map((tx) => {
@@ -117,7 +138,7 @@ export async function fetchInternalTransactions(
   address: string,
   chainId: ChainId = 'ethereum'
 ): Promise<RawTransaction[]> {
-  const apiKey = getEtherscanApiKey();
+  const apiKey = getChainApiKey(chainId);
   const chain = getChainConfig(chainId);
   if (!apiKey) return [];
 
@@ -131,10 +152,7 @@ export async function fetchInternalTransactions(
   url.searchParams.set('apikey', apiKey);
 
   try {
-    const res = await fetch(url.toString());
-    if (!res.ok) return [];
-
-    const data = await res.json();
+    const data = await fetchWithRetry(url.toString());
     if (data.status === '0') return [];
 
     return (data.result as RawTransaction[]).map((tx) => ({

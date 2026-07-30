@@ -74,7 +74,7 @@ export async function generateDescription(
 
   const prompt = buildDescriptionPrompt(tx, category, ethValue, usdValue);
 
-  // Try API URLs in sequence
+  // Try API URLs in sequence using Gemini structured JSON Schema mode
   for (const apiUrl of GEMINI_API_URLS) {
     try {
       const res = await fetch(`${apiUrl}?key=${apiKey}`, {
@@ -83,19 +83,40 @@ export async function generateDescription(
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 80,
+            temperature: 0.1,
+            maxOutputTokens: 100,
+            response_mime_type: 'application/json',
+            response_schema: {
+              type: 'OBJECT',
+              properties: {
+                description: {
+                  type: 'STRING',
+                  description: 'One plain English sentence summary of max 15 words',
+                },
+              },
+              required: ['description'],
+            },
           },
         }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
-        const cleaned = text
+        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
+        
+        let description = '';
+        try {
+          const parsed = JSON.parse(rawText);
+          description = parsed.description || parsed.summary || rawText;
+        } catch {
+          description = rawText;
+        }
+
+        const cleaned = description
           .replace(/^["']|["']$/g, '')
           .replace(/```.*$/gm, '')
           .trim();
+
         if (cleaned) return cleaned;
       }
     } catch {
@@ -106,25 +127,48 @@ export async function generateDescription(
   return generateFallbackDescription(tx, category, ethValue);
 }
 
-function generateFallbackDescription(
+export function generateFallbackDescription(
   tx: RawTransaction,
   category: TaxCategory,
   ethValue: number
 ): string {
   const methodSignature = tx.input?.slice(0, 10) || '0x';
   const methodHint = METHOD_HINTS[methodSignature];
+  const fnName = (tx.functionName || '').toLowerCase();
+  const tokenSymbol = tx.tokenSymbol ? ` ${tx.tokenSymbol}` : '';
+  const tokenInfo = tx.tokenName ? ` (${tx.tokenName})` : '';
 
+  // 1. Direct method hint match
   if (methodHint) {
-    return `${methodHint} (${ethValue > 0 ? ethValue.toFixed(4) + ' ETH' : 'Token Activity'})`;
+    return `${methodHint}${ethValue > 0 ? ` — ${ethValue.toFixed(4)} ETH` : tokenSymbol ? ` — ${tokenSymbol}` : ''}`;
   }
 
+  // 2. Function name keyword analysis
+  if (fnName.includes('swap')) {
+    return `Token swap on DEX (${ethValue > 0 ? ethValue.toFixed(4) + ' ETH' : tokenSymbol || 'tokens'})`;
+  }
+  if (fnName.includes('mint')) {
+    return `Minted NFT / token${tokenSymbol}${tokenInfo}`;
+  }
+  if (fnName.includes('claim') || fnName.includes('reward')) {
+    return `Claimed rewards / income${ethValue > 0 ? ` (${ethValue.toFixed(4)} ETH)` : ''}`;
+  }
+  if (fnName.includes('deposit') || fnName.includes('stake')) {
+    return `Deposited assets to protocol${ethValue > 0 ? ` (${ethValue.toFixed(4)} ETH)` : ''}`;
+  }
+  if (fnName.includes('withdraw') || fnName.includes('unstake')) {
+    return `Withdrew assets from protocol${ethValue > 0 ? ` (${ethValue.toFixed(4)} ETH)` : ''}`;
+  }
+
+  // 3. Category fallback
   if (category === 'trade') {
-    return `Token swap transaction (${ethValue.toFixed(4)} ETH)`;
+    return `Crypto trade / swap (${ethValue > 0 ? ethValue.toFixed(4) + ' ETH' : 'token activity'})`;
   } else if (category === 'income') {
     return `Staking / Reward income claim (${ethValue.toFixed(4)} ETH)`;
   } else if (category === 'nft') {
-    return `NFT collectible transaction (${ethValue.toFixed(4)} ETH)`;
+    return `NFT collectible transaction (${ethValue > 0 ? ethValue.toFixed(4) + ' ETH' : 'NFT'})`;
   }
 
-  return `Transferred ${ethValue > 0 ? ethValue.toFixed(4) + ' ETH' : 'tokens'}`;
+  return `Transferred ${ethValue > 0 ? ethValue.toFixed(4) + ' ETH' : tokenSymbol ? tokenSymbol.trim() : 'tokens'}`;
 }
+

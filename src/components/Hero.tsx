@@ -29,7 +29,7 @@ export default function Hero({ onAnalyze }: Props) {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-chain opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-chain" />
             </span>
-            <span className="text-xs font-semibold text-chain tracking-wide">Multi-Chain Explorer & AI Tax Engine</span>
+            <span className="text-xs font-semibold text-chain tracking-wide">Wallet Intelligence &amp; AI Story Engine</span>
           </div>
         </motion.div>
 
@@ -41,14 +41,14 @@ export default function Hero({ onAnalyze }: Props) {
           className="space-y-5"
         >
           <h1 className="text-5xl sm:text-6xl lg:text-[72px] font-extrabold tracking-[-0.04em] leading-[1.05]">
-            Search Every Transaction
+            Understand Any Wallet's Story,
             <br />
-            <span className="text-gradient-chain">In Plain English</span>
+            <span className="text-gradient-chain">Draft Taxes &amp; Risk in Plain English</span>
           </h1>
           <p className="text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Multi-chain EVM indexing across Ethereum, Arbitrum, Base, OP &amp; Polygon.
+            Multi-chain EVM indexing across Ethereum, Arbitrum, Base, Optimism &amp; Polygon.
             <br className="hidden sm:block" />
-            Compute IRS Form 8949 FIFO tax lots &amp; simulate pre-sign security narratives — all client-side.
+            Wallet age, protocol activity diversity, counterparty risk screening, and draft Form 8949 estimates.
           </p>
         </motion.div>
 

@@ -63,6 +63,7 @@ export interface TaxSummary {
   realizedLossTotal?: number;
   netTaxableIncome?: number;
   totalCostBasis?: number;
+  missingPriceCount?: number;
 }
 
 export interface FilterOption {
@@ -114,6 +115,7 @@ export interface FifoAccountingReport {
   totalRealizedLossUsd: number;
   totalGasExpenseUsd: number;
   netCapitalGainLossUsd: number;
+  missingPriceCount: number;
   realizedTransactions: RealizedGainLoss[];
   remainingOpenLots: TaxLot[];
 }

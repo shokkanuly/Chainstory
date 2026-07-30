@@ -28,11 +28,16 @@ export function calculateFifoTaxReport(
   let totalRealizedGainUsd = 0;
   let totalRealizedLossUsd = 0;
   let totalGasExpenseUsd = 0;
+  let missingPriceCount = 0;
 
   for (const tx of sortedTxs) {
     const assetSymbol = tx.tokenSymbol || 'ETH';
     const ethVal = tx.ethValue || 0;
-    const usdVal = tx.usdValue || 0;
+    const usdVal = tx.usdValue ?? 0;
+    
+    if (tx.usdValue === null || tx.usdValue === undefined) {
+      missingPriceCount++;
+    }
     const date = tx.date;
 
     // 1. Accumulate gas fee as deductible expense/capital loss
@@ -134,6 +139,7 @@ export function calculateFifoTaxReport(
     totalRealizedLossUsd,
     totalGasExpenseUsd,
     netCapitalGainLossUsd,
+    missingPriceCount,
     realizedTransactions,
     remainingOpenLots: openLots.filter((lot) => lot.remainingAmount > 0),
   };

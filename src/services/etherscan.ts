@@ -107,20 +107,66 @@ function generateMockTransactionsForAddress(address: string): RawTransaction[] {
   ];
 }
 
-async function fetchWithRetry(url: string, retries = 1): Promise<any> {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Etherscan API HTTP ${res.status}`);
-  }
-  const data = await res.json();
+const requestQueue: Promise<any>[] = [];
+const MIN_REQUEST_INTERVAL_MS = 250; // 4 requests/sec rate limit buffer
+let lastRequestTime = 0;
 
-  if (data.status === '0' && data.result && String(data.result).toLowerCase().includes('rate limit')) {
-    if (retries > 0) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      return fetchWithRetry(url, retries - 1);
-    }
+async function rateLimitThrottler(): Promise<void> {
+  const now = Date.now();
+  const timeSinceLast = now - lastRequestTime;
+  if (timeSinceLast < MIN_REQUEST_INTERVAL_MS) {
+    await new Promise((resolve) => setTimeout(resolve, MIN_REQUEST_INTERVAL_MS - timeSinceLast));
   }
-  return data;
+  lastRequestTime = Date.now();
+}
+
+export async function fetchWithRetry(url: string, retries = 3, baseDelayMs = 1000): Promise<any> {
+  await rateLimitThrottler();
+
+  try {
+    const res = await fetch(url);
+
+    // Handle HTTP 429 (Too Many Requests) or server errors
+    if (res.status === 429 || res.status >= 500) {
+      if (retries > 0) {
+        const delay = baseDelayMs * Math.pow(2, 3 - retries);
+        console.warn(`Etherscan returned HTTP ${res.status}. Retrying in ${delay}ms... (${retries} attempts left)`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return fetchWithRetry(url, retries - 1, baseDelayMs);
+      }
+      throw new Error(`Etherscan API HTTP ${res.status}`);
+    }
+
+    if (!res.ok) {
+      throw new Error(`Etherscan API HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+
+    // Check for Etherscan API payload rate-limit notice ("status": "0", "result": "Max rate limit reached")
+    const resultStr = String(data.result || data.message || '').toLowerCase();
+    const isRateLimited =
+      data.status === '0' &&
+      (resultStr.includes('rate limit') || resultStr.includes('notok') || resultStr.includes('max rate'));
+
+    if (isRateLimited) {
+      if (retries > 0) {
+        const delay = baseDelayMs * Math.pow(2, 3 - retries);
+        console.warn(`Etherscan API rate limit payload detected. Retrying in ${delay}ms... (${retries} attempts left)`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return fetchWithRetry(url, retries - 1, baseDelayMs);
+      }
+    }
+
+    return data;
+  } catch (err: any) {
+    if (retries > 0 && err.message?.includes('HTTP')) {
+      const delay = baseDelayMs * Math.pow(2, 3 - retries);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return fetchWithRetry(url, retries - 1, baseDelayMs);
+    }
+    throw err;
+  }
 }
 
 export async function fetchNormalTransactions(address: string): Promise<RawTransaction[]> {

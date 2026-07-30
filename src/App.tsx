@@ -13,6 +13,9 @@ import Footer from '@/components/Footer';
 import WalletInput from './components/WalletInput';
 import TaxDashboard, { computeSummary } from './components/TaxDashboard';
 import TransactionTimeline from './components/TransactionTimeline';
+import WalletIntelligenceCard from './components/WalletIntelligenceCard';
+import TokenApprovalsPanel from './components/TokenApprovalsPanel';
+import ContractRiskModal from './components/ContractRiskModal';
 import type { ChainId, ClassifiedTransaction, RawTransaction, B2BSimulationResult } from './types';
 import { fetchMultiWalletTransactions, weiToEth, formatAddress } from './services/etherscan';
 import { classifyAll } from './services/classifier';
@@ -132,12 +135,14 @@ export default function App() {
   const [isCapped, setIsCapped] = useState(false);
   const [connectedWallet, setConnectedWallet] = useState<string | null>(null);
   const [showSimModal, setShowSimModal] = useState(false);
+  const [showRiskModal, setShowRiskModal] = useState(false);
   const [simResult, setSimResult] = useState<B2BSimulationResult | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && showSimModal) {
-        setShowSimModal(false);
+      if (e.key === 'Escape') {
+        if (showSimModal) setShowSimModal(false);
+        if (showRiskModal) setShowRiskModal(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -269,12 +274,21 @@ export default function App() {
               </p>
             </div>
 
-            <button
-              onClick={handleTestB2BSimulate}
-              className="inline-flex items-center gap-2 rounded-xl border border-signal-red/25 bg-signal-red/8 px-4 py-2.5 text-xs font-semibold text-signal-red hover:bg-signal-red/15 transition-all duration-200 shrink-0"
-            >
-              🛡️ Test B2B Pre-Sign API
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowRiskModal(true)}
+                className="inline-flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 transition-all duration-200 shrink-0"
+              >
+                🔍 Pre-Scan Risk &amp; Permissions
+              </button>
+
+              <button
+                onClick={handleTestB2BSimulate}
+                className="inline-flex items-center gap-2 rounded-xl border border-signal-red/25 bg-signal-red/8 px-4 py-2.5 text-xs font-semibold text-signal-red hover:bg-signal-red/15 transition-all duration-200 shrink-0"
+              >
+                🛡️ Test B2B Pre-Sign API
+              </button>
+            </div>
           </div>
 
           {/* Network Stats Ticker */}
@@ -302,25 +316,47 @@ export default function App() {
 
           {/* Progress Banner */}
           {appState === 'classifying' && (
-            <div className="rounded-xl border border-chain/25 bg-chain/8 p-4 text-chain text-sm flex items-center gap-3 font-medium">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-chain opacity-75" />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-chain" />
-              </span>
-              <span>Classifying: {classifiedCount} / {rawTransactions.length} transactions</span>
+            <div className="rounded-xl border border-chain/25 bg-chain/8 p-4 text-chain text-sm flex items-center justify-between font-medium animate-pulse">
+              <div className="flex items-center gap-3">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-chain opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-chain" />
+                </span>
+                <span>Classifying on-chain transactions: {classifiedCount} / {rawTransactions.length}</span>
+              </div>
+              <div className="text-xs bg-chain/15 px-3 py-1 rounded-full font-mono">
+                {Math.round((classifiedCount / (rawTransactions.length || 1)) * 100)}%
+              </div>
             </div>
           )}
 
+          {/* Skeleton Loading State */}
           {appState === 'fetching' && (
-            <div className="py-16 text-center text-muted-foreground space-y-4">
-              <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-chain border-t-transparent" />
-              <p className="text-sm">Connecting to Multi-Chain Indexer…</p>
+            <div className="space-y-6 animate-pulse">
+              {/* Wallet Intelligence Skeleton */}
+              <div className="h-32 bg-slate-800/40 border border-slate-800 rounded-2xl p-6" />
+              {/* Metrics Skeleton */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[1, 2, 3, 4].map(i => (
+                  <div key={i} className="h-24 bg-slate-800/40 border border-slate-800 rounded-xl" />
+                ))}
+              </div>
+              {/* Timeline Skeleton */}
+              <div className="h-64 bg-slate-800/40 border border-slate-800 rounded-2xl" />
             </div>
           )}
 
           {/* Dashboard & Timeline */}
           {appState !== 'fetching' && appState !== 'error' && (
             <div className="space-y-6">
+              <WalletIntelligenceCard
+                transactions={filteredTransactions}
+                walletAddress={primaryWallet}
+              />
+              <TokenApprovalsPanel
+                transactions={filteredTransactions}
+                walletAddress={primaryWallet}
+              />
               <TaxDashboard summary={summary} />
               <TransactionTimeline
                 transactions={filteredTransactions}
@@ -339,6 +375,12 @@ export default function App() {
       <Security />
       <CTA />
       <Footer />
+
+      {/* Phase 2 Contract Risk Scanner Modal */}
+      <ContractRiskModal
+        isOpen={showRiskModal}
+        onClose={() => setShowRiskModal(false)}
+      />
 
       {/* Security Simulation Modal */}
       {showSimModal && simResult && (

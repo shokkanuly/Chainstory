@@ -34,28 +34,39 @@ function formatDateForCoinGecko(timestamp: string): string {
   return `${dd}-${mm}-${yyyy}`;
 }
 
+import { getPriceFromCache, savePriceToCache } from './indexedDbCache';
+
 export async function getHistoricalPrice(
   symbol: string,
   timestamp: string
 ): Promise<number | null> {
   const upperSymbol = (symbol || 'ETH').toUpperCase();
-
-  // 1. Primary unthrottled path: DefiLlama + Persistent IndexedDB cache
-  const defiLlamaPrice = await getDefiLlamaHistoricalPrice(upperSymbol, timestamp);
-  if (defiLlamaPrice !== null) {
-    return defiLlamaPrice;
-  }
-
-  // 2. Secondary fallback path: CoinGecko API
-  const coinId = TOKEN_ID_MAP[upperSymbol];
-  if (!coinId) return null;
-
   const dateStr = formatDateForCoinGecko(timestamp);
-  const cacheKey = `${coinId}-${dateStr}`;
+  const cacheKey = `${upperSymbol}-${dateStr}`;
 
+  // 0. Check in-memory cache first
   if (priceCache.has(cacheKey)) {
     return priceCache.get(cacheKey)!;
   }
+
+  // 1. Check persistent IndexedDB cache
+  const cachedDbPrice = await getPriceFromCache(upperSymbol, dateStr);
+  if (cachedDbPrice !== null) {
+    priceCache.set(cacheKey, cachedDbPrice);
+    return cachedDbPrice;
+  }
+
+  // 2. Primary unthrottled path: DefiLlama + Persistent IndexedDB cache
+  const defiLlamaPrice = await getDefiLlamaHistoricalPrice(upperSymbol, timestamp);
+  if (defiLlamaPrice !== null) {
+    priceCache.set(cacheKey, defiLlamaPrice);
+    await savePriceToCache(upperSymbol, dateStr, defiLlamaPrice);
+    return defiLlamaPrice;
+  }
+
+  // 3. Secondary fallback path: CoinGecko API
+  const coinId = TOKEN_ID_MAP[upperSymbol];
+  if (!coinId) return null;
 
   try {
     const url = `${BASE_URL}/coins/${coinId}/history?date=${dateStr}&localization=false`;
@@ -67,6 +78,7 @@ export async function getHistoricalPrice(
     const price = data?.market_data?.current_price?.usd ?? null;
     if (price !== null) {
       priceCache.set(cacheKey, price);
+      await savePriceToCache(upperSymbol, dateStr, price);
     }
     return price;
   } catch (err) {
@@ -76,11 +88,23 @@ export async function getHistoricalPrice(
 }
 
 export async function getCurrentEthPrice(): Promise<number | null> {
-  const defiLlamaPrice = await getCurrentDefiLlamaPrice('ETH');
-  if (defiLlamaPrice !== null) return defiLlamaPrice;
+  const todayStr = new Date().toISOString().split('T')[0];
+  const cacheKey = `ETH-current-${todayStr}`;
 
-  const cacheKey = 'ethereum-current';
   if (priceCache.has(cacheKey)) return priceCache.get(cacheKey)!;
+
+  const cachedDbPrice = await getPriceFromCache('ETH', todayStr);
+  if (cachedDbPrice !== null) {
+    priceCache.set(cacheKey, cachedDbPrice);
+    return cachedDbPrice;
+  }
+
+  const defiLlamaPrice = await getCurrentDefiLlamaPrice('ETH');
+  if (defiLlamaPrice !== null) {
+    priceCache.set(cacheKey, defiLlamaPrice);
+    await savePriceToCache('ETH', todayStr, defiLlamaPrice);
+    return defiLlamaPrice;
+  }
 
   try {
     const res = await fetch(`${BASE_URL}/simple/price?ids=ethereum&vs_currencies=usd`);
@@ -88,6 +112,7 @@ export async function getCurrentEthPrice(): Promise<number | null> {
     const price = data?.ethereum?.usd ?? null;
     if (price !== null) {
       priceCache.set(cacheKey, price);
+      await savePriceToCache('ETH', todayStr, price);
     }
     return price;
   } catch {

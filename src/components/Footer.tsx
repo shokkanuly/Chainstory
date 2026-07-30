@@ -24,7 +24,7 @@ export default function Footer() {
               </span>
             </a>
             <p className="text-xs text-muted-foreground leading-relaxed max-w-[220px]">
-              Multi-chain plain-English tax & pre-sign security engine. Browser-first. Privacy-first.
+              Wallet intelligence — understand any wallet's story, draft tax estimates, and risk in plain English.
             </p>
           </div>
 
@@ -55,9 +55,8 @@ export default function Footer() {
           <p className="text-xs text-muted-foreground">
             © 2026 ChainStory. All rights reserved.
           </p>
-          <p className="text-[11px] text-muted-foreground/50 max-w-lg text-center sm:text-right leading-relaxed">
-            Disclaimer: ChainStory provides AI/ML transaction classification and FIFO lot
-            accounting estimates for informational purposes. Not financial or tax advice.
+          <p className="text-[11px] text-muted-foreground/60 max-w-xl text-center sm:text-right leading-relaxed">
+            <strong>Disclaimer:</strong> ChainStory generates a DRAFT Form 8949 / Schedule D estimate to review with a qualified tax professional. This tool is for informational and educational purposes only and does not constitute formal tax or financial advice.
           </p>
         </div>
       </div>
