@@ -5,7 +5,8 @@
   <img src="https://img.shields.io/badge/Gemini_AI-JSON_Schema-4285F4?logo=google&logoColor=white" alt="Gemini" />
   <img src="https://img.shields.io/badge/Chains-5_EVM_Networks-F6851B?logo=ethereum&logoColor=white" alt="Multi-Chain" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License" />
-  <img src="https://img.shields.io/badge/status-prototype-orange" alt="Status: prototype" />
+  <img src="https://img.shields.io/badge/tests-33_passing-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/status-beta-blue" alt="Status: beta" />
 </p>
 
 # ⛓️ ChainStory
@@ -14,7 +15,7 @@
 
 Paste an Ethereum address. Get back a readable history, a draft tax report, a reputation summary, and a risk check — no wallet connection required.
 
-> **Project status: working prototype.** The app builds, runs, and reads real chain data. Parts of it are demo-grade and are called out precisely in [Known Limitations](#known-limitations). Read that section before trusting any number this tool produces — especially the tax output.
+> **Project status: beta.** The app builds clean, lints clean, and passes 33 tests. Chain reads, tax accounting, approval decoding and contract risk lookups all hit real data. What it still does *not* cover is listed honestly in [Known Limitations](#known-limitations) — read it before filing anything based on the tax output.
 
 ---
 
@@ -44,9 +45,10 @@ Raw on-chain data is machine-readable but human-incomprehensible. Most blockchai
 | **Multi-Chain Indexing** | Ethereum, Arbitrum, Base, Optimism, and Polygon from one search bar | Working |
 | **Wallet Intelligence** | Wallet age, activity frequency, contract diversity, and a transparent reputation label | Working |
 | **Counterparty Screening** | Addresses checked against a bundled list of ~13 known mixer / sanctioned / exploit addresses | Working, narrow |
-| **Token Approvals** | Read-only view of `approve()` calls in the wallet's history | Partial — see [#3](#3-the-approvals-panel-mislabels-the-spender) |
-| **Draft Tax Engine** | FIFO cost-basis lots, short/long-term holding periods, gas deductions, Form 8949 CSV + PDF | **Known bug — see [#1](#1-the-fifo-engine-misses-eth-for-token-disposals)** |
-| **Pre-Scan Risk** | Contract upgradeability, admin keys, and proxy patterns explained in plain English | **Demo-only — see [#2](#2-the-pre-scan-risk-scanner-invents-its-data)** |
+| **Demo-data labelling** | A banner whenever displayed figures are synthetic rather than real chain data | Working |
+| **Token Approvals** | Outstanding ERC-20 allowances, decoded from calldata, with revocations netted out | Working |
+| **Draft Tax Engine** | FIFO cost-basis lots, short/long-term holding periods, gas deductions, Form 8949 CSV + PDF | Working — draft only |
+| **Pre-Scan Risk** | Real verification status, deployment age, proxy pattern and ABI-derived admin powers | Working — needs an API key |
 
 ---
 
@@ -73,9 +75,9 @@ Open [http://localhost:5173](http://localhost:5173) and paste any address or ENS
 | `VITE_OPTIMISM_API_KEY` | No | Falls back to Etherscan key |
 | `VITE_POLYGONSCAN_API_KEY` | No | Falls back to Etherscan key |
 
-> [!WARNING]
-> **Without `VITE_ETHERSCAN_API_KEY`, the app does not fail — it shows fabricated demo transactions.**
-> `fetchNormalTransactions()` falls back to `generateMockTransactionsForAddress()` when the key is missing **and** when a network request fails. Those synthetic transactions flow into the timeline, the tax dashboard, and the CSV/PDF export with no visual marker. If your results look plausible but wrong, check your key first. Tracked in [Known Limitations #4](#4-missing-api-keys-silently-produce-fake-data).
+> [!NOTE]
+> **Without `VITE_ETHERSCAN_API_KEY` the app runs on demo data — and says so.**
+> The fetch layer returns a `FetchResult` carrying `source: 'live' | 'demo'`, every synthetic record is flagged `isDemo`, and the workspace shows an amber banner naming the reason whenever the figures on screen are not real chain history. Contract risk lookups return `unknown` rather than a guess. Add a key to analyse a real wallet.
 
 > [!CAUTION]
 > **`VITE_*` variables are compiled into the public JavaScript bundle.** Anything you put in `.env` is readable by every visitor to a deployed build. This is a Vite design constraint, not a bug — but it means you should only ever use free, rate-limited, revocable keys here. Never deploy this with a paid or privileged API key. A production deployment needs a small backend proxy that holds the keys server-side.
@@ -152,7 +154,10 @@ Concurrency is capped at 3 in-flight Gemini calls; Etherscan calls are throttled
 ```
 src/
 ├── services/                       # All logic lives here — components are presentational
-│   ├── etherscan.ts                # Ethereum fetcher, ENS resolution, 429 backoff, mock fallback
+│   ├── chains.ts                   # Dependency-free EVM chain registry
+│   ├── assetResolver.ts            # Single source of truth: which asset moved, how much
+│   ├── methodRegistry.ts           # One selector table — machine slug + human label
+│   ├── etherscan.ts                # Ethereum fetcher, ENS resolution, 429 backoff, demo fallback
 │   ├── multiChain.ts               # 5-chain indexer (ETH, ARB, BASE, OP, POLY)
 │   ├── classifier.ts               # Orchestrator: features → ML/rules → description
 │   ├── featureExtractor.ts         # 10-param tabular feature extraction per tx
@@ -160,11 +165,14 @@ src/
 │   ├── descriptionGenerator.ts     # Gemini JSON Schema + keyword fallback engine
 │   ├── abiDecoder.ts               # Local ABI selector matching
 │   ├── protocolRegistry.ts         # ~22 known DeFi contract addresses
-│   ├── fifoEngine.ts               # FIFO cost-basis accounting  ⚠️ see Known Limitations #1
+│   ├── fifoEngine.ts               # FIFO cost-basis accounting
+│   ├── taxSummary.ts               # Dashboard aggregates
+│   ├── tokenApprovals.ts           # Outstanding allowances, revocations netted out
+│   ├── contractIntel.ts            # Real explorer lookups: verification, age, proxy, ABI
 │   ├── pdfGenerator.ts             # Client-side printable PDF tax report
 │   ├── walletIntelligence.ts       # Reputation, age, diversity, counterparty screening
-│   ├── preventiveScamScanner.ts    # Token risk assessment  ⚠️ see Known Limitations #2
-│   ├── contractRiskExplainer.ts    # Proxy/admin-key explainer (2 addresses hardcoded)
+│   ├── preventiveScamScanner.ts    # Token risk scoring from real signals
+│   ├── contractRiskExplainer.ts    # Proxy / admin-key explainer, ABI-derived
 │   ├── b2bSimulation.ts            # Pre-sign tx simulation API
 │   ├── coingecko.ts                # Price oracle facade
 │   ├── defillama.ts                # Historical price API
@@ -221,64 +229,39 @@ ml/
 
 ## Known Limitations
 
-These are verified, reproducible issues in the current commit — not hypotheticals. They are listed here so nobody discovers them the hard way.
+Verified, reproducible, and current. Everything here is a real constraint, not a hypothetical.
 
-#### 1. The FIFO engine misses ETH-for-token disposals
+#### 1. Tax output is a draft, and the window is 100 transactions
 
-`calculateFifoTaxReport()` derives the asset symbol as `tx.tokenSymbol || 'ETH'`. On an ETH→USDC swap, `tokenSymbol` is `"USDC"`, so the engine tries to retire **USDC** lots using the **ETH** amount. No ETH lot matches, the disposal is dropped, and proceeds are still added to the total — producing a report with proceeds but **zero cost basis**, which overstates taxable gain.
+The FIFO engine is correct for the cases it can see, but it only sees the most recent 100 transactions per wallet. A disposal whose acquisition predates that window has no matching lot, so its cost basis is unknown. The engine reports these as `unmatchedDisposalCount` rather than booking them at zero basis, and the dashboard warns that the gain shown is an upper bound — but the number is still incomplete. Paginating the full history is the fix.
 
-Reproduce it with the repo's own fixture (`npm run validate`, see [Testing](#testing)):
+#### 2. Token cost basis depends on price coverage
 
-```
-totalProceedsUsd : 4000
-totalCostBasisUsd: 0
-Errors: Expected 1 realized disposal transaction, found 0
-```
+Historical prices come from DefiLlama with a CoinGecko fallback, and the symbol map covers ~15 major assets. A long-tail token resolves to `null`, which the dashboard surfaces as "price data unavailable for N transaction(s)". Those transactions contribute no proceeds and no basis.
 
-Related issues in the same function: gas is accrued on **every** transaction including incoming ones the wallet never paid for; the ETH price used for gas is back-derived from the transaction's own `usdValue / ethValue`, which is wrong for token transfers; and `tx.realizedGainLoss` is overwritten inside the lot loop, so a disposal spanning multiple lots only surfaces the last one in the UI.
+#### 3. Contract risk reads metadata, not logic
 
-**Do not file taxes from this output.**
+`contractIntel.ts` reports genuine facts — verification status, deployment date, proxy flag, implementation address, and admin capabilities parsed from the verified ABI. That is a real signal, but it is **not an audit**. It does not analyse contract logic, detect honeypots, or simulate execution. A contract with a clean ABI can still be malicious. Without an explorer API key every field returns `unknown`, which the UI renders as unknown rather than as "no".
 
-#### 2. The pre-scan risk scanner invents its data
+#### 4. Screening lists are small and static
 
-`analyzePreventiveTokenRisk()` has one hardcoded phishing address. For every other address it derives the result from a hash of the address string:
+~13 flagged addresses and ~22 known protocols compiled into the bundle. A "clean" result means "not on our short list," not "not on any sanctions list."
 
-```ts
-const hashVal = hashString(cleanAddr);
-const ageDays = (hashVal % 290) + 10;
-const isVerified = ageDays > 30;
-const riskScore = ageDays < 30 ? 65 : 15;
-```
+#### 5. The classifier is rule-based
 
-It then renders that as *"Verified contract deployed 214 days ago with standard ERC-20 transfer logic."* The contract age, the verification status, and the risk score are all fabricated — no explorer or bytecode lookup happens. A genuinely malicious contract has a ~90% chance of being labelled **safe**.
+`public/models/xgboost_classifier.onnx` is not committed, so `classifyWithML()` never runs and every category comes from `classifyWithRules()`. The app now HEAD-probes for the model before importing `onnxruntime-web`, so the ~27 MB WASM runtime is no longer downloaded when there is nothing to run — but `onnxruntime-web` is still a dependency, so it still appears in `dist/`. Dropping the dependency entirely is what shrinks the build artifact.
 
-`contractRiskExplainer.ts` is similar: it returns real analysis for exactly two hardcoded addresses (a Uniswap router and Lido) and a generic "unverified" response for everything else.
+#### 6. The landing page shows sample data
 
-**Treat the pre-scan modal as a UI demo, not a security control.**
+`App.tsx` initialises with four hardcoded transactions labelled `vitalik.eth` so the workspace is not empty on arrival. They are flagged `isDemo` and covered by the demo banner, so they are labelled rather than disguised — but they are still not your wallet until you search.
 
-#### 3. The approvals panel mislabels the spender
+#### 7. Approvals are limited to the fetched window
 
-In `extractApprovalsFromTransactions()`, `spender` is set to `tx.to`. For an `approve(address spender, uint256 amount)` call, `tx.to` is the **token contract** — the actual spender is the first calldata argument and is never decoded. The panel also never reconciles revocations, so an allowance you already set to zero still appears active.
+An allowance granted before the 100-transaction window will not appear, and the panel reads transaction history rather than querying live `allowance()` state. It is an accurate reading of what it can see, not a complete picture of what is currently approved on-chain.
 
-#### 4. Missing API keys silently produce fake data
+#### 8. `VITE_*` keys are public in a deployed build
 
-Covered in [Environment Variables](#environment-variables) above. The fallback is useful for offline demos but dangerous as a default, because nothing in the UI distinguishes demo data from real chain data.
-
-#### 5. The landing page ships pre-populated mock results
-
-`App.tsx` initialises with `appState = 'done'` and four hardcoded transactions labelled `vitalik.eth`. First-time visitors see a fully rendered timeline and tax dashboard before analysing anything.
-
-#### 6. No automated test suite or CI
-
-There is one fixture-based validation script and no test runner, no `.github/workflows`, and no coverage. The lint pass is clean apart from 11 warnings (unused imports, one `react-hooks/exhaustive-deps`).
-
-#### 7. The bundle ships a 27 MB WASM runtime for a model that isn't there
-
-`onnxruntime-web` pulls in `ort-wasm-simd-threaded.jsep.wasm` (26.8 MB raw / 6.4 MB gzipped) even though `public/models/xgboost_classifier.onnx` is not committed, so inference always falls back to rules. Until a model ships, importing ONNX lazily behind a real feature flag would cut the production bundle by roughly 95%.
-
-#### 8. Duplicated constants
-
-`METHOD_HINTS` is defined twice with different value vocabularies (`classifier.ts` returns prose like `"ERC-20 approve (authorize spending)"`, `featureExtractor.ts` returns slugs like `"erc20_approve"`). Known protocol addresses are spread across `protocolRegistry.ts`, `contractRiskExplainer.ts`, `etherscan.ts`, `knownWalletValidation.ts`, and `App.tsx`.
+Covered under [Environment Variables](#environment-variables). Fine for local use with free keys; a public deployment needs a backend proxy holding the keys server-side.
 
 ---
 
@@ -287,9 +270,10 @@ There is one fixture-based validation script and no test runner, no `.github/wor
 Things ChainStory **does not do** — by design, not by accident:
 
 - **Not a live security monitor.** It's read-only and retrospective. It explains what happened; it doesn't intercept transactions.
-- **Not tax advice.** Tax output is a DRAFT estimate for review with a qualified CPA. It is not "IRS compliant" or "audit-ready" — and per [Known Limitations #1](#1-the-fifo-engine-misses-eth-for-token-disposals) it is currently incorrect for the most common swap shape.
+- **Not tax advice.** Tax output is a DRAFT estimate for review with a qualified CPA. It is not "IRS compliant" or "audit-ready", and it is bounded by the 100-transaction fetch window described in [Known Limitations #1](#1-tax-output-is-a-draft-and-the-window-is-100-transactions).
 - **Not a full-chain analytics platform.** It explains *your wallet* to you. It does not score DeFi protocols, audit smart contracts, model impermanent loss, or analyze DAO governance.
 - **Classifier is rule-based.** The ONNX model file is not shipped. Classification uses deterministic heuristics, with the ML architecture in place as a hook for future training.
+- **Risk analysis is metadata, not audit.** It reads what the explorer publishes. A clean reading is not a safety guarantee.
 - **Screening lists are small and static.** ~13 flagged addresses and ~22 known protocols are compiled into the bundle. A "clean" result means "not on our short list," not "not on any sanctions list."
 
 Stating these boundaries is intentional. A tool that says what it doesn't do is more trustworthy than one that claims to do everything.
@@ -299,21 +283,27 @@ Stating these boundaries is intentional. A tool that says what it doesn't do is 
 ## Scripts
 
 ```bash
-npm run dev       # Start development server (http://localhost:5173)
-npm run build     # TypeScript check + Vite production build
-npm run preview   # Preview production build locally
-npm run lint      # Run oxlint
+npm run dev        # Start development server (http://localhost:5173)
+npm run build      # TypeScript check + Vite production build
+npm run preview    # Preview production build locally
+npm run lint       # Run oxlint
+npm test           # Run the Vitest suite
+npm run test:watch # Vitest in watch mode
+npm run validate   # Run just the end-to-end wallet fixture suite
 ```
 
 ### Testing
 
-There is no test runner yet. The one end-to-end assertion suite runs directly:
+33 tests across four suites, run by `npm test`:
 
-```bash
-npx tsx src/services/knownWallet.test.ts
-```
+| Suite | Covers |
+| :--- | :--- |
+| `services/__tests__/fifoEngine.test.ts` | Asset resolution on swaps, gas charged to the sender only, gas priced from the native rate, multi-lot disposals, unmatched cost basis, the 365-day holding boundary, per-asset lot queues |
+| `services/__tests__/assetResolver.test.ts` | Wei vs. token-decimal scaling, non-18-decimal tokens, chain-native symbols, malformed input |
+| `services/__tests__/approvals.test.ts` | `approve()` calldata decoding, unlimited detection, revocation netting, per-spender tracking, ignoring third-party approvals |
+| `services/knownWallet.test.ts` | End-to-end: story narrative, FIFO report and Form 8949 CSV over a fixed three-transaction fixture |
 
-It checks the story narrative and FIFO CSV output against a fixed three-transaction fixture. **It currently fails** — that failure is the reproduction case for [Known Limitations #1](#1-the-fifo-engine-misses-eth-for-token-disposals). Fixing the asset-symbol bug in `fifoEngine.ts` should make it pass.
+CI runs `lint`, `build` and `test` on every push and pull request — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ### Training the ML Model (Optional)
 
@@ -333,16 +323,26 @@ Then copy the `.onnx` output to `public/models/` so `mlClassifier.ts` can load i
 
 ## Roadmap
 
-Ordered by impact, highest first:
+Shipped:
 
-1. **Fix the FIFO asset-symbol bug** so `npx tsx src/services/knownWallet.test.ts` passes — then charge gas only to the paying wallet, and keep an array of realized lots per transaction.
-2. **Make demo data visible.** Return an explicit `{ source: 'live' | 'demo' }` from the fetch layer and render a banner when it's `demo`, instead of failing open into fabricated transactions.
-3. **Make the risk scanner real or label it.** Either query Etherscan's `getsourcecode` + `getcontractcreation` for genuine verification and age, or badge the modal clearly as a demo until then.
-4. **Decode approval calldata** to extract the real spender address, and net out revocations.
-5. **Add Vitest + a GitHub Actions workflow** running `build`, `lint`, and the fixture suite on every push.
-6. **Lazy-load ONNX** behind a runtime check so the 27 MB WASM payload isn't in the default bundle.
-7. **De-duplicate `METHOD_HINTS`** and consolidate the address registries into `protocolRegistry.ts`.
-8. **Add a backend key proxy** before any public deployment.
+- [x] FIFO asset-symbol fix — ETH-for-token swaps now match their lots
+- [x] Gas charged to the sender only, priced from the native rate
+- [x] Multi-lot disposals emit one row per lot; unmatched basis flagged, not zeroed
+- [x] Demo data labelled everywhere it appears instead of failing open
+- [x] Contract risk reads real explorer data; unknown reported as unknown
+- [x] Approval calldata decoded for the true spender, revocations netted out
+- [x] ONNX runtime no longer downloaded when no model is deployed
+- [x] Vitest suite (33 tests) + GitHub Actions CI
+- [x] `METHOD_HINTS` and chain configs de-duplicated
+
+Next, by impact:
+
+1. **Paginate beyond 100 transactions** so cost basis covers full wallet history — the largest remaining source of tax inaccuracy.
+2. **Query live `allowance()` state** instead of inferring approvals from history, so the panel reflects on-chain truth.
+3. **Widen price coverage** past the ~15-symbol map, with a token-address-based lookup.
+4. **Train and ship the ONNX model**, or drop `onnxruntime-web` to shrink the build artifact.
+5. **Add a backend key proxy** before any public deployment.
+6. **Expand the screening list**, ideally from a maintained source rather than a compiled-in constant.
 
 ---
 
