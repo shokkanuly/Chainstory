@@ -1,5 +1,5 @@
 // src/services/etherscan.ts
-import type { RawTransaction } from '../types';
+import type { FetchResult, RawTransaction } from '../types';
 
 const BASE_URL = 'https://api.etherscan.io/api';
 
@@ -12,6 +12,9 @@ function getApiKey(): string | null {
 }
 
 // Helper to generate realistic mock transactions when no API key or network fallback occurs
+// Synthetic transactions for offline/no-key demos. Every record is flagged
+// `isDemo` so the UI can label it — callers must never present these as
+// real chain history.
 function generateMockTransactionsForAddress(address: string): RawTransaction[] {
   const cleanAddr = address.toLowerCase();
   const now = Math.floor(Date.now() / 1000);
@@ -33,6 +36,7 @@ function generateMockTransactionsForAddress(address: string): RawTransaction[] {
       txreceipt_status: '1',
       functionName: 'transfer(address to, uint256 amount)',
       walletLabel: address,
+      isDemo: true,
     },
     {
       hash: `0x7b3e104f${cleanAddr.slice(2, 10)}90412`,
@@ -52,6 +56,7 @@ function generateMockTransactionsForAddress(address: string): RawTransaction[] {
       tokenSymbol: 'USDC',
       tokenDecimal: '6',
       walletLabel: address,
+      isDemo: true,
     },
     {
       hash: `0x4c99021a${cleanAddr.slice(2, 10)}51182`,
@@ -68,6 +73,7 @@ function generateMockTransactionsForAddress(address: string): RawTransaction[] {
       txreceipt_status: '1',
       functionName: 'claimRewards()',
       walletLabel: address,
+      isDemo: true,
     },
     {
       hash: `0x9e812d44${cleanAddr.slice(2, 10)}11094`,
@@ -87,6 +93,7 @@ function generateMockTransactionsForAddress(address: string): RawTransaction[] {
       tokenSymbol: 'BAYC',
       contractAddress: '0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d',
       walletLabel: address,
+      isDemo: true,
     },
     {
       hash: `0x3f5c9102${cleanAddr.slice(2, 10)}33211`,
@@ -103,11 +110,11 @@ function generateMockTransactionsForAddress(address: string): RawTransaction[] {
       txreceipt_status: '1',
       functionName: 'transfer(address to, uint256 amount)',
       walletLabel: address,
+      isDemo: true,
     },
   ];
 }
 
-const requestQueue: Promise<any>[] = [];
 const MIN_REQUEST_INTERVAL_MS = 250; // 4 requests/sec rate limit buffer
 let lastRequestTime = 0;
 
@@ -169,11 +176,15 @@ export async function fetchWithRetry(url: string, retries = 3, baseDelayMs = 100
   }
 }
 
-export async function fetchNormalTransactions(address: string): Promise<RawTransaction[]> {
+export async function fetchNormalTransactions(address: string): Promise<FetchResult> {
   const apiKey = getApiKey();
   if (!apiKey) {
-    console.info(`No VITE_ETHERSCAN_API_KEY configured. Providing rich demo transactions for ${address}`);
-    return generateMockTransactionsForAddress(address);
+    console.info(`No VITE_ETHERSCAN_API_KEY configured. Providing demo transactions for ${address}`);
+    return {
+      transactions: generateMockTransactionsForAddress(address),
+      source: 'demo',
+      demoReason: 'No VITE_ETHERSCAN_API_KEY configured',
+    };
   }
 
   const url = new URL(BASE_URL);
@@ -190,14 +201,29 @@ export async function fetchNormalTransactions(address: string): Promise<RawTrans
   try {
     const data = await fetchWithRetry(url.toString());
     if (data.status === '0') {
-      if (data.message === 'No transactions found') return [];
-      console.warn(`Etherscan notice: ${data.message || data.result}`);
-      return generateMockTransactionsForAddress(address);
+      // An empty history is a real, correct answer — not a reason for demo data.
+      if (data.message === 'No transactions found') {
+        return { transactions: [], source: 'live' };
+      }
+      const notice = String(data.message || data.result);
+      console.warn(`Etherscan notice: ${notice}`);
+      return {
+        transactions: generateMockTransactionsForAddress(address),
+        source: 'demo',
+        demoReason: `Explorer returned: ${notice}`,
+      };
     }
-    return (data.result as RawTransaction[]).map(tx => ({ ...tx, walletLabel: address }));
+    return {
+      transactions: (data.result as RawTransaction[]).map(tx => ({ ...tx, walletLabel: address })),
+      source: 'live',
+    };
   } catch (err) {
     console.warn(`Etherscan fetch failed for ${address}, falling back to demo data`, err);
-    return generateMockTransactionsForAddress(address);
+    return {
+      transactions: generateMockTransactionsForAddress(address),
+      source: 'demo',
+      demoReason: err instanceof Error ? err.message : 'Explorer request failed',
+    };
   }
 }
 
@@ -220,6 +246,8 @@ export async function fetchTokenTransfers(address: string): Promise<RawTransacti
     return (data.result as RawTransaction[]).map(tx => ({
       ...tx,
       walletLabel: address,
+      // `value` here is in the token's own decimals, not wei. See assetResolver.
+      isTokenTransfer: true,
     }));
   } catch (err) {
     console.warn("Failed to fetch token transfers", err);
@@ -227,7 +255,7 @@ export async function fetchTokenTransfers(address: string): Promise<RawTransacti
   }
 }
 
-export async function fetchMultiWalletTransactions(addresses: string[]): Promise<RawTransaction[]> {
+export async function fetchMultiWalletTransactions(addresses: string[]): Promise<FetchResult> {
   const uniqueAddresses = Array.from(new Set(addresses.map(a => a.toLowerCase())));
 
   const results = await Promise.all(
@@ -238,33 +266,40 @@ export async function fetchMultiWalletTransactions(addresses: string[]): Promise
         if (resolved) targetAddr = resolved;
       }
 
-      const [normalTxs, tokenTxs] = await Promise.all([
+      const [normalResult, tokenTxs] = await Promise.all([
         fetchNormalTransactions(targetAddr),
         fetchTokenTransfers(targetAddr).catch(() => [] as RawTransaction[]),
       ]);
 
       const txMap = new Map<string, RawTransaction>();
-      for (const tx of normalTxs) txMap.set(tx.hash, { ...tx, walletLabel: addr });
+      for (const tx of normalResult.transactions) txMap.set(tx.hash, { ...tx, walletLabel: addr });
       for (const tx of tokenTxs) {
         if (!txMap.has(tx.hash)) txMap.set(tx.hash, { ...tx, walletLabel: addr });
       }
 
-      return Array.from(txMap.values());
+      return { transactions: Array.from(txMap.values()), result: normalResult };
     })
   );
 
-  const merged = results.flat();
   // Deduplicate across wallets if multiple wallets participated in same tx
   const finalMap = new Map<string, RawTransaction>();
-  for (const tx of merged) {
+  for (const tx of results.flatMap(r => r.transactions)) {
     if (!finalMap.has(tx.hash)) {
       finalMap.set(tx.hash, tx);
     }
   }
 
-  return Array.from(finalMap.values()).sort(
-    (a, b) => parseInt(b.timeStamp) - parseInt(a.timeStamp)
-  );
+  // If any wallet fell back to demo data the whole batch is untrustworthy,
+  // so report the batch as demo rather than quietly mixing the two.
+  const demoResult = results.find(r => r.result.source === 'demo');
+
+  return {
+    transactions: Array.from(finalMap.values()).sort(
+      (a, b) => parseInt(b.timeStamp) - parseInt(a.timeStamp)
+    ),
+    source: demoResult ? 'demo' : 'live',
+    demoReason: demoResult?.result.demoReason,
+  };
 }
 
 export async function resolveENS(name: string): Promise<string | null> {
@@ -297,10 +332,9 @@ export function parseMultipleAddresses(input: string): string[] {
     .filter(item => item.length > 0);
 }
 
-export function weiToEth(wei: string): number {
-  if (!wei || isNaN(Number(wei))) return 0;
-  return parseFloat(wei) / 1e18;
-}
+// Canonical implementation lives in assetResolver — re-exported here so the
+// many existing `import { weiToEth } from './etherscan'` call sites keep working.
+export { weiToEth } from './assetResolver';
 
 export function formatAddress(address: string): string {
   if (!address) return '—';

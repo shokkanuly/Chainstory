@@ -14,6 +14,8 @@ import { getHistoricalPrice } from './coingecko';
 import { extractFeatures } from './featureExtractor';
 import { classifyWithML, classifyWithRules } from './mlClassifier';
 import { generateDescription } from './descriptionGenerator';
+import { getMethodLabel } from './methodRegistry';
+import { resolveAsset } from './assetResolver';
 
 // -------------------------------------------------------------------
 // Legacy Gemini classifier fallback
@@ -32,37 +34,13 @@ function getGeminiKey(): string {
   return key;
 }
 
-const METHOD_HINTS: Record<string, string> = {
-  '0xa9059cbb': 'ERC-20 token transfer',
-  '0x23b872dd': 'ERC-20 transferFrom',
-  '0x095ea7b3': 'ERC-20 approve (authorize spending)',
-  '0x7ff36ab5': 'Uniswap swap ETH for tokens',
-  '0x38ed1739': 'Uniswap swap tokens for tokens',
-  '0x18cbafe5': 'Uniswap swap tokens for ETH',
-  '0x5ae401dc': 'Uniswap V3 multicall (swap)',
-  '0xb6f9de95': 'Uniswap V3 swap',
-  '0x3593564c': 'Uniswap Universal Router swap',
-  '0x12aa3caf': '1inch swap',
-  '0xe449022e': '1inch swap',
-  '0xa0712d68': 'Mint (NFT or token)',
-  '0x1249c58b': 'Mint NFT',
-  '0x6a627842': 'Mint',
-  '0x4e71d92d': 'Claim rewards / staking rewards',
-  '0x3d18b912': 'Claim staking rewards',
-  '0x2e1a7d4d': 'Unwrap WETH',
-  '0xd0e30db0': 'Wrap ETH (deposit to WETH)',
-  '0xe8eda9df': 'Aave deposit',
-  '0x69328dec': 'Aave withdraw',
-  '0x573ade81': 'Aave repay',
-  '0x': 'Simple ETH transfer (no contract call)',
-};
 
 function buildLegacyPrompt(tx: RawTransaction, ethUsdPrice: number | null, walletAddress: string): string {
   const ethValue = weiToEth(tx.value);
   const usdEstimateText = ethUsdPrice !== null ? `~$${(ethValue * ethUsdPrice).toFixed(2)} USD` : 'unknown price';
   const direction = tx.from.toLowerCase() === walletAddress.toLowerCase() ? 'outgoing' : 'incoming';
   const inputPrefix = tx.input?.slice(0, 10) || '0x';
-  const methodHint = METHOD_HINTS[inputPrefix] || `Contract interaction (${inputPrefix})`;
+  const methodHint = getMethodLabel(tx.input) || `Contract interaction (${inputPrefix})`;
   const tokenInfo = tx.tokenSymbol ? `Token: ${tx.tokenName} (${tx.tokenSymbol})` : '';
 
   return `You are a blockchain transaction classifier for a crypto tax app. Given a raw Ethereum transaction, output ONLY valid JSON with these exact fields: description, category, confidence.
@@ -167,6 +145,7 @@ export async function classifyTransaction(
 ): Promise<ClassifiedTransaction> {
   const ethValue = weiToEth(tx.value);
   const date = new Date(parseInt(tx.timeStamp) * 1000);
+  const asset = resolveAsset(tx);
 
   const base: ClassifiedTransaction = {
     ...tx,
@@ -175,14 +154,22 @@ export async function classifyTransaction(
     confidence: 0,
     usdValue: null,
     ethValue,
+    assetSymbol: asset.symbol,
+    assetAmount: asset.amount,
+    ethPriceUsd: null,
     status: 'classifying',
     date,
   };
 
   try {
-    // Step 1: Get historical ETH price (DefiLlama + IndexedDB)
-    const ethUsdPrice = await getHistoricalPrice('ETH', tx.timeStamp);
-    const usdValue = ethUsdPrice !== null ? ethValue * ethUsdPrice : null;
+    // Step 1: Price the asset that actually moved, and — separately — the
+    // native token, which is what gas is denominated in. For a native-asset
+    // transfer these are the same lookup and the cache collapses them.
+    const [assetPrice, ethUsdPrice] = await Promise.all([
+      getHistoricalPrice(asset.symbol, tx.timeStamp),
+      getHistoricalPrice('ETH', tx.timeStamp),
+    ]);
+    const usdValue = assetPrice !== null ? asset.amount * assetPrice : null;
 
     // Step 2: Extract features (instant, local)
     const features = extractFeatures(tx, walletAddress, ethUsdPrice);
@@ -213,8 +200,7 @@ export async function classifyTransaction(
       );
     } catch (descErr) {
       console.warn('Description generation failed, using fallback', descErr);
-      const inputPrefix = tx.input?.slice(0, 10) || '0x';
-      const methodHint = METHOD_HINTS[inputPrefix];
+      const methodHint = getMethodLabel(tx.input);
       description = methodHint
         ? `${methodHint} — ${ethValue.toFixed(4)} ETH`
         : `${category} transaction (${ethValue.toFixed(4)} ETH)`;
@@ -228,6 +214,7 @@ export async function classifyTransaction(
       category,
       confidence,
       usdValue,
+      ethPriceUsd: ethUsdPrice,
       status: 'classified',
     };
 
@@ -248,6 +235,7 @@ export async function classifyTransaction(
         category: result.category,
         confidence: result.confidence,
         usdValue,
+        ethPriceUsd: ethUsdPrice,
         status: 'classified',
       };
 

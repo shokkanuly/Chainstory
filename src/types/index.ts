@@ -5,6 +5,20 @@ export type ClassificationStatus = 'pending' | 'classifying' | 'classified' | 'e
 export type TimelineViewMode = 'classified' | 'raw';
 export type ChainId = 'ethereum' | 'arbitrum' | 'base' | 'optimism' | 'polygon';
 
+/**
+ * Where a batch of transactions came from. 'demo' means synthetic data
+ * generated locally because no API key was configured or the explorer
+ * request failed — it must never be presented as real chain history.
+ */
+export type DataSource = 'live' | 'demo';
+
+export interface FetchResult {
+  transactions: RawTransaction[];
+  source: DataSource;
+  /** Why we fell back to demo data, if we did. */
+  demoReason?: string;
+}
+
 export interface ChainConfig {
   id: ChainId;
   name: string;
@@ -37,6 +51,14 @@ export interface RawTransaction {
   chainId?: ChainId;
   isInternal?: boolean;
   decodedAbiMethod?: string;
+  /**
+   * True when this record came from the explorer's `tokentx` endpoint, which
+   * means `value` is denominated in the token's own decimals — NOT in wei.
+   * Asset resolution depends on this; see services/assetResolver.ts.
+   */
+  isTokenTransfer?: boolean;
+  /** True when this record was synthesised locally rather than fetched. */
+  isDemo?: boolean;
 }
 
 export interface ClassifiedTransaction extends RawTransaction {
@@ -47,7 +69,14 @@ export interface ClassifiedTransaction extends RawTransaction {
   ethValue: number;
   status: ClassificationStatus;
   date: Date;
-  realizedGainLoss?: RealizedGainLoss | null;
+  /** The asset actually moved by this transaction (e.g. 'ETH', 'USDC'). */
+  assetSymbol: string;
+  /** How much of `assetSymbol` moved, in whole units. */
+  assetAmount: number;
+  /** Native-token price in USD at this transaction's timestamp, for gas costing. */
+  ethPriceUsd: number | null;
+  /** One entry per tax lot consumed — a disposal can span several lots. */
+  realizedGainLosses?: RealizedGainLoss[];
 }
 
 export interface TaxSummary {
@@ -116,6 +145,14 @@ export interface FifoAccountingReport {
   totalGasExpenseUsd: number;
   netCapitalGainLossUsd: number;
   missingPriceCount: number;
+  /**
+   * Disposals with no matching acquisition lot — usually because the
+   * acquisition predates the fetch window. Their cost basis is unknown, so
+   * the reported gain for them is an upper bound, not a fact.
+   */
+  unmatchedDisposalCount: number;
+  /** Quantity of asset disposed with no known cost basis, keyed by symbol. */
+  unmatchedDisposalAmounts: Record<string, number>;
   realizedTransactions: RealizedGainLoss[];
   remainingOpenLots: TaxLot[];
 }

@@ -16,16 +16,18 @@ import TransactionTimeline from './components/TransactionTimeline';
 import WalletIntelligenceCard from './components/WalletIntelligenceCard';
 import TokenApprovalsPanel from './components/TokenApprovalsPanel';
 import ContractRiskModal from './components/ContractRiskModal';
-import type { ChainId, ClassifiedTransaction, RawTransaction, B2BSimulationResult } from './types';
-import { fetchMultiWalletTransactions, weiToEth, formatAddress } from './services/etherscan';
+import type { ChainId, ClassifiedTransaction, DataSource, RawTransaction, B2BSimulationResult } from './types';
+import { fetchMultiWalletTransactions, weiToEth } from './services/etherscan';
 import { classifyAll } from './services/classifier';
 import { calculateFifoTaxReport } from './services/fifoEngine';
 import { simulateTransactionPayload } from './services/b2bSimulation';
-import { CHAIN_CONFIGS } from './services/multiChain';
+import { resolveAsset } from './services/assetResolver';
 import './App.css';
 
 type AppState = 'idle' | 'fetching' | 'classifying' | 'done' | 'error';
 
+// Sample data shown before the visitor searches anything. Flagged `isDemo`
+// so the same banner that covers explorer fallbacks also covers this.
 const INITIAL_MOCK_TRANSACTIONS: ClassifiedTransaction[] = [
   {
     hash: '0xmockhash1',
@@ -50,6 +52,10 @@ const INITIAL_MOCK_TRANSACTIONS: ClassifiedTransaction[] = [
     date: new Date('2026-03-03T12:00:00Z'),
     walletLabel: 'vitalik.eth',
     chainId: 'ethereum',
+    assetSymbol: 'ETH',
+    assetAmount: 2.0,
+    ethPriceUsd: 1700,
+    isDemo: true,
   },
   {
     hash: '0xmockhash2',
@@ -74,6 +80,10 @@ const INITIAL_MOCK_TRANSACTIONS: ClassifiedTransaction[] = [
     date: new Date('2026-02-26T14:30:00Z'),
     walletLabel: 'vitalik.eth',
     chainId: 'ethereum',
+    assetSymbol: 'ETH',
+    assetAmount: 0.045,
+    ethPriceUsd: 2700,
+    isDemo: true,
   },
   {
     hash: '0xmockhash3',
@@ -98,6 +108,10 @@ const INITIAL_MOCK_TRANSACTIONS: ClassifiedTransaction[] = [
     date: new Date('2026-02-04T09:15:00Z'),
     walletLabel: 'vitalik.eth',
     chainId: 'ethereum',
+    assetSymbol: 'ETH',
+    assetAmount: 1.5,
+    ethPriceUsd: 2700,
+    isDemo: true,
   },
   {
     hash: '0xmockhash4',
@@ -122,6 +136,10 @@ const INITIAL_MOCK_TRANSACTIONS: ClassifiedTransaction[] = [
     date: new Date('2026-01-29T18:45:00Z'),
     walletLabel: 'vitalik.eth',
     chainId: 'ethereum',
+    assetSymbol: 'ETH',
+    assetAmount: 4.2,
+    ethPriceUsd: 2700,
+    isDemo: true,
   },
 ];
 
@@ -137,6 +155,10 @@ export default function App() {
   const [showSimModal, setShowSimModal] = useState(false);
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [simResult, setSimResult] = useState<B2BSimulationResult | null>(null);
+  const [dataSource, setDataSource] = useState<DataSource>('demo');
+  const [demoReason, setDemoReason] = useState<string | undefined>(
+    'Sample wallet shown until you run a search'
+  );
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -182,7 +204,10 @@ export default function App() {
     setAppState('fetching');
 
     try {
-      const allFetchedTxs = await fetchMultiWalletTransactions(addresses);
+      const fetchResult = await fetchMultiWalletTransactions(addresses);
+      setDataSource(fetchResult.source);
+      setDemoReason(fetchResult.demoReason);
+      const allFetchedTxs = fetchResult.transactions;
       const totalCount = allFetchedTxs.length;
       const cappedTxs = allFetchedTxs.slice(0, 100);
       setIsCapped(totalCount > 100);
@@ -198,6 +223,7 @@ export default function App() {
 
       const initialTxs: ClassifiedTransaction[] = cappedTxs.map(tx => {
         const ethVal = weiToEth(tx.value);
+        const asset = resolveAsset(tx);
         return {
           ...tx,
           description: tx.functionName
@@ -209,6 +235,9 @@ export default function App() {
           confidence: 0,
           usdValue: null,
           ethValue: ethVal,
+          assetSymbol: asset.symbol,
+          assetAmount: asset.amount,
+          ethPriceUsd: null,
           status: 'pending',
           date: new Date(parseInt(tx.timeStamp) * 1000),
           chainId: tx.chainId || 'ethereum',
@@ -305,6 +334,21 @@ export default function App() {
             connectedWallet={connectedWallet}
             onWalletConnectStateChange={setConnectedWallet}
           />
+
+          {/* Data provenance banner — demo data must never look like chain data */}
+          {dataSource === 'demo' && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 p-4 text-amber-300 text-sm flex items-start gap-3">
+              <span className="text-base leading-none mt-0.5">⚠️</span>
+              <div>
+                <div className="font-semibold">Showing demo data — not real chain history.</div>
+                <div className="text-amber-300/75 text-xs mt-1">
+                  {demoReason ?? 'The explorer request could not be completed.'}
+                  {' '}Figures below, including the tax report, are synthetic. Add a
+                  {' '}<code className="font-mono">VITE_ETHERSCAN_API_KEY</code> to analyse a real wallet.
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Error Banner */}
           {error && (

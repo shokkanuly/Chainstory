@@ -7,7 +7,7 @@ import { analyzePreventiveTokenRisk } from './preventiveScamScanner';
 import { explainContractPermissionRisk } from './contractRiskExplainer';
 import { calculateFifoTaxReport } from './fifoEngine';
 import { fetchChainTransactions, CHAIN_CONFIGS } from './multiChain';
-import type { ClassifiedTransaction, RawTransaction } from '../types';
+import type { ClassifiedTransaction } from '../types';
 
 export async function runStressTest() {
   console.log('=== STARTING CHAINSTORY STRESS TEST ===\n');
@@ -38,6 +38,9 @@ export async function runStressTest() {
     confidence: 0.9,
     usdValue: 10000,
     ethValue: 3.5,
+    assetSymbol: 'ETH',
+    assetAmount: 3.5,
+    ethPriceUsd: 2857.14,
     status: 'classified',
     value: '3500000000000000000',
     gas: '21000',
@@ -72,6 +75,9 @@ export async function runStressTest() {
     confidence: 0.99,
     usdValue: 2000,
     ethValue: 1.0,
+    assetSymbol: 'ETH',
+    assetAmount: 1.0,
+    ethPriceUsd: 2000,
     status: 'classified',
     value: '1000000000000000000',
     gas: '100000',
@@ -128,6 +134,9 @@ export async function runStressTest() {
     confidence: 0.8,
     usdValue: null, // MISSING PRICE
     ethValue: 1.0,
+    assetSymbol: 'ETH',
+    assetAmount: 1.0,
+    ethPriceUsd: null,
     status: 'classified',
     value: '1000000000000000000',
     gas: '21000',
