@@ -199,6 +199,14 @@ src/
 │                                   # HowItWorks, Security, Pricing, Services,
 │                                   # Portfolio, Testimonials, Contact, CTA, Footer
 │
+├── prototype/        v2 app shell at /v2, see docs/design-v2.md
+│   ├── tokens.css                Scoped design tokens
+│   ├── PrototypeApp.tsx          Shell: rail, top bar, tabs
+│   ├── panels.tsx                Activity, taxes, approvals, risk
+│   ├── primitives.tsx            Avatar, chain mark, pills
+│   ├── format.ts                 Address and currency formatters
+│   └── sampleData.ts             Demo wallet
+│
 ├── pages/            Home.tsx, NotFound.tsx
 ├── types/index.ts    All shared TypeScript interfaces
 ├── App.tsx           Application shell + analysis orchestration
@@ -284,6 +292,8 @@ Stating these boundaries is intentional. A tool that says what it doesn't do is 
 
 ```bash
 npm run dev        # Start development server (http://localhost:5173)
+                   #   /    current UI
+                   #   /v2  redesigned app shell (prototype)
 npm run build      # TypeScript check + Vite production build
 npm run preview    # Preview production build locally
 npm run lint       # Run oxlint
