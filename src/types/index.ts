@@ -93,6 +93,8 @@ export interface TaxSummary {
   netTaxableIncome?: number;
   totalCostBasis?: number;
   missingPriceCount?: number;
+  /** Disposals whose acquisition predates the fetch window. */
+  unmatchedDisposalCount?: number;
 }
 
 export interface FilterOption {

@@ -11,7 +11,8 @@ import CTA from '@/components/CTA';
 import Footer from '@/components/Footer';
 
 import WalletInput from './components/WalletInput';
-import TaxDashboard, { computeSummary } from './components/TaxDashboard';
+import TaxDashboard from './components/TaxDashboard';
+import { computeSummary } from './services/taxSummary';
 import TransactionTimeline from './components/TransactionTimeline';
 import WalletIntelligenceCard from './components/WalletIntelligenceCard';
 import TokenApprovalsPanel from './components/TokenApprovalsPanel';
@@ -169,7 +170,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showSimModal]);
+  }, [showSimModal, showRiskModal]);
 
   const filteredTransactions = useMemo(() => {
     if (selectedChain === 'all') return transactions;
@@ -192,6 +193,7 @@ export default function App() {
       realizedGainTotal: fifoReport.totalRealizedGainUsd,
       realizedLossTotal: fifoReport.totalRealizedLossUsd,
       totalCostBasis: fifoReport.totalCostBasisUsd,
+      unmatchedDisposalCount: fifoReport.unmatchedDisposalCount,
     };
   }, [filteredTransactions, fifoReport]);
 

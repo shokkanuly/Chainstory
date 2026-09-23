@@ -59,25 +59,60 @@ export interface MLClassificationResult {
   source: 'ml' | 'fallback';
 }
 
+const MODEL_URL = '/models/xgboost_classifier.onnx';
+
+/**
+ * Check whether a trained model is actually deployed, WITHOUT importing the
+ * ONNX runtime.
+ *
+ * This ordering matters. `onnxruntime-web` pulls in a ~27 MB WASM backend
+ * (~6.4 MB gzipped), and `InferenceSession.create` initialises that backend
+ * before it discovers the model file is missing. Since no model is committed
+ * to this repo, the old code paid the full download on every session just to
+ * fall through to the rule-based classifier. A one-request HEAD check costs
+ * nothing and skips the import entirely when there is nothing to run.
+ */
+async function isModelDeployed(): Promise<boolean> {
+  try {
+    const res = await fetch(MODEL_URL, { method: 'HEAD' });
+    if (!res.ok) return false;
+    // A dev server may answer 200 with index.html for an unknown path.
+    const contentType = res.headers.get('content-type') ?? '';
+    return !contentType.includes('text/html');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Attempt to load the ONNX model from public/models/.
- * Called lazily on first classification request.
+ * Called lazily on first classification request; the result is memoised so
+ * the probe runs at most once per page load.
  */
 async function loadOnnxModel(): Promise<boolean> {
   if (onnxLoadAttempted) return onnxSession !== null;
   onnxLoadAttempted = true;
 
+  if (!(await isModelDeployed())) {
+    onnxLoadError = `No model at ${MODEL_URL}`;
+    console.info(
+      'No ONNX model deployed — using the rule-based classifier. ' +
+        'Train one with ml/train_classifier.py and copy it to public/models/ to enable ML inference. ' +
+        'The ONNX runtime was not downloaded.'
+    );
+    return false;
+  }
+
   try {
-    // Dynamic import so the app doesn't crash if onnxruntime-web isn't installed
+    // Dynamic import so the runtime is fetched only when a model exists.
     const ort = await import('onnxruntime-web');
-    onnxSession = await ort.InferenceSession.create('/models/xgboost_classifier.onnx');
+    onnxSession = await ort.InferenceSession.create(MODEL_URL);
     console.log('✅ ONNX model loaded successfully — ML classification active');
     return true;
   } catch (err) {
     onnxLoadError = err instanceof Error ? err.message : String(err);
     console.warn(
-      '⚠️ ONNX model not available — falling back to Gemini classification.',
-      'This is expected if the model has not been trained yet.',
+      '⚠️ ONNX model present but failed to load — falling back to the rule-based classifier.',
       onnxLoadError
     );
     return false;

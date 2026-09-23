@@ -106,14 +106,14 @@ export async function runStressTest() {
   const scamTokenAddr = '0x000000000000000000000000000000000000bad1';
   const unknownContractAddr = '0x9999999999999999999999999999999999999999';
 
-  const scamResult = analyzePreventiveTokenRisk(scamTokenAddr);
+  const scamResult = await analyzePreventiveTokenRisk(scamTokenAddr);
   console.log('Scam Token Analysis Output:');
   console.log('Symbol:', scamResult.tokenSymbol);
   console.log('Risk Score:', scamResult.riskScore);
   console.log('Recommendation:', scamResult.recommendation);
   console.log('Summary Copy:', scamResult.plainEnglishSummary);
 
-  const contractResult = explainContractPermissionRisk(unknownContractAddr);
+  const contractResult = await explainContractPermissionRisk(unknownContractAddr);
   console.log('\nUnknown Contract Explainer Output:');
   console.log('Proxy Type:', contractResult.proxyType);
   console.log('Can Upgrade Code:', contractResult.canUpgradeCode);

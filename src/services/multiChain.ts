@@ -18,13 +18,13 @@ export function getChainApiKey(chainId: ChainId = 'ethereum'): string | null {
       if (typeof import.meta !== 'undefined' && import.meta?.env) {
         return import.meta.env[key];
       }
-    } catch (_) {}
+    } catch { /* env source unavailable */ }
     try {
       const gProcess = (globalThis as any).process;
       if (gProcess && gProcess.env) {
         return gProcess.env[key];
       }
-    } catch (_) {}
+    } catch { /* env source unavailable */ }
     return undefined;
   };
 

@@ -1,6 +1,6 @@
 // src/components/Hero.tsx — Premium Blockchair-Inspired Hero
 import { motion } from 'framer-motion';
-import { ArrowRight, ExternalLink, Shield, Zap, Search } from 'lucide-react';
+import { ArrowRight, Shield, Zap, Search } from 'lucide-react';
 
 interface Props {
   onAnalyze?: (addresses: string[]) => void;
