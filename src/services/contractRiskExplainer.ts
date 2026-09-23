@@ -1,67 +1,166 @@
 // src/services/contractRiskExplainer.ts
 //
-// Phase 2B — Plain-English Contract Risk Explainer (#14)
-// Explains smart contract admin keys, proxy upgradeability, and permission risks in plain English before approving.
+// Plain-English explanation of what a contract's owner can do to you after
+// you approve it: upgrade the code, pause transfers, mint supply.
+//
+// Previously this returned real analysis for exactly two hardcoded addresses
+// and a generic "unverified" answer for everything else. It now reads the
+// verified ABI and the EIP-1967 proxy flag from the explorer, and reports
+// 'unknown' — not 'low risk' — when it cannot determine an answer.
+
+import type { ChainId } from '../types';
+import { fetchContractIntel, isAddressShaped, type ContractIntel } from './contractIntel';
+
+export type ProxyType =
+  | 'Upgradeable Proxy'
+  | 'Direct Immutable Contract'
+  | 'Externally Owned Account'
+  | 'Unknown / Unverified';
 
 export interface ContractPermissionRisk {
   contractAddress: string;
-  isProxy: boolean;
-  proxyType?: 'EIP-1967 Transparent Proxy' | 'EIP-1167 Minimal Proxy' | 'EIP-2535 Diamond' | 'Direct Immutable Contract' | 'Unknown / Unverified';
-  hasAdminKey: boolean;
-  adminAddress?: string;
-  canUpgradeCode: boolean;
-  canPauseTransfers: boolean;
-  canMintTokens: boolean;
+  contractName: string | null;
+  isProxy: boolean | null;
+  proxyType: ProxyType;
+  implementationAddress: string | null;
+  hasAdminKey: boolean | null;
+  canUpgradeCode: boolean | null;
+  canPauseTransfers: boolean | null;
+  canMintTokens: boolean | null;
+  /** Function names from the ABI that justify the flags above. */
+  evidence: string[];
   plainEnglishExplanation: string;
-  riskSeverity: 'low' | 'medium' | 'high';
+  riskSeverity: 'low' | 'medium' | 'high' | 'unknown';
+  intel: ContractIntel | null;
 }
 
-export function explainContractPermissionRisk(contractInput: string): ContractPermissionRisk {
-  const cleanAddr = contractInput.toLowerCase().trim();
+function unknownResult(address: string, reason: string): ContractPermissionRisk {
+  // Reasons arrive with and without terminal punctuation; normalise so the
+  // sentences below always join cleanly.
+  const sentence = /[.!?]$/.test(reason.trim()) ? reason.trim() : `${reason.trim()}.`;
+  return {
+    contractAddress: address,
+    contractName: null,
+    isProxy: null,
+    proxyType: 'Unknown / Unverified',
+    implementationAddress: null,
+    hasAdminKey: null,
+    canUpgradeCode: null,
+    canPauseTransfers: null,
+    canMintTokens: null,
+    evidence: [],
+    plainEnglishExplanation:
+      `PERMISSIONS UNKNOWN: ${sentence} Nothing here should be read as a clean result — ` +
+      'avoid granting unlimited allowances to a contract you cannot inspect.',
+    riskSeverity: 'unknown',
+    intel: null,
+  };
+}
 
-  // Known DeFi router contracts (e.g. Uniswap V3, Aave, Lido)
-  const IS_UNISWAP = cleanAddr === '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad' || cleanAddr === '0x7a250d5630b4cf539739df2c5dacb4c659f2488d';
-  const IS_LIDO = cleanAddr === '0xae7ab96520de3a18e5e111b5eaab095312d7fe84';
+export async function explainContractPermissionRisk(
+  contractInput: string,
+  chainId: ChainId = 'ethereum'
+): Promise<ContractPermissionRisk> {
+  const clean = (contractInput || '').trim();
 
-  if (IS_UNISWAP) {
+  if (!isAddressShaped(clean)) {
+    return unknownResult(clean, 'That is not a valid 42-character EVM address.');
+  }
+
+  const intel = await fetchContractIntel(clean, chainId);
+
+  if (intel.status === 'unavailable') {
     return {
-      contractAddress: contractInput,
+      ...unknownResult(clean, intel.unavailableReason ?? 'The explorer was unreachable.'),
+      intel,
+    };
+  }
+
+  if (intel.isContract === false) {
+    return {
+      contractAddress: clean,
+      contractName: null,
       isProxy: false,
-      proxyType: 'Direct Immutable Contract',
+      proxyType: 'Externally Owned Account',
+      implementationAddress: null,
       hasAdminKey: false,
       canUpgradeCode: false,
       canPauseTransfers: false,
       canMintTokens: false,
-      plainEnglishExplanation: 'IMMUTABLE CONTRACT: This contract code cannot be upgraded or altered by an owner. Approved funds can only be spent according to exact trade parameters you specify.',
+      evidence: [],
+      plainEnglishExplanation:
+        'WALLET ADDRESS: There is no contract code at this address, so there are no contract ' +
+        'permissions to grant. Sending here transfers directly to whoever holds the private key.',
       riskSeverity: 'low',
+      intel,
     };
   }
 
-  if (IS_LIDO) {
+  if (intel.isVerified === false) {
     return {
-      contractAddress: contractInput,
-      isProxy: true,
-      proxyType: 'EIP-1967 Transparent Proxy',
-      hasAdminKey: true,
-      adminAddress: '0x3e404492d990d4029d3e7a8a294b435b2d9990da',
-      canUpgradeCode: true,
-      canPauseTransfers: true,
-      canMintTokens: true,
-      plainEnglishExplanation: 'UPGRADEABLE PROXY CONTRACT: Managed by Lido DAO governance. The contract owner can upgrade implementation logic via DAO vote. Pausing transfers or updating reward distribution is possible under governance oversight.',
-      riskSeverity: 'medium',
+      contractAddress: clean,
+      contractName: intel.contractName,
+      isProxy: intel.isProxy,
+      proxyType: intel.isProxy ? 'Upgradeable Proxy' : 'Unknown / Unverified',
+      implementationAddress: intel.implementationAddress,
+      hasAdminKey: null,
+      canUpgradeCode: intel.isProxy,
+      canPauseTransfers: null,
+      canMintTokens: null,
+      evidence: [],
+      plainEnglishExplanation:
+        'UNVERIFIED CONTRACT: The source code behind this address has not been published to the ' +
+        'block explorer, so its admin powers cannot be inspected. It may be able to upgrade itself, ' +
+        'pause transfers, or mint supply — there is no way to tell. Avoid unlimited approvals.',
+      riskSeverity: 'high',
+      intel,
     };
   }
 
-  // General / Unverified contract fallback — honest degradation
+  const caps = intel.adminCapabilities;
+  const canUpgradeCode = Boolean(intel.isProxy || caps?.canUpgrade);
+  const canPauseTransfers = caps?.canPause ?? null;
+  const canMintTokens = caps?.canMint ?? null;
+  const hasAdminKey = caps?.hasOwner ?? null;
+
+  const powers: string[] = [];
+  if (canUpgradeCode) powers.push('replace its own code');
+  if (canPauseTransfers) powers.push('pause transfers');
+  if (canMintTokens) powers.push('mint new supply');
+
+  let riskSeverity: ContractPermissionRisk['riskSeverity'] = 'low';
+  if (canUpgradeCode) riskSeverity = 'high';
+  else if (canPauseTransfers || canMintTokens) riskSeverity = 'medium';
+  else if (hasAdminKey) riskSeverity = 'medium';
+
+  const name = intel.contractName ? `"${intel.contractName}"` : 'This contract';
+  const ageClause = intel.ageDays !== null ? `, deployed ${intel.ageDays} day(s) ago` : '';
+
+  const plainEnglishExplanation =
+    powers.length === 0
+      ? `${name} is verified${ageClause}. Its published ABI exposes no upgrade, pause or mint ` +
+        `function${hasAdminKey ? ', though it does have an owner role' : ''}. Approved funds can ` +
+        'only be spent according to the parameters you pass — this is a code reading, not an audit.'
+      : `${name} is verified${ageClause}, and its owner can ${powers.join(', ')}. ` +
+        (canUpgradeCode
+          ? 'Because the code can be replaced, what this contract does today is not a guarantee of ' +
+            'what it will do tomorrow. '
+          : '') +
+        'Grant only the allowance you need, not an unlimited one.';
+
   return {
-    contractAddress: contractInput,
-    isProxy: false,
-    proxyType: 'Unknown / Unverified',
-    hasAdminKey: false,
-    canUpgradeCode: false,
-    canPauseTransfers: false,
-    canMintTokens: false,
-    plainEnglishExplanation: 'UNVERIFIED / UNKNOWN CONTRACT: On-chain source bytecode could not be verified for proxy patterns or admin keys. Treat with caution and avoid approving unlimited token allowances.',
-    riskSeverity: 'high',
+    contractAddress: clean,
+    contractName: intel.contractName,
+    isProxy: intel.isProxy,
+    proxyType: intel.isProxy ? 'Upgradeable Proxy' : 'Direct Immutable Contract',
+    implementationAddress: intel.implementationAddress,
+    hasAdminKey,
+    canUpgradeCode,
+    canPauseTransfers,
+    canMintTokens,
+    evidence: caps?.evidence ?? [],
+    plainEnglishExplanation,
+    riskSeverity,
+    intel,
   };
 }

@@ -6,6 +6,7 @@
 import type { RawTransaction, ClassifiedTransaction, FifoAccountingReport } from '../types';
 import { calculateFifoTaxReport } from './fifoEngine';
 import { generateFallbackDescription } from './descriptionGenerator';
+import { resolveAsset } from './assetResolver';
 
 export const KNOWN_PUBLIC_WALLET = '0xd8DA6BF26964aF9Ded7ede3308C4157ed3714123';
 
@@ -124,6 +125,7 @@ export function runKnownWalletValidation(): ValidationResult {
     // Mock USD prices for deterministic test validation ($2,000 per ETH)
     const ethPrice = 2000;
     const usdValue = ethValue * ethPrice;
+    const asset = resolveAsset(tx);
 
     return {
       ...tx,
@@ -132,6 +134,9 @@ export function runKnownWalletValidation(): ValidationResult {
       confidence: 0.95,
       usdValue,
       ethValue,
+      assetSymbol: asset.symbol,
+      assetAmount: asset.amount,
+      ethPriceUsd: ethPrice,
       status: 'classified',
       date: new Date(parseInt(tx.timeStamp) * 1000),
     };

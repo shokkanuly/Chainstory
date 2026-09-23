@@ -21,7 +21,7 @@ export function generatePdfTaxReport(report: FifoAccountingReport): void {
   const realizedRowsHtml = report.realizedTransactions.length > 0
     ? report.realizedTransactions
         .map(
-          (tx, idx) => `
+          (tx) => `
         <tr style="border-bottom: 1px solid #e2e8f0;">
           <td style="padding: 8px; font-family: monospace; font-size: 11px;">${tx.txHash.slice(0, 10)}...${tx.txHash.slice(-6)}</td>
           <td style="padding: 8px; font-weight: 600;">${tx.assetSymbol}</td>

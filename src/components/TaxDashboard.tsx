@@ -1,5 +1,5 @@
 // src/components/TaxDashboard.tsx — Premium FIFO Tax Dashboard
-import type { ClassifiedTransaction, TaxSummary } from '../types';
+import type { TaxSummary } from '../types';
 
 interface Props {
   summary: TaxSummary;
@@ -92,65 +92,21 @@ export default function TaxDashboard({ summary }: Props) {
           <span className="gas-note">(may be tax-deductible)</span>
         </div>
 
-        {summary.missingPriceCount && summary.missingPriceCount > 0 ? (
-          <div className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-1 rounded-lg">
-            ⚠️ Price data unavailable for {summary.missingPriceCount} transaction(s).
-          </div>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {summary.missingPriceCount && summary.missingPriceCount > 0 ? (
+            <div className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-1 rounded-lg">
+              ⚠️ Price data unavailable for {summary.missingPriceCount} transaction(s).
+            </div>
+          ) : null}
+
+          {summary.unmatchedDisposalCount && summary.unmatchedDisposalCount > 0 ? (
+            <div className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-1 rounded-lg">
+              ⚠️ {summary.unmatchedDisposalCount} disposal(s) have no matching acquisition in this
+              window, so their cost basis is unknown — the gain shown is an upper bound.
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
-}
-
-export function computeSummary(transactions: ClassifiedTransaction[]): TaxSummary {
-  let tradeTotal = 0;
-  let incomeTotal = 0;
-  let transferCount = 0;
-  let nftCount = 0;
-  let unknownCount = 0;
-  let totalGasSpent = 0;
-  let missingPriceCount = 0;
-
-  for (const tx of transactions) {
-    const gasEth = (parseFloat(tx.gasUsed || '0') * parseFloat(tx.gasPrice || '0')) / 1e18;
-    totalGasSpent += gasEth;
-
-    if (tx.usdValue === null || tx.usdValue === undefined) {
-      missingPriceCount++;
-    }
-
-    if (tx.status !== 'classified') {
-      unknownCount++;
-      continue;
-    }
-
-    switch (tx.category) {
-      case 'trade':
-        if (tx.usdValue !== null) { tradeTotal += tx.usdValue; }
-        break;
-      case 'income':
-        if (tx.usdValue !== null) { incomeTotal += tx.usdValue; }
-        break;
-      case 'transfer':
-        transferCount++;
-        break;
-      case 'nft':
-        nftCount++;
-        break;
-      default:
-        unknownCount++;
-    }
-  }
-
-  return {
-    tradeTotal,
-    incomeTotal,
-    transferCount,
-    nftCount,
-    unknownCount,
-    totalTransactions: transactions.length,
-    totalGasSpent,
-    totalVolumeUsd: 0,
-    missingPriceCount,
-  };
 }

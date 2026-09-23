@@ -5,7 +5,7 @@
 // Includes graceful fallback to deterministic descriptions if Gemini API returns 404 / rate limits.
 
 import type { RawTransaction, TaxCategory } from '../types';
-import { METHOD_HINTS } from './featureExtractor';
+import { getMethodLabel } from './methodRegistry';
 
 const GEMINI_API_URLS = [
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
@@ -34,8 +34,7 @@ export function buildDescriptionPrompt(
   ethValue: number,
   usdValue: number | null
 ): string {
-  const methodSignature = tx.input?.slice(0, 10) || '0x';
-  const methodHint = METHOD_HINTS[methodSignature] || 'contract interaction';
+  const methodHint = getMethodLabel(tx.input) || 'contract interaction';
   const usdText = usdValue !== null ? `~$${usdValue.toFixed(2)} USD` : 'unknown USD value';
   const tokenInfo = tx.tokenSymbol ? ` involving ${tx.tokenName} (${tx.tokenSymbol})` : '';
   const categoryDesc = CATEGORY_LABELS[category] || 'a blockchain transaction';
@@ -132,8 +131,7 @@ export function generateFallbackDescription(
   category: TaxCategory,
   ethValue: number
 ): string {
-  const methodSignature = tx.input?.slice(0, 10) || '0x';
-  const methodHint = METHOD_HINTS[methodSignature];
+  const methodHint = getMethodLabel(tx.input);
   const fnName = (tx.functionName || '').toLowerCase();
   const tokenSymbol = tx.tokenSymbol ? ` ${tx.tokenSymbol}` : '';
   const tokenInfo = tx.tokenName ? ` (${tx.tokenName})` : '';

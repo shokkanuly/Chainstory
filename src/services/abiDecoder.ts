@@ -100,3 +100,71 @@ export function parseInternalTransactionLogs(
 
   return transfers;
 }
+
+// -------------------------------------------------------------------
+// ERC-20 approve(address spender, uint256 amount)
+// -------------------------------------------------------------------
+
+export const APPROVE_SELECTOR = '0x095ea7b3';
+
+/** 2^256 - 1 — the conventional "infinite allowance" sentinel. */
+export const MAX_UINT256 = (1n << 256n) - 1n;
+
+/**
+ * Anything at or above 2^255 is unspendable in practice and is treated as
+ * unlimited, which catches the `type(uint128).max`-style variants wallets use
+ * as well as exact MaxUint256.
+ */
+const UNLIMITED_THRESHOLD = 1n << 255n;
+
+export interface DecodedApproval {
+  /** The contract granted permission to spend — the first calldata argument. */
+  spender: string;
+  /** Raw allowance in the token's base units. */
+  amount: bigint;
+  isUnlimited: boolean;
+  /** An approve(spender, 0) call, which revokes a previous allowance. */
+  isRevocation: boolean;
+}
+
+/**
+ * Decode ERC-20 approve calldata.
+ *
+ * Layout: 4-byte selector, then two 32-byte words — the spender address
+ * (right-aligned in its word) and the allowance. Returns null when the
+ * calldata is not a well-formed approve call.
+ *
+ * Note the distinction this exists to preserve: the transaction's `to` is the
+ * TOKEN contract, while the spender is this first argument. Reporting `to` as
+ * the spender — as this panel previously did — names the wrong party.
+ */
+export function decodeApproval(inputHex: string | undefined): DecodedApproval | null {
+  if (!inputHex) return null;
+  const hex = inputHex.toLowerCase();
+  if (!hex.startsWith(APPROVE_SELECTOR)) return null;
+
+  const params = hex.slice(10);
+  if (params.length < 128) return null;
+
+  const spenderWord = params.slice(0, 64);
+  const amountWord = params.slice(64, 128);
+  if (!/^[0-9a-f]{64}$/.test(spenderWord) || !/^[0-9a-f]{64}$/.test(amountWord)) {
+    return null;
+  }
+
+  const spender = `0x${spenderWord.slice(24)}`;
+
+  let amount: bigint;
+  try {
+    amount = BigInt(`0x${amountWord}`);
+  } catch {
+    return null;
+  }
+
+  return {
+    spender,
+    amount,
+    isUnlimited: amount >= UNLIMITED_THRESHOLD,
+    isRevocation: amount === 0n,
+  };
+}

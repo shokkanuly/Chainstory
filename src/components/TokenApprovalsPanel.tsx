@@ -1,67 +1,19 @@
 // src/components/TokenApprovalsPanel.tsx
 //
-// Read-only Token Approvals Panel (#2)
-// Identifies and surfaces token approval transactions in plain English.
-// Flags unlimited approvals for user security awareness.
+// Read-only view of the ERC-20 allowances this wallet has granted and not
+// since revoked. The netting logic lives in services/tokenApprovals.ts.
 
-import type { ClassifiedTransaction } from '../types';
 import { formatAddress } from '../services/etherscan';
+import { extractApprovalsFromTransactions } from '../services/tokenApprovals';
+import type { ClassifiedTransaction } from '../types';
 
 interface Props {
   transactions: ClassifiedTransaction[];
   walletAddress: string;
 }
 
-export interface DecodedApproval {
-  txHash: string;
-  spender: string;
-  tokenSymbol: string;
-  tokenName: string;
-  isUnlimited: boolean;
-  amountText: string;
-  date: Date;
-}
-
-export function extractApprovalsFromTransactions(
-  transactions: ClassifiedTransaction[]
-): DecodedApproval[] {
-  const approvals: DecodedApproval[] = [];
-
-  for (const tx of transactions) {
-    const inputHex = (tx.input || '').toLowerCase();
-    const isApproveSelector = inputHex.startsWith('0x095ea7b3');
-    const isApproveFn = (tx.functionName || '').toLowerCase().includes('approve');
-
-    if (isApproveSelector || isApproveFn) {
-      const spender = tx.to || tx.contractAddress || 'Unknown Spender Contract';
-      const tokenSymbol = tx.tokenSymbol || 'ERC-20 Token';
-      const tokenName = tx.tokenName || tx.contractAddress || 'Token';
-
-      // Check if input parameter has max uint256 / large hex for unlimited allowance
-      const rawParams = inputHex.slice(10);
-      const isUnlimited =
-        rawParams.includes('ffffffffffffffffffffffffffffffff') ||
-        rawParams.includes('f'.repeat(32)) ||
-        tx.description.toLowerCase().includes('unlimited') ||
-        tx.description.toLowerCase().includes('authorize');
-
-      approvals.push({
-        txHash: tx.hash,
-        spender,
-        tokenSymbol,
-        tokenName,
-        isUnlimited,
-        amountText: isUnlimited ? 'Unlimited Allowance' : 'Specific Limit',
-        date: tx.date,
-      });
-    }
-  }
-
-  return approvals;
-}
-
-export default function TokenApprovalsPanel({ transactions }: Props) {
-  const approvals = extractApprovalsFromTransactions(transactions);
+export default function TokenApprovalsPanel({ transactions, walletAddress }: Props) {
+  const approvals = extractApprovalsFromTransactions(transactions, walletAddress);
 
   if (approvals.length === 0) return null;
 
@@ -97,7 +49,9 @@ export default function TokenApprovalsPanel({ transactions }: Props) {
                 <span className="font-bold text-indigo-400">{app.tokenSymbol}</span>
               </div>
               <div className="text-slate-400 font-mono text-[11px]">
-                Spender Contract: <span className="text-slate-300">{formatAddress(app.spender)}</span>
+                Spender: <span className="text-slate-300">{formatAddress(app.spender)}</span>
+                <span className="text-slate-600"> · </span>
+                Token: <span className="text-slate-300">{formatAddress(app.tokenContract)}</span>
               </div>
             </div>
 
@@ -108,7 +62,7 @@ export default function TokenApprovalsPanel({ transactions }: Props) {
                 </span>
               ) : (
                 <span className="bg-slate-700/50 text-slate-300 px-2.5 py-1 rounded-lg text-[11px]">
-                  Limited Approval
+                  {app.amountText}
                 </span>
               )}
               <span className="text-slate-500 text-[11px]">
@@ -121,7 +75,7 @@ export default function TokenApprovalsPanel({ transactions }: Props) {
 
       {/* Boundary & Awareness Disclaimer */}
       <div className="text-[11px] text-slate-500 bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 leading-relaxed">
-        <strong>Notice:</strong> This panel surfaces token approvals recorded in the wallet's historical transaction log for awareness. It is a read-only informational view and does not revoke permissions or execute blockchain transactions.
+        <strong>Notice:</strong> This panel shows allowances granted by this wallet that have not since been revoked, decoded from transaction calldata. It is limited to the transactions fetched above, so an approval older than that window will not appear. It is read-only and does not revoke permissions or execute blockchain transactions.
       </div>
     </div>
   );
