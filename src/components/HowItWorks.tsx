@@ -20,7 +20,7 @@ const steps = [
     icon: FileDown,
     title: 'Export Tax-Ready Reports',
     description:
-      'Download IRS Form 8949 compliant CSVs with FIFO cost-basis, short/long-term gains, and deductible gas fees — ready for your CPA.',
+      'Download draft Form 8949 CSVs with FIFO cost-basis, short/long-term gains and gas expense, to review with your CPA. Draft estimates, not filing-ready output.',
     step: '3',
   },
 ]

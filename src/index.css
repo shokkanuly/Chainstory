@@ -1,85 +1,89 @@
 @import "tailwindcss";
+@import "@fontsource-variable/sora";
+@import "@fontsource-variable/geist-mono";
+@import "./styles/brand.css";
 
 @theme {
-  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  --font-sans: 'Sora Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', monospace;
 
-  --color-background: #0b0f19;
-  --color-foreground: #f1f5f9;
-  --color-card: #111827;
-  --color-card-foreground: #f1f5f9;
-  --color-popover: #111827;
-  --color-popover-foreground: #f1f5f9;
-  --color-primary: #3b82f6;
+  --color-background: #ffffff;
+  --color-foreground: #111114;
+  --color-card: #ffffff;
+  --color-card-foreground: #111114;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #111114;
+  --color-primary: #111114;
   --color-primary-foreground: #ffffff;
-  --color-secondary: #1e293b;
-  --color-secondary-foreground: #94a3b8;
-  --color-muted: #1e293b;
-  --color-muted-foreground: #64748b;
-  --color-accent: #3b82f6;
+  --color-secondary: #f5f5f7;
+  --color-secondary-foreground: #6b7280;
+  --color-muted: #f5f5f7;
+  --color-muted-foreground: #6b7280;
+  --color-accent: #4c7cff;
   --color-accent-foreground: #ffffff;
-  --color-destructive: #ef4444;
+  --color-destructive: #d6455b;
   --color-destructive-foreground: #ffffff;
-  --color-border: #1e293b;
-  --color-input: #1e293b;
-  --color-ring: #3b82f6;
+  --color-border: #e7e7ea;
+  --color-input: #e7e7ea;
+  --color-ring: #111114;
 
-  --color-chain: #3b82f6;
-  --color-chain-dim: #2563eb;
-  --color-signal-green: #10b981;
-  --color-signal-amber: #f59e0b;
-  --color-signal-red: #ef4444;
-  --color-glow: rgba(59, 130, 246, 0.15);
+  --color-chain: #4c7cff;
+  --color-chain-dim: #8b5cf6;
+  --color-signal-green: #0e9e90;
+  --color-signal-amber: #b45309;
+  --color-signal-red: #d6455b;
+  --color-glow: rgba(76, 124, 255, 0.10);
 
-  --radius: 0.75rem;
+  --radius: 1rem;
 }
 
+/* App.css reads these. They mirror styles/brand.css so there is one palette. */
 :root {
-  --bg-base: #0b0f19;
-  --bg-surface: #111827;
-  --bg-elevated: #1e293b;
-  --bg-card: #111827;
-  --bg-card-hover: #162032;
+  --bg-base: #ffffff;
+  --bg-surface: #f5f5f7;
+  --bg-elevated: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f5f5f7;
 
-  --border-subtle: #1e293b;
-  --border-default: #334155;
-  --border-strong: #475569;
+  --border-subtle: #e7e7ea;
+  --border-default: #d4d4d8;
+  --border-strong: #b9b9c0;
 
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-primary: #111114;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
 
-  --accent-blue: #3b82f6;
+  --accent-blue: #4c7cff;
   --accent-purple: #8b5cf6;
 
-  --cat-trade: #818cf8;
-  --cat-trade-bg: rgba(129, 140, 248, 0.12);
-  --cat-trade-border: rgba(129, 140, 248, 0.25);
+  --cat-trade: #4c7cff;
+  --cat-trade-bg: #eef1ff;
+  --cat-trade-border: #d6dfff;
 
-  --cat-income: #34d399;
-  --cat-income-bg: rgba(52, 211, 153, 0.12);
-  --cat-income-border: rgba(52, 211, 153, 0.25);
+  --cat-income: #0e9e90;
+  --cat-income-bg: #e6fbf8;
+  --cat-income-border: #c4f2eb;
 
-  --cat-transfer: #38bdf8;
-  --cat-transfer-bg: rgba(56, 189, 248, 0.12);
-  --cat-transfer-border: rgba(56, 189, 248, 0.25);
+  --cat-transfer: #6b7280;
+  --cat-transfer-bg: #f5f5f7;
+  --cat-transfer-border: #e7e7ea;
 
-  --cat-nft: #fbbf24;
-  --cat-nft-bg: rgba(251, 191, 36, 0.12);
-  --cat-nft-border: rgba(251, 191, 36, 0.25);
+  --cat-nft: #8b5cf6;
+  --cat-nft-bg: #f3eeff;
+  --cat-nft-border: #e4d9ff;
 
-  --cat-unknown: #94a3b8;
-  --cat-unknown-bg: rgba(148, 163, 184, 0.08);
-  --cat-unknown-border: rgba(148, 163, 184, 0.2);
+  --cat-unknown: #9ca3af;
+  --cat-unknown-bg: #f5f5f7;
+  --cat-unknown-border: #e7e7ea;
 
-  --color-positive: #34d399;
-  --color-negative: #f87171;
-  --color-neutral: #94a3b8;
+  --color-positive: #0e9e90;
+  --color-negative: #d6455b;
+  --color-neutral: #6b7280;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
 }
 
 @layer base {
@@ -98,7 +102,7 @@
   }
 
   ::selection {
-    background: rgba(59, 130, 246, 0.25);
+    background: rgba(76, 124, 255, 0.18);
   }
 
   /* Hide scrollbar but keep functionality */
@@ -109,46 +113,48 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.15);
+    background: #d4d4d8;
     border-radius: 99px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(148, 163, 184, 0.3);
+    background: #b9b9c0;
   }
 }
 
 @layer utilities {
+  /* Elevation on a light canvas comes from a tinted shadow, not a glow. */
   .glow-chain {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.2), 0 0 4px rgba(59, 130, 246, 0.15);
+    box-shadow: 0 1px 2px rgba(17, 17, 20, 0.04), 0 8px 24px rgba(17, 17, 20, 0.06);
   }
   .glow-chain-strong {
-    box-shadow: 0 0 30px rgba(59, 130, 246, 0.35), 0 0 8px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(17, 17, 20, 0.06), 0 16px 48px rgba(17, 17, 20, 0.10);
   }
+  /* The identity gradient. Budget: twice per screen. */
   .text-gradient-chain {
-    background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 40%, #8b5cf6 100%);
+    background: var(--b-gradient);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
   .bg-grid {
     background-image:
-      linear-gradient(rgba(30, 41, 59, 0.5) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(30, 41, 59, 0.5) 1px, transparent 1px);
+      linear-gradient(rgba(17, 17, 20, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(17, 17, 20, 0.04) 1px, transparent 1px);
     background-size: 64px 64px;
   }
   .bg-radial-glow {
-    background: radial-gradient(ellipse 700px 500px at 50% 0%, rgba(59, 130, 246, 0.08), transparent);
+    background: radial-gradient(ellipse 700px 500px at 50% 0%, rgba(76, 124, 255, 0.06), transparent);
   }
   .animate-float {
     animation: float 8s ease-in-out infinite;
   }
   .glass {
-    background: rgba(17, 24, 39, 0.6);
+    background: rgba(255, 255, 255, 0.72);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
   }
   .glass-strong {
-    background: rgba(17, 24, 39, 0.85);
+    background: rgba(255, 255, 255, 0.90);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
   }

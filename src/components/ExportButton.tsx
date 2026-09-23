@@ -111,7 +111,7 @@ export default function ExportButton({ transactions, walletAddress }: Props) {
         className="export-btn export-pdf-btn"
         onClick={handleExportPDF}
         disabled={isDisabled}
-        title={isDisabled ? tooltip : `Export PDF Tax Report (IRS Form 8949)`}
+        title={isDisabled ? tooltip : `Export draft PDF tax report (Form 8949 format)`}
         style={{
           background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
           color: '#ffffff',
