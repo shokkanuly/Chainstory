@@ -1,16 +1,4 @@
 {
-  "files": [],
-  "references": [
-    {
-      "path": "./tsconfig.app.json"
-    },
-    {
-      "path": "./tsconfig.node.json"
-    },
-    {
-      "path": "./tsconfig.server.json"
-    }
-  ],
   "compilerOptions": {
     "target": "ES2022",
     "lib": [
@@ -23,6 +11,11 @@
     ],
     "strict": true,
     "skipLibCheck": true,
+    "noEmit": true,
     "esModuleInterop": true
-  }
+  },
+  "include": [
+    "api/**/*.ts",
+    "server/**/*.ts"
+  ]
 }

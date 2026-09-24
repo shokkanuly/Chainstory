@@ -2,7 +2,7 @@
 // boundary. These tests pin that boundary.
 
 import { describe, expect, it, vi } from 'vitest';
-import { handleExplorer, resolveKey } from '../explorerHandler.ts';
+import { handleExplorer, resolveKey } from '../explorerHandler.js';
 
 const ADDR = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
 const ENV = { ETHERSCAN_API_KEY: 'test-key-123' };

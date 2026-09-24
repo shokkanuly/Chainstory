@@ -11,7 +11,7 @@
 // already has a deterministic keyword fallback that covers every transaction,
 // so description generation never becomes a hard dependency.
 
-import { rateLimit, type HandlerResponse } from './explorerHandler.ts';
+import { rateLimit, type HandlerResponse } from './explorerHandler.js';
 
 const GEMINI_ENDPOINTS = [
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',

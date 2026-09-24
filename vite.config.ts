@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { apiDevServer } from './server/devPlugin.ts'
+import { apiDevServer } from './server/devPlugin.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
 

@@ -9,8 +9,8 @@
 // can leak into the client bundle.
 
 import type { Plugin } from 'vite';
-import { handleExplorer } from './explorerHandler.ts';
-import { handleGemini } from './geminiHandler.ts';
+import { handleExplorer } from './explorerHandler.js';
+import { handleGemini } from './geminiHandler.js';
 
 function readBody(req: any): Promise<unknown> {
   return new Promise((resolve) => {

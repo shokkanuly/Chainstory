@@ -28,3 +28,4 @@ dist-ssr
 
 # Local dev-server launch config (editor/tooling specific)
 .claude/launch.json
+.vercel

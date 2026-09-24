@@ -1,7 +1,7 @@
 // api/explorer.ts — Vercel adapter. All logic lives in server/explorerHandler.ts
 // so the Vite dev server can run the identical code path locally.
 
-import { handleExplorer } from '../server/explorerHandler';
+import { handleExplorer } from '../server/explorerHandler.js';
 
 export default async function handler(req: any, res: any) {
   const ip =
