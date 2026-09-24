@@ -18,9 +18,7 @@
 // than one that admits ignorance.
 
 import type { ChainId } from '../types';
-import { getChainConfig } from './chains';
-import { fetchWithRetry } from './etherscan';
-import { getChainApiKey } from './multiChain';
+import { explorerRequest, NoServerKeyError } from './apiClient';
 
 export interface AdminCapabilities {
   canUpgrade: boolean;
@@ -112,16 +110,10 @@ async function explorerCall(
   chainId: ChainId,
   params: Record<string, string>
 ): Promise<any | null> {
-  const apiKey = getChainApiKey(chainId);
-  if (!apiKey) return null;
-
-  const url = new URL(getChainConfig(chainId).apiUrl);
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  url.searchParams.set('apikey', apiKey);
-
   try {
-    return await fetchWithRetry(url.toString());
+    return await explorerRequest(chainId, params as any);
   } catch (err) {
+    if (err instanceof NoServerKeyError) throw err;
     console.warn('Explorer call failed', params.action, err);
     return null;
   }
@@ -184,14 +176,19 @@ export async function fetchContractIntel(
   if (!isAddressShaped(clean)) {
     return emptyIntel(clean, 'Not a valid 42-character hexadecimal address');
   }
-  if (!getChainApiKey(chainId)) {
-    return emptyIntel(clean, 'No explorer API key configured — cannot verify this contract');
+  let codeData: any = null;
+  let sourceData: any = null;
+  try {
+    [codeData, sourceData] = await Promise.all([
+      explorerCall(chainId, { module: 'proxy', action: 'eth_getCode', address: clean, tag: 'latest' }),
+      explorerCall(chainId, { module: 'contract', action: 'getsourcecode', address: clean }),
+    ]);
+  } catch (err) {
+    if (err instanceof NoServerKeyError) {
+      return emptyIntel(clean, 'No explorer API key configured on the server, so this contract cannot be verified');
+    }
+    throw err;
   }
-
-  const [codeData, sourceData] = await Promise.all([
-    explorerCall(chainId, { module: 'proxy', action: 'eth_getCode', address: clean, tag: 'latest' }),
-    explorerCall(chainId, { module: 'contract', action: 'getsourcecode', address: clean }),
-  ]);
 
   if (!codeData && !sourceData) {
     return emptyIntel(clean, 'Explorer did not respond — verification could not be completed');

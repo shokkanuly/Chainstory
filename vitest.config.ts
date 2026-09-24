@@ -5,6 +5,6 @@ export default defineConfig({
     // Services are pure and DOM-free; component helpers under test are plain
     // functions, so the faster node environment is enough.
     environment: 'node',
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'server/**/*.test.ts'],
   },
 });

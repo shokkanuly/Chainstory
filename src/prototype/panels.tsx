@@ -25,6 +25,7 @@ import {
 } from './sampleData';
 import { AddressAvatar, CategoryPill, ChainMark, Flag, PanelHead } from './primitives';
 import { truncate, usd } from './format';
+import { explorerTxUrl } from '../services/chains';
 
 const DAY = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 const TIME = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -97,7 +98,7 @@ function ActivityRow({ item, index }: { item: Activity; index: number }) {
             </span>
             <span className="v2-num hidden sm:inline">{TIME.format(item.date)}</span>
             <a
-              href={`https://etherscan.io/tx/${item.hash}`}
+              href={explorerTxUrl(item.hash, item.chain)}
               target="_blank"
               rel="noopener noreferrer"
               className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"

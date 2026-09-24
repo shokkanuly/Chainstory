@@ -70,7 +70,7 @@ export default function Navbar() {
             </a>
             <a
               href="#app-workspace"
-              className="inline-flex items-center gap-2 bg-chain hover:bg-chain-dim text-primary-foreground text-[13px] font-semibold px-4 py-2 rounded-lg glow-chain transition-all duration-200"
+              className="b-btn b-btn--primary !px-4 !py-2.5 !text-[13px]"
             >
               Launch App
             </a>
@@ -111,7 +111,7 @@ export default function Navbar() {
                 <a
                   href="#app-workspace"
                   onClick={() => setMobileOpen(false)}
-                  className="block w-full text-center bg-chain hover:bg-chain-dim text-primary-foreground font-semibold py-2.5 rounded-lg transition-all"
+                  className="b-btn b-btn--primary w-full"
                 >
                   Launch App
                 </a>

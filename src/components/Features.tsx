@@ -30,13 +30,13 @@ const features = [
     icon: Cpu,
     title: 'In-Browser ML Classification',
     description:
-      '3-stage pipeline: TypeScript feature extraction → XGBoost ONNX classifier at 1ms latency → Gemini-powered natural language summaries.',
+      '3-stage pipeline: TypeScript feature extraction, a deterministic rules classifier, then plain-English summaries with a keyword fallback that covers every transaction offline.',
     color: '#f59e0b',
     tag: 'Intelligence',
   },
   {
     icon: FileText,
-    title: 'IRS Form 8949 Tax Reports',
+    title: 'Draft Form 8949 Tax Reports',
     description:
       'Strict per-wallet FIFO accounting with short/long-term capital gains. Deductible gas expense breakdown and tax-ready CSV export.',
     color: '#8b5cf6',
@@ -93,7 +93,7 @@ export default function Features() {
             <span className="text-gradient-chain">Understand On-Chain Activity</span>
           </h2>
           <p className="text-muted-foreground text-base leading-relaxed">
-            From raw hex data to human-readable narratives and IRS-compliant tax reports.
+            From raw hex data to human-readable narratives and draft tax reports for your accountant.
           </p>
         </motion.div>
 

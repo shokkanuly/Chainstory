@@ -1,0 +1,1 @@
+{"root":["./api/describe.ts","./api/explorer.ts","./server/devplugin.ts","./server/explorerhandler.ts","./server/geminihandler.ts","./server/__tests__/explorerhandler.test.ts"],"version":"6.0.3"}

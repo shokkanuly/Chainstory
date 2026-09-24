@@ -57,3 +57,14 @@ export const CHAIN_CONFIGS: Record<ChainId, ChainConfig> = {
 export function getChainConfig(chainId: ChainId = 'ethereum'): ChainConfig {
   return CHAIN_CONFIGS[chainId] || CHAIN_CONFIGS.ethereum;
 }
+
+/**
+ * Link to a transaction on the right explorer for its chain.
+ *
+ * Every link in the app used to point at etherscan.io, so an Arbitrum or Base
+ * transaction led to a dead page. The per-chain URLs were already here; they
+ * simply were not used.
+ */
+export function explorerTxUrl(hash: string, chainId: ChainId = 'ethereum'): string {
+  return `${getChainConfig(chainId).explorerUrl}/tx/${hash}`;
+}

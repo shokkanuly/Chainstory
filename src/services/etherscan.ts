@@ -1,15 +1,11 @@
 // src/services/etherscan.ts
+//
+// Ethereum history, ENS resolution and the shared address helpers.
+// All keyed requests go through services/apiClient, which talks to our own
+// /api proxy. No explorer key is readable from client code.
+
 import type { FetchResult, RawTransaction } from '../types';
-
-const BASE_URL = 'https://api.etherscan.io/api';
-
-function getApiKey(): string | null {
-  const key = import.meta.env.VITE_ETHERSCAN_API_KEY;
-  if (!key || key === 'your_etherscan_api_key_here' || key.trim() === '') {
-    return null;
-  }
-  return key;
-}
+import { explorerRequest, NoServerKeyError } from './apiClient';
 
 // Helper to generate realistic mock transactions when no API key or network fallback occurs
 // Synthetic transactions for offline/no-key demos. Every record is flagged
@@ -115,142 +111,73 @@ function generateMockTransactionsForAddress(address: string): RawTransaction[] {
   ];
 }
 
-const MIN_REQUEST_INTERVAL_MS = 250; // 4 requests/sec rate limit buffer
-let lastRequestTime = 0;
-
-async function rateLimitThrottler(): Promise<void> {
-  const now = Date.now();
-  const timeSinceLast = now - lastRequestTime;
-  if (timeSinceLast < MIN_REQUEST_INTERVAL_MS) {
-    await new Promise((resolve) => setTimeout(resolve, MIN_REQUEST_INTERVAL_MS - timeSinceLast));
-  }
-  lastRequestTime = Date.now();
-}
-
-export async function fetchWithRetry(url: string, retries = 3, baseDelayMs = 1000): Promise<any> {
-  await rateLimitThrottler();
-
-  try {
-    const res = await fetch(url);
-
-    // Handle HTTP 429 (Too Many Requests) or server errors
-    if (res.status === 429 || res.status >= 500) {
-      if (retries > 0) {
-        const delay = baseDelayMs * Math.pow(2, 3 - retries);
-        console.warn(`Etherscan returned HTTP ${res.status}. Retrying in ${delay}ms... (${retries} attempts left)`);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        return fetchWithRetry(url, retries - 1, baseDelayMs);
-      }
-      throw new Error(`Etherscan API HTTP ${res.status}`);
-    }
-
-    if (!res.ok) {
-      throw new Error(`Etherscan API HTTP ${res.status}`);
-    }
-
-    const data = await res.json();
-
-    // Check for Etherscan API payload rate-limit notice ("status": "0", "result": "Max rate limit reached")
-    const resultStr = String(data.result || data.message || '').toLowerCase();
-    const isRateLimited =
-      data.status === '0' &&
-      (resultStr.includes('rate limit') || resultStr.includes('notok') || resultStr.includes('max rate'));
-
-    if (isRateLimited) {
-      if (retries > 0) {
-        const delay = baseDelayMs * Math.pow(2, 3 - retries);
-        console.warn(`Etherscan API rate limit payload detected. Retrying in ${delay}ms... (${retries} attempts left)`);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        return fetchWithRetry(url, retries - 1, baseDelayMs);
-      }
-    }
-
-    return data;
-  } catch (err: any) {
-    if (retries > 0 && err.message?.includes('HTTP')) {
-      const delay = baseDelayMs * Math.pow(2, 3 - retries);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      return fetchWithRetry(url, retries - 1, baseDelayMs);
-    }
-    throw err;
-  }
-}
 
 export async function fetchNormalTransactions(address: string): Promise<FetchResult> {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    console.info(`No VITE_ETHERSCAN_API_KEY configured. Providing demo transactions for ${address}`);
-    return {
-      transactions: generateMockTransactionsForAddress(address),
-      source: 'demo',
-      demoReason: 'No VITE_ETHERSCAN_API_KEY configured',
-    };
-  }
-
-  const url = new URL(BASE_URL);
-  url.searchParams.set('module', 'account');
-  url.searchParams.set('action', 'txlist');
-  url.searchParams.set('address', address);
-  url.searchParams.set('startblock', '0');
-  url.searchParams.set('endblock', '99999999');
-  url.searchParams.set('page', '1');
-  url.searchParams.set('offset', '100');
-  url.searchParams.set('sort', 'desc');
-  url.searchParams.set('apikey', apiKey);
-
   try {
-    const data = await fetchWithRetry(url.toString());
+    const data = await explorerRequest('ethereum', {
+      module: 'account',
+      action: 'txlist',
+      address,
+      startblock: 0,
+      endblock: 99999999,
+      page: 1,
+      offset: 100,
+      sort: 'desc',
+    });
+
     if (data.status === '0') {
-      // An empty history is a real, correct answer — not a reason for demo data.
+      // An empty history is a real, correct answer, not a reason for demo data.
       if (data.message === 'No transactions found') {
         return { transactions: [], source: 'live' };
       }
       const notice = String(data.message || data.result);
-      console.warn(`Etherscan notice: ${notice}`);
+      console.warn(`Explorer notice: ${notice}`);
       return {
         transactions: generateMockTransactionsForAddress(address),
         source: 'demo',
         demoReason: `Explorer returned: ${notice}`,
       };
     }
+
     return {
-      transactions: (data.result as RawTransaction[]).map(tx => ({ ...tx, walletLabel: address })),
+      transactions: (data.result as RawTransaction[]).map((tx) => ({ ...tx, walletLabel: address })),
       source: 'live',
     };
   } catch (err) {
-    console.warn(`Etherscan fetch failed for ${address}, falling back to demo data`, err);
+    const reason =
+      err instanceof NoServerKeyError
+        ? 'No explorer API key configured on the server'
+        : err instanceof Error
+          ? err.message
+          : 'Explorer request failed';
+    console.warn(`Explorer fetch failed for ${address}, falling back to demo data`, err);
     return {
       transactions: generateMockTransactionsForAddress(address),
       source: 'demo',
-      demoReason: err instanceof Error ? err.message : 'Explorer request failed',
+      demoReason: reason,
     };
   }
 }
 
 export async function fetchTokenTransfers(address: string): Promise<RawTransaction[]> {
-  const apiKey = getApiKey();
-  if (!apiKey) return [];
-
-  const url = new URL(BASE_URL);
-  url.searchParams.set('module', 'account');
-  url.searchParams.set('action', 'tokentx');
-  url.searchParams.set('address', address);
-  url.searchParams.set('page', '1');
-  url.searchParams.set('offset', '100');
-  url.searchParams.set('sort', 'desc');
-  url.searchParams.set('apikey', apiKey);
-
   try {
-    const data = await fetchWithRetry(url.toString());
+    const data = await explorerRequest('ethereum', {
+      module: 'account',
+      action: 'tokentx',
+      address,
+      page: 1,
+      offset: 100,
+      sort: 'desc',
+    });
     if (data.status === '0') return [];
-    return (data.result as RawTransaction[]).map(tx => ({
+    return (data.result as RawTransaction[]).map((tx) => ({
       ...tx,
       walletLabel: address,
       // `value` here is in the token's own decimals, not wei. See assetResolver.
       isTokenTransfer: true,
     }));
   } catch (err) {
-    console.warn("Failed to fetch token transfers", err);
+    console.warn('Failed to fetch token transfers', err);
     return [];
   }
 }

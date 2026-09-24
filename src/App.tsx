@@ -346,7 +346,7 @@ export default function App() {
                 <div className="text-amber-300/75 text-xs mt-1">
                   {demoReason ?? 'The explorer request could not be completed.'}
                   {' '}Figures below, including the tax report, are synthetic. Add a
-                  {' '}<code className="font-mono">VITE_ETHERSCAN_API_KEY</code> to analyse a real wallet.
+                  {' '}<code className="font-mono">ETHERSCAN_API_KEY</code> to analyse a real wallet.
                 </div>
               </div>
             </div>

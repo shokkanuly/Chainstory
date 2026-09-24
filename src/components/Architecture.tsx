@@ -15,7 +15,7 @@ const stages = [
     title: 'ML Classification',
     module: 'mlClassifier.ts',
     description:
-      'In-browser XGBoost classifier via ONNX Runtime Web assigns categories — trade, income, transfer, NFT — at 1ms latency with zero server calls.',
+      'A deterministic rules engine assigns categories - trade, income, transfer, NFT - from the decoded method signature and transfer shape. It runs locally and is auditable line by line.',
     accent: 'border-signal-amber',
     dot: 'bg-signal-amber',
   },

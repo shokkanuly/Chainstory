@@ -66,27 +66,53 @@ Open [http://localhost:5173](http://localhost:5173) and paste any address or ENS
 
 ### Environment Variables
 
+All keys are **server-side**. They are read by the `/api` proxy functions and are
+never sent to the browser.
+
 | Variable | Required | Where to get it |
 | :--- | :---: | :--- |
-| `VITE_GEMINI_API_KEY` | Recommended | [Google AI Studio](https://aistudio.google.com/app/apikey) (free) |
-| `VITE_ETHERSCAN_API_KEY` | **Yes** | [Etherscan](https://etherscan.io/myapikey) (free) |
-| `VITE_ARBISCAN_API_KEY` | No | Falls back to Etherscan key |
-| `VITE_BASESCAN_API_KEY` | No | Falls back to Etherscan key |
-| `VITE_OPTIMISM_API_KEY` | No | Falls back to Etherscan key |
-| `VITE_POLYGONSCAN_API_KEY` | No | Falls back to Etherscan key |
+| `ETHERSCAN_API_KEY` | **Yes** for live data | [Etherscan](https://etherscan.io/myapikey) (free) |
+| `GEMINI_API_KEY` | No | [Google AI Studio](https://aistudio.google.com/app/apikey) (free) |
+| `ARBISCAN_API_KEY` | No | Falls back to `ETHERSCAN_API_KEY` |
+| `BASESCAN_API_KEY` | No | Falls back to `ETHERSCAN_API_KEY` |
+| `OPTIMISM_API_KEY` | No | Falls back to `ETHERSCAN_API_KEY` |
+| `POLYGONSCAN_API_KEY` | No | Falls back to `ETHERSCAN_API_KEY` |
+
+> [!IMPORTANT]
+> **Do not add a `VITE_` prefix to these.** That prefix is what inlines a value
+> into the public client bundle, where anyone can read it. It is the reason this
+> proxy exists. `npm run build && grep -r "apikey=" dist/` should return nothing.
 
 > [!NOTE]
-> **Without `VITE_ETHERSCAN_API_KEY` the app runs on demo data — and says so.**
-> The fetch layer returns a `FetchResult` carrying `source: 'live' | 'demo'`, every synthetic record is flagged `isDemo`, and the workspace shows an amber banner naming the reason whenever the figures on screen are not real chain history. Contract risk lookups return `unknown` rather than a guess. Add a key to analyse a real wallet.
+> **Without `ETHERSCAN_API_KEY` the app runs on demo data, and says so.** The
+> proxy answers 503, the fetch layer returns `source: 'demo'`, every synthetic
+> record is flagged `isDemo`, and the workspace shows an amber banner naming the
+> reason. Contract risk lookups return `unknown` rather than a guess.
 
-> [!CAUTION]
-> **`VITE_*` variables are compiled into the public JavaScript bundle.** Anything you put in `.env` is readable by every visitor to a deployed build. This is a Vite design constraint, not a bug — but it means you should only ever use free, rate-limited, revocable keys here. Never deploy this with a paid or privileged API key. A production deployment needs a small backend proxy that holds the keys server-side.
+### Deploying
+
+The app is a static SPA plus two serverless functions, so any host that runs
+both works. Vercel needs no extra configuration beyond the keys:
+
+```bash
+npm i -g vercel
+vercel                                    # link the project
+vercel env add ETHERSCAN_API_KEY          # paste the key, choose all environments
+vercel env add GEMINI_API_KEY             # optional
+vercel --prod
+```
+
+`vercel.json` already sets the build command, the SPA rewrite and `no-store` on
+`/api/*`. Local `npm run dev` runs the same handlers through a Vite middleware
+plugin, so development and production share one code path.
 
 ---
 
 ## Privacy
 
-Everything runs **client-side in the browser**. There is no ChainStory backend, no account, no wallet connection, and no database — your address is never sent to a server we control, because there isn't one.
+Analysis runs **client-side in the browser**. The only server-side code is a
+thin proxy that holds the API keys and forwards allowlisted explorer requests;
+it stores nothing. There is no account, no wallet connection, and no database — your address is never sent to a server we control, because there isn't one.
 
 That is not the same as "nothing leaves your machine." To do its job the browser calls these third parties directly:
 
@@ -213,6 +239,16 @@ src/
 ├── App.css           Design system (OKLCH tokens)
 └── main.tsx          Entry point
 
+server/                             # API key proxy, no state
+├── explorerHandler.ts              # Allowlisted explorer proxy + rate limit
+├── geminiHandler.ts                # Prompt built server-side, not client-supplied
+├── devPlugin.ts                    # Runs the same handlers in `npm run dev`
+└── __tests__/                      # Allowlist and key-handling tests
+
+api/                                # Vercel adapters over server/
+├── explorer.ts
+└── describe.ts
+
 ml/
 ├── collect_training_data.py        # Gemini-labelled ("silver standard") dataset builder
 ├── train_classifier.py             # XGBoost trainer + ONNX export
@@ -267,9 +303,12 @@ Historical prices come from DefiLlama with a CoinGecko fallback, and the symbol 
 
 An allowance granted before the 100-transaction window will not appear, and the panel reads transaction history rather than querying live `allowance()` state. It is an accurate reading of what it can see, not a complete picture of what is currently approved on-chain.
 
-#### 8. `VITE_*` keys are public in a deployed build
+#### 8. Rate limiting is per-instance
 
-Covered under [Environment Variables](#environment-variables). Fine for local use with free keys; a public deployment needs a backend proxy holding the keys server-side.
+The proxy limits each IP to 60 requests/minute, but the counter lives in memory,
+so it resets when a serverless instance recycles and is not shared across
+instances. That stops casual scraping; a determined attacker would need a shared
+store such as Redis or Vercel KV.
 
 ---
 

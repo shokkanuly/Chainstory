@@ -1,6 +1,7 @@
 // src/components/TransactionCard.tsx — Premium Transaction Card
 import type { ClassifiedTransaction, TaxCategory } from '../types';
 import { formatAddress } from '../services/etherscan';
+import { explorerTxUrl } from '../services/chains';
 
 interface Props {
   tx: ClassifiedTransaction;
@@ -106,7 +107,7 @@ export default function TransactionCard({ tx, index }: Props) {
             <span className="tx-addr">{formatAddress(tx.to)}</span>
           </div>
           <a
-            href={`https://etherscan.io/tx/${tx.hash}`}
+            href={explorerTxUrl(tx.hash, tx.chainId)}
             target="_blank"
             rel="noopener noreferrer"
             className="tx-hash-link"
