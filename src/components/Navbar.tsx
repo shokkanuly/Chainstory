@@ -69,7 +69,7 @@ export default function Navbar() {
               GitHub
             </a>
             <a
-              href="#app-workspace"
+              href="/app"
               className="b-btn b-btn--primary !px-4 !py-2.5 !text-[13px]"
             >
               Launch App
@@ -109,7 +109,7 @@ export default function Navbar() {
               ))}
               <div className="pt-3 border-t border-border mt-3">
                 <a
-                  href="#app-workspace"
+                  href="/app"
                   onClick={() => setMobileOpen(false)}
                   className="b-btn b-btn--primary w-full"
                 >

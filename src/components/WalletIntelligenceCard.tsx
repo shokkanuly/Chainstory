@@ -2,6 +2,7 @@
 // Compact, tool-first Wallet Intelligence Summary Card
 
 import { analyzeWalletIntelligence, type WalletIntelligenceReport } from '../services/walletIntelligence';
+import { InlineIcon, BrainIcon } from './icons';
 import type { ClassifiedTransaction } from '../types';
 
 interface Props {
@@ -33,9 +34,7 @@ export default function WalletIntelligenceCard({ transactions, walletAddress }: 
       {/* Top Header Row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-lg">
-            🧠
-          </div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-lg"><InlineIcon icon={BrainIcon} size={16} /></div>
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-base font-bold text-white tracking-tight">Wallet Intelligence Summary</h3>
@@ -110,7 +109,7 @@ export default function WalletIntelligenceCard({ transactions, walletAddress }: 
       {intel.flaggedInteractions.length > 0 && (
         <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs space-y-1 text-amber-300">
           <div className="font-semibold flex items-center gap-1.5">
-            <span>⚠️ Counterparty Risk Warning</span>
+            <span>Counterparty Risk Warning</span>
           </div>
           <ul className="list-disc list-inside space-y-0.5 text-[11px] text-amber-200/90">
             {intel.flaggedInteractions.map((f, i) => (

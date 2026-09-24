@@ -82,13 +82,13 @@ export default function Security() {
                   <span className="text-chain">→</span> Simulating 0x7a3b...e42f
                 </div>
                 <div>
-                  <span className="text-signal-red">⚠</span> Unlimited USDC allowance detected
+                  <span className="text-signal-red"></span> Unlimited USDC allowance detected
                 </div>
                 <div>
-                  <span className="text-signal-amber">⚠</span> Contract not verified on Etherscan
+                  <span className="text-signal-amber"></span> Contract not verified on Etherscan
                 </div>
                 <div>
-                  <span className="text-signal-green">✓</span> Gas within normal range (23 gwei)
+                  <span className="text-signal-green"></span> Gas within normal range (23 gwei)
                 </div>
               </div>
             </div>

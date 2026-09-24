@@ -17,7 +17,7 @@ const CHAIN_STATS: ChainStat[] = [
   { id: 'arbitrum', name: 'Arbitrum One', symbol: 'ARB', icon: '◈', tps: '38.5', gasGwei: '0.1', status: 'online', color: '#28a0f0' },
   { id: 'base', name: 'Base', symbol: 'BASE', icon: '●', tps: '42.1', gasGwei: '0.05', status: 'online', color: '#0052ff' },
   { id: 'optimism', name: 'OP Mainnet', symbol: 'OP', icon: '◉', tps: '29.8', gasGwei: '0.08', status: 'online', color: '#ff0420' },
-  { id: 'polygon', name: 'Polygon', symbol: 'POL', icon: '⬡', tps: '54.0', gasGwei: '32', status: 'online', color: '#8247e5' },
+  { id: 'polygon', name: 'Polygon', symbol: 'POL', icon: '', tps: '54.0', gasGwei: '32', status: 'online', color: '#8247e5' },
 ];
 
 interface Props {

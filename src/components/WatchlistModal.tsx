@@ -1,5 +1,7 @@
 // src/components/WatchlistModal.tsx
 import { useState } from 'react';
+import { InlineIcon, StarIcon } from './icons';
+import { XIcon } from '@phosphor-icons/react';
 import { getWatchlist, addWatchlistItem, removeWatchlistItem, type WatchlistItem } from '../services/watchlistStore';
 import type { ChainId } from '../types';
 
@@ -45,15 +47,13 @@ export default function WatchlistModal({ isOpen, onClose, onSelectWallet }: Prop
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/80">
           <div className="flex items-center gap-2">
-            <span className="text-xl">⭐</span>
+            <span className="text-xl"><InlineIcon icon={StarIcon} size={15} /></span>
             <h2 className="text-lg font-bold text-white">Wallet Watchlist</h2>
           </div>
           <button
             onClick={onClose}
             className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
-          >
-            ✕
-          </button>
+          ><XIcon size={15} weight="bold" aria-hidden /></button>
         </div>
 
         {/* Content */}
@@ -85,11 +85,11 @@ export default function WatchlistModal({ isOpen, onClose, onSelectWallet }: Prop
                 onChange={(e) => setSelectedChain(e.target.value as ChainId)}
                 className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none"
               >
-                <option value="ethereum">⟠ Ethereum Mainnet</option>
-                <option value="arbitrum">🔵 Arbitrum One</option>
-                <option value="base">🔷 Base L2</option>
-                <option value="optimism">🔴 Optimism Mainnet</option>
-                <option value="polygon">💜 Polygon PoS</option>
+                <option value="ethereum">Ethereum Mainnet</option>
+                <option value="arbitrum">Arbitrum One</option>
+                <option value="base">Base L2</option>
+                <option value="optimism">Optimism Mainnet</option>
+                <option value="polygon">Polygon PoS</option>
               </select>
 
               <button
@@ -138,7 +138,7 @@ export default function WatchlistModal({ isOpen, onClose, onSelectWallet }: Prop
                         className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-slate-700/50 transition"
                         title="Remove from watchlist"
                       >
-                        🗑️
+                        
                       </button>
                     </div>
                   </div>

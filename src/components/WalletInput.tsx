@@ -1,5 +1,6 @@
 // src/components/WalletInput.tsx — Premium Blockchair-style Search Input
 import { useState } from 'react';
+import { InlineIcon, UserIcon, StarIcon, CurrencyEthIcon } from './icons';
 import { isValidEthAddressOrEns } from '../services/etherscan';
 import WatchlistModal from './WatchlistModal';
 import type { ChainId } from '../types';
@@ -13,8 +14,8 @@ interface Props {
 }
 
 const DEMO_WALLETS = [
-  { label: 'vitalik.eth', address: '0xd8dA6BF26964aF9Ded7ede3308C4157ed3714123', icon: '👤' },
-  { label: 'Uniswap LP', address: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC', icon: '🦄' },
+  { label: 'vitalik.eth', address: '0xd8dA6BF26964aF9Ded7ede3308C4157ed3714123', icon: UserIcon },
+  { label: 'Uniswap LP', address: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC', icon: CurrencyEthIcon },
 ];
 
 export default function WalletInput({ onSubmit, isLoading, error }: Props) {
@@ -89,10 +90,10 @@ export default function WalletInput({ onSubmit, isLoading, error }: Props) {
             className="bg-card border border-border/60 text-xs text-muted-foreground font-medium rounded-xl px-3 py-3 outline-none focus:border-chain"
           >
             <option value="ethereum">⟠ Ethereum</option>
-            <option value="arbitrum">🔵 Arbitrum</option>
-            <option value="base">🔷 Base</option>
-            <option value="optimism">🔴 Optimism</option>
-            <option value="polygon">💜 Polygon</option>
+            <option value="arbitrum">Arbitrum</option>
+            <option value="base">Base</option>
+            <option value="optimism">Optimism</option>
+            <option value="polygon">Polygon</option>
           </select>
 
           {/* Watchlist Quick Button */}
@@ -101,9 +102,7 @@ export default function WalletInput({ onSubmit, isLoading, error }: Props) {
             onClick={() => setIsWatchlistOpen(true)}
             className="flex items-center justify-center p-3 rounded-xl bg-secondary/80 hover:bg-secondary text-amber-400 hover:text-amber-300 transition"
             title="Open Watchlist"
-          >
-            ⭐
-          </button>
+          ><InlineIcon icon={StarIcon} size={15} /></button>
 
           {/* Analyze button */}
           <button
@@ -151,7 +150,7 @@ export default function WalletInput({ onSubmit, isLoading, error }: Props) {
                 onClick={() => { setValue(w.label); handleSubmit(w.address); }}
                 disabled={isLoading}
               >
-                <span>{w.icon}</span>
+                <InlineIcon icon={w.icon} size={14} />
                 {w.label}
               </button>
             ))}
@@ -162,7 +161,7 @@ export default function WalletInput({ onSubmit, isLoading, error }: Props) {
             onClick={() => setIsWatchlistOpen(true)}
             className="text-[11px] font-medium text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
           >
-            <span>⭐ Open Watchlist</span>
+            <span className="inline-flex items-center gap-1.5"><InlineIcon icon={StarIcon} size={13} /> Open Watchlist</span>
           </button>
         </div>
       </div>

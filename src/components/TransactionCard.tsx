@@ -2,18 +2,19 @@
 import type { ClassifiedTransaction, TaxCategory } from '../types';
 import { formatAddress } from '../services/etherscan';
 import { explorerTxUrl } from '../services/chains';
+import { CATEGORY_ICON, InlineIcon } from './icons';
 
 interface Props {
   tx: ClassifiedTransaction;
   index: number;
 }
 
-const CATEGORY_META: Record<TaxCategory | 'unknown', { label: string; icon: string; className: string }> = {
-  trade: { label: 'Trade', icon: '💱', className: 'cat-trade' },
-  income: { label: 'Income', icon: '💎', className: 'cat-income' },
-  transfer: { label: 'Transfer', icon: '↔️', className: 'cat-transfer' },
-  nft: { label: 'NFT', icon: '🖼️', className: 'cat-nft' },
-  unknown: { label: 'Unknown', icon: '❓', className: 'cat-unknown' },
+const CATEGORY_META: Record<TaxCategory | 'unknown', { label: string; className: string }> = {
+  trade: { label: 'Trade', className: 'cat-trade' },
+  income: { label: 'Income', className: 'cat-income' },
+  transfer: { label: 'Transfer', className: 'cat-transfer' },
+  nft: { label: 'NFT', className: 'cat-nft' },
+  unknown: { label: 'Unknown', className: 'cat-unknown' },
 };
 
 function formatDate(date: Date): string {
@@ -57,7 +58,8 @@ export default function TransactionCard({ tx, index }: Props) {
           </div>
           <div className="tx-card-right">
             <span className={`category-tag ${meta.className}`}>
-              {meta.icon} {meta.label}
+              <InlineIcon icon={CATEGORY_ICON[tx.category]} size={13} />
+              {meta.label}
             </span>
             {isFailed && <span className="failed-badge">Failed</span>}
           </div>
