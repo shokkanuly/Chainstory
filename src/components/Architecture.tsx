@@ -49,10 +49,10 @@ export default function Architecture() {
             Architecture
           </div>
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-            Decoupled <span className="text-gradient-chain">3-Stage ML Pipeline</span>
+            A <span className="text-gradient-chain">3-Stage Pipeline</span>
           </h2>
           <p className="text-muted-foreground text-lg">
-            No AI wrapper. A real ML pipeline running entirely in your browser.
+            Feature extraction, deterministic classification, then plain-English descriptions. Runs in your browser.
           </p>
         </motion.div>
 
@@ -111,7 +111,7 @@ export default function Architecture() {
                 <span className="text-chain">→</span>
                 <span className="rounded bg-secondary px-2 py-1 border border-border">DefiLlama Oracle</span>
                 <span className="text-chain">→</span>
-                <span className="rounded bg-secondary px-2 py-1 border border-border">3-Stage ML</span>
+                <span className="rounded bg-secondary px-2 py-1 border border-border">3-Stage Pipeline</span>
               </div>
               <div className="text-chain text-lg">↓</div>
               <div>

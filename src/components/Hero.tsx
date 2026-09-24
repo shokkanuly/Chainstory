@@ -39,9 +39,12 @@ export default function Hero({ onAnalyze }: Props) {
           style={{ borderRadius: 'var(--b-r-lg)' }}
         >
           <div className="max-w-[46rem]">
+            {/* Fixed colours, not theme tokens: this sits on the brand gradient,
+                which does not change between themes. Using --b-ink here made the
+                label white-on-white the moment dark mode inverted it. */}
             <span
               className="b-pill"
-              style={{ background: 'rgba(255,255,255,0.92)', color: 'var(--b-ink)' }}
+              style={{ background: 'rgba(255,255,255,0.92)', color: '#111114' }}
             >
               New · Multi-chain
             </span>

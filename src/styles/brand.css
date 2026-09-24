@@ -59,6 +59,87 @@
   --b-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', monospace;
 }
 
+/* ---- Dark mode ------------------------------------------------------- */
+/*
+ * Same system, inverted. Two things flip rather than simply darkening:
+ *
+ *   --b-ink      The primary action is "ink on canvas". In light that is black
+ *                on white; in dark it becomes white on near-black. Keeping the
+ *                token name means every CTA follows without touching a
+ *                component.
+ *   semantics    Gain and loss are lightened, because #0e9e90 on near-black
+ *                fails contrast while #34d399 clears it.
+ *
+ * The brand gradient does not change. It is the identity, and it reads on both.
+ */
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --b-canvas: #0b0b0e;
+  --b-surface: #141418;
+  --b-raised: #1a1a1f;
+  --b-ink: #ffffff;
+
+  --b-text: #f4f4f5;
+  --b-text-muted: #a1a1aa;
+  --b-text-faint: #71717a;
+  --b-on-ink: #0b0b0e;
+  --b-on-ink-muted: rgba(11, 11, 14, 0.72);
+
+  --b-line: #26262b;
+  --b-line-strong: #34343b;
+
+  --b-blue-wash: #171a2e;
+  --b-violet-wash: #1d1830;
+  --b-teal-wash: #10241f;
+
+  --b-gain: #34d399;
+  --b-loss: #fb7185;
+  --b-warn: #fbbf24;
+  --b-gain-wash: #0f2a22;
+  --b-loss-wash: #2c1418;
+  --b-warn-wash: #2b1f0b;
+}
+
+/* Follow the operating system unless the visitor has chosen a theme. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --b-canvas: #0b0b0e;
+    --b-surface: #141418;
+    --b-raised: #1a1a1f;
+    --b-ink: #ffffff;
+
+    --b-text: #f4f4f5;
+    --b-text-muted: #a1a1aa;
+    --b-text-faint: #71717a;
+    --b-on-ink: #0b0b0e;
+    --b-on-ink-muted: rgba(11, 11, 14, 0.72);
+
+    --b-line: #26262b;
+    --b-line-strong: #34343b;
+
+    --b-blue-wash: #171a2e;
+    --b-violet-wash: #1d1830;
+    --b-teal-wash: #10241f;
+
+    --b-gain: #34d399;
+    --b-loss: #fb7185;
+    --b-warn: #fbbf24;
+    --b-gain-wash: #0f2a22;
+    --b-loss-wash: #2c1418;
+    --b-warn-wash: #2b1f0b;
+  }
+}
+
+/* The ink button inverts with the theme, so its hover must too. */
+:root[data-theme='dark'] .b-btn--primary:hover,
+:root:not([data-theme='light']) .b-btn--primary:hover {
+  background: #e4e4e7;
+}
+
 /* ---- Brand primitives ------------------------------------------------ */
 
 /* The identity gradient. Budget: twice per screen. */
