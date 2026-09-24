@@ -11,21 +11,23 @@
 // anyone burn our rate limit on arbitrary calls, so only the exact
 // module/action pairs the app actually uses are allowed, each with its own
 // parameter allowlist, and every value is validated before it is forwarded.
+//
+// Etherscan API V2. The per-chain domains (arbiscan.io, basescan.org, ...) were
+// V1 and are now deprecated: they answer HTTP 200 with a NOTOK body telling you
+// to migrate, which is easy to mistake for a working call returning no data.
+// V2 is one host plus a numeric `chainid`, and a single key covers every chain.
 
 export type ChainId = 'ethereum' | 'arbitrum' | 'base' | 'optimism' | 'polygon';
 
-interface ChainSpec {
-  apiUrl: string;
-  /** Env var holding this chain's key. Falls back to the Ethereum key. */
-  keyVar: string;
-}
+const V2_BASE = 'https://api.etherscan.io/v2/api';
 
-const CHAINS: Record<ChainId, ChainSpec> = {
-  ethereum: { apiUrl: 'https://api.etherscan.io/api', keyVar: 'ETHERSCAN_API_KEY' },
-  arbitrum: { apiUrl: 'https://api.arbiscan.io/api', keyVar: 'ARBISCAN_API_KEY' },
-  base: { apiUrl: 'https://api.basescan.org/api', keyVar: 'BASESCAN_API_KEY' },
-  optimism: { apiUrl: 'https://api-optimistic.etherscan.io/api', keyVar: 'OPTIMISM_API_KEY' },
-  polygon: { apiUrl: 'https://api.polygonscan.com/api', keyVar: 'POLYGONSCAN_API_KEY' },
+/** Numeric chain ids, from https://api.etherscan.io/v2/chainlist */
+const CHAIN_IDS: Record<ChainId, number> = {
+  ethereum: 1,
+  optimism: 10,
+  polygon: 137,
+  base: 8453,
+  arbitrum: 42161,
 };
 
 /** module:action -> the query parameters that may accompany it. */
@@ -113,12 +115,23 @@ function sweep(now = Date.now()): void {
   }
 }
 
+/**
+ * Under V2 a single Etherscan key covers every supported chain, so the old
+ * per-chain variables are no longer needed. They are still honoured as an
+ * override for anyone who has separate keys provisioned.
+ */
 export function resolveKey(
   chainId: ChainId,
   env: Record<string, string | undefined>
 ): string | null {
-  const spec = CHAINS[chainId];
-  const key = env[spec.keyVar] || env.ETHERSCAN_API_KEY;
+  const legacyVar: Record<ChainId, string> = {
+    ethereum: 'ETHERSCAN_API_KEY',
+    arbitrum: 'ARBISCAN_API_KEY',
+    base: 'BASESCAN_API_KEY',
+    optimism: 'OPTIMISM_API_KEY',
+    polygon: 'POLYGONSCAN_API_KEY',
+  };
+  const key = env[legacyVar[chainId]] || env.ETHERSCAN_API_KEY;
   if (!key || key.trim() === '' || key.includes('your_')) return null;
   return key.trim();
 }
@@ -139,7 +152,7 @@ export async function handleExplorer(
   }
 
   const chainId = first(req.query.chain) as ChainId | undefined;
-  if (!chainId || !(chainId in CHAINS)) {
+  if (!chainId || !(chainId in CHAIN_IDS)) {
     return { status: 400, body: { error: 'Unknown or missing chain' } };
   }
 
@@ -152,7 +165,8 @@ export async function handleExplorer(
 
   // Validate every parameter before looking at configuration, so malformed
   // input is rejected identically whether or not a key happens to be set.
-  const url = new URL(CHAINS[chainId].apiUrl);
+  const url = new URL(V2_BASE);
+  url.searchParams.set('chainid', String(CHAIN_IDS[chainId]));
   url.searchParams.set('module', module!);
   url.searchParams.set('action', action!);
 

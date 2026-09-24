@@ -2,6 +2,7 @@ import type { ClassifiedTransaction } from '../types';
 import { formatAddress } from '../services/etherscan';
 import { calculateFifoTaxReport } from '../services/fifoEngine';
 import { generatePdfTaxReport } from '../services/pdfGenerator';
+import { explorerTxUrl } from '../services/chains';
 
 interface Props {
   transactions: ClassifiedTransaction[];
@@ -32,7 +33,7 @@ export default function ExportButton({ transactions, walletAddress }: Props) {
       'To',
       'TX Hash',
       'Status',
-      'Etherscan Link',
+      'Explorer Link',
     ];
 
     const rows = transactions.map(tx => {
@@ -51,7 +52,7 @@ export default function ExportButton({ transactions, walletAddress }: Props) {
         tx.to || 'Contract Creation',
         tx.hash,
         tx.isError === '1' ? 'Failed' : 'Success',
-        `https://etherscan.io/tx/${tx.hash}`,
+        explorerTxUrl(tx.hash, tx.chainId),
       ].map(escapeCSV);
     });
 

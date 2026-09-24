@@ -35,6 +35,40 @@ describe('explorer proxy allowlist', () => {
     expect(calls[0]).toContain(`address=${ADDR}`);
   });
 
+  // The deprecated V1 per-chain domains answer HTTP 200 with a NOTOK body, so a
+  // regression here would look like "no transactions" rather than an error.
+  it.each([
+    ['ethereum', '1'],
+    ['optimism', '10'],
+    ['polygon', '137'],
+    ['base', '8453'],
+    ['arbitrum', '42161'],
+  ])('routes %s to the V2 endpoint with chainid %s', async (chain, id) => {
+    const { impl, calls } = spyFetch();
+    await handleExplorer(
+      req({ chain, module: 'account', action: 'txlist', address: ADDR }),
+      ENV, `ip-v2-${chain}`, impl
+    );
+    const url = new URL(calls[0]);
+    expect(url.host).toBe('api.etherscan.io');
+    expect(url.pathname).toBe('/v2/api');
+    expect(url.searchParams.get('chainid')).toBe(id);
+  });
+
+  it('never calls a deprecated V1 per-chain domain', async () => {
+    const { impl, calls } = spyFetch();
+    for (const chain of ['ethereum', 'arbitrum', 'base', 'optimism', 'polygon']) {
+      await handleExplorer(
+        req({ chain, module: 'account', action: 'txlist', address: ADDR }),
+        ENV, `ip-dep-${chain}`, impl
+      );
+    }
+    const dead = ['arbiscan.io', 'basescan.org', 'polygonscan.com', 'api-optimistic.etherscan.io'];
+    for (const url of calls) {
+      for (const host of dead) expect(url).not.toContain(host);
+    }
+  });
+
   it.each([
     ['account', 'balance'],
     ['stats', 'ethprice'],
@@ -146,8 +180,11 @@ describe('explorer proxy allowlist', () => {
 });
 
 describe('resolveKey', () => {
-  it('falls back to the Ethereum key for other chains', () => {
-    expect(resolveKey('base', { ETHERSCAN_API_KEY: 'shared' })).toBe('shared');
+  it('uses one key across every chain, as V2 allows', () => {
+    const env = { ETHERSCAN_API_KEY: 'shared' };
+    for (const c of ['ethereum', 'arbitrum', 'base', 'optimism', 'polygon'] as const) {
+      expect(resolveKey(c, env)).toBe('shared');
+    }
   });
 
   it('prefers a chain-specific key', () => {
