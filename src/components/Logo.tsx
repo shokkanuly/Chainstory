@@ -1,12 +1,13 @@
-// src/components/Logo.tsx — the Tripwire mark (three staggered bars) and wordmark.
+// src/components/Logo.tsx — the three-bar mark and a product wordmark.
 //
-// Bar geometry and gradient are traced from public/brand/tripwire-mark.svg.
-// Nothing else in the app draws the mark; import this.
+// One mark for both products; the wordmark says which one you are in
+// (Retold by default, Tripwire on /tripwire). Live text, so it inherits colour.
 
-const MARK_GRADIENT_ID = 'tripwire-mark-gradient';
+const MARK_GRADIENT_ID = 'brand-mark-gradient';
 
 /**
- * Bar geometry, authored in the artwork's own 667x534 space and mapped into a 100x100 box below, so the
+ * Bar geometry, traced from public/brand/chainstory-mark.png. Authored in the
+ * artwork's own 667x534 space and mapped into a 100x100 box below, so the
  * numbers can be checked against the source directly.
  */
 const BARS = [
@@ -67,16 +68,17 @@ export function LogoMark({
   );
 }
 
-/** Mark plus the Tripwire wordmark, as live text so it inherits colour and stays selectable. */
 export default function Logo({
   size = 28,
   flat = false,
   showWordmark = true,
+  name = 'Retold',
   className,
 }: {
   size?: number;
   flat?: boolean;
   showWordmark?: boolean;
+  name?: 'Retold' | 'Tripwire';
   className?: string;
 }) {
   return (
@@ -84,10 +86,10 @@ export default function Logo({
       <LogoMark size={size} flat={flat} />
       {showWordmark ? (
         <span className="font-bold tracking-[-0.03em]" style={{ fontSize: size * 0.62 }}>
-          Tripwire
+          {name}
         </span>
       ) : (
-        <span className="sr-only">Tripwire</span>
+        <span className="sr-only">{name}</span>
       )}
     </span>
   );

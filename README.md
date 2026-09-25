@@ -1,15 +1,16 @@
 <p align="center">
-  <img src="public/brand/tripwire-mark.svg" width="72" alt="" />
+  <img src="public/brand/chainstory-mark.svg" width="72" alt="" />
 </p>
 
-<h1 align="center">Tripwire</h1>
+<h1 align="center">Retold · Tripwire</h1>
 
 <p align="center">
-  <strong>A circuit breaker for bridges that acts <em>before</em> the money moves.</strong>
+  <strong>Read any wallet. Protect every bridge.</strong>
 </p>
 
 <p align="center">
-  <a href="https://retold-nu.vercel.app/tripwire"><strong>▶ Live demo</strong></a> ·
+  <a href="https://retold-nu.vercel.app/tripwire?incident=kelp"><strong>▶ Tripwire replay</strong></a> ·
+  <a href="https://retold-nu.vercel.app/app"><strong>▶ Retold app</strong></a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#run-it-locally">Run it locally</a>
 </p>
@@ -18,11 +19,27 @@
   <img src="https://img.shields.io/badge/Solidity-0.8.37-363636?logo=solidity&logoColor=white" alt="Solidity" />
   <img src="https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/viem-2.56-FFC517" alt="viem" />
-  <img src="https://img.shields.io/badge/tests-104_passing-brightgreen" alt="104 tests passing" />
+  <img src="https://img.shields.io/badge/tests-173_passing-brightgreen" alt="173 tests passing" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
 </p>
 
 ---
+
+## Two products, one idea
+
+On-chain data is machine-readable and human-incomprehensible. We built two
+tools on that insight:
+
+| | For | What it does |
+| :--- | :--- | :--- |
+| **[Retold](https://retold-nu.vercel.app/app)** | Anyone with a wallet | Paste an address or ENS name: get its history in plain English, a draft Form 8949 tax report, token approvals and a counterparty risk check. Read-only — no wallet connection. |
+| **[Tripwire](https://retold-nu.vercel.app/tripwire)** | Bridge teams | Checks each bridge payout against a burn it can verify *before* it executes, and pauses just that route if the check fails. |
+
+Retold explains what a transaction did after the fact. Tripwire applies the same
+verification before a transaction can do damage. The rest of this README is
+about Tripwire; Retold's full documentation is in [docs/chainstory.md](docs/chainstory.md).
+
+## Tripwire
 
 On 18 April 2026, $292M left Kelp DAO's bridge. Not over hours — in **a single
 release**. Verus lost $11.58M the same way in May, Syscoin ~$10M in June.
@@ -122,7 +139,7 @@ against **no verifiable burn at all**.
 | Oracle and contract agree on the threshold | 9 cross-layer tests |
 | Incident replays, end to end | 41 tests |
 | Gas: check an outflow · accept an attestation | 34k · 61k |
-| Total | **104 tests passing** |
+| Total | **173 tests passing** |
 
 The dashboard runs the exact contract bytecode the tests run, and a test fails
 if they ever differ.
@@ -133,11 +150,11 @@ if they ever differ.
 git clone https://github.com/shokkanuly/Chainstory.git
 cd Chainstory
 npm install
-npm run dev          # open http://localhost:5173
-npm test             # 104 tests
+npm run dev          # Retold at /app, Tripwire at /tripwire
+npm test             # 173 tests
 ```
 
-No API keys needed for the Tripwire demo.
+No API keys needed for the Tripwire replay. Retold needs an `ETHERSCAN_API_KEY` for live wallet data — see [`.env.example`](.env.example).
 
 ## Repository
 
@@ -147,7 +164,13 @@ No API keys needed for the Tripwire demo.
 | [`src/tripwire/replay/`](src/tripwire/replay/) | The three incidents and the replay engine |
 | [`src/components/tripwire/`](src/components/tripwire/) | The `/tripwire` dashboard |
 | [`contracts/evm/`](contracts/evm/) | TripwireGuardian in Solidity, and its tests |
+| [`src/pages/Workspace.tsx`](src/pages/Workspace.tsx) | Retold, the wallet analyser at `/app` |
+| [`src/services/`](src/services/) | Retold's indexing, decoding, tax engine and risk checks |
+| [`api/`](api/), [`server/`](server/) | Retold's API proxy — keeps explorer keys server-side |
 
+The two share a repo, a design system and a brand, not code: Tripwire's oracle
+does not call Retold's services yet. Using Retold's indexing to build live route
+baselines is Tripwire's next step.
 
 ## Sources
 

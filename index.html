@@ -4,11 +4,40 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tripwire — a circuit breaker for bridges</title>
-    <meta name="description" content="Every major 2026 bridge drain was a single transaction. Tripwire checks that each payout is backed by a verifiable burn before it executes, and pauses just that route if not." />
-    <meta property="og:title" content="Tripwire — a circuit breaker for bridges" />
-    <meta property="og:description" content="Replay Kelp DAO, Verus and Syscoin: acting before execution, Tripwire loses $0. One block later, it loses everything." />
-    <meta name="theme-color" content="#0b0b0e" />
+    <title>Retold · Tripwire — read any wallet, protect every bridge</title>
+    <meta name="description" content="Retold turns any EVM wallet into plain English, a draft tax report and a risk check. Tripwire checks each bridge payout against a verifiable burn before it executes, and pauses just that route if not." />
+    <meta property="og:title" content="Retold · Tripwire — read any wallet, protect every bridge" />
+    <meta property="og:description" content="Every major 2026 bridge drain was one transaction. Replay Kelp DAO: acting before execution, Tripwire loses $0. One block later, it loses everything." />
+    <meta name="theme-color" content="#0b0f19" />
+
+    <!-- Google Fonts — Premium Stack -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Font Gating Script for Zero FOUT -->
+    <script>
+      (function() {
+        document.documentElement.classList.add('fonts-pending');
+        if ('fonts' in document) {
+          Promise.all([
+            document.fonts.load('600 1em "Plus Jakarta Sans"'),
+            document.fonts.load('400 1em "JetBrains Mono"')
+          ]).then(function() {
+            document.documentElement.classList.remove('fonts-pending');
+            document.documentElement.classList.add('fonts-ready');
+          }).catch(function() {
+            document.documentElement.classList.remove('fonts-pending');
+          });
+        } else {
+          document.documentElement.classList.remove('fonts-pending');
+        }
+        setTimeout(function() {
+          document.documentElement.classList.remove('fonts-pending');
+        }, 2000);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

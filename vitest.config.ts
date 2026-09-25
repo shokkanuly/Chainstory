@@ -8,6 +8,7 @@ export default defineConfig({
     include: [
       'src/**/*.test.ts',
       'src/**/*.test.tsx',
+      'server/**/*.test.ts',
       // The guardian, executed in an in-process EVM against freshly compiled
       // bytecode. See contracts/evm/README.md.
       'contracts/**/*.test.ts',

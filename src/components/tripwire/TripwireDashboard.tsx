@@ -10,6 +10,7 @@
 // time: all three of these exploits drained in a single release.
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowCounterClockwiseIcon,
@@ -61,14 +62,15 @@ const ROUTE_STATUS: Record<RouteStatus, { label: string; color: string; icon: Ic
 };
 
 export default function TripwireDashboard() {
-  const initial = INCIDENTS.find((i) => i.id === new URLSearchParams(location.search).get('incident'))?.id ?? 'kelp';
+  const [params, setParams] = useSearchParams();
+  const initial = INCIDENTS.find((i) => i.id === params.get('incident'))?.id ?? 'kelp';
   const [state, controller] = useReplay(initial);
   const incident = INCIDENTS.find((i) => i.id === state.incidentId)!;
   const snap = state.replay;
 
   const select = (id: Incident['id']) => {
     if (id === state.incidentId && state.status !== 'error') return;
-    history.replaceState(null, '', `?incident=${id}`);
+    setParams({ incident: id }, { replace: true });
     void controller.select(id);
   };
 
@@ -77,7 +79,7 @@ export default function TripwireDashboard() {
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
       <header>
-        <p className="b-eyebrow">A circuit breaker for bridges</p>
+        <p className="b-eyebrow">Tripwire · a circuit breaker for bridges</p>
         <h1 className="mt-2 text-3xl font-bold tracking-[-0.03em] sm:text-4xl">Would it have stopped them?</h1>
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
           Every major bridge drain of 2026 was a single transaction, so a breaker has to act before it executes.
