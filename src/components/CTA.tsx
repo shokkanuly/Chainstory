@@ -1,8 +1,9 @@
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowRight, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export default function CTA() {
+  const reduce = useReducedMotion();
   return (
     <section className="relative py-24 sm:py-32 overflow-hidden">
       <div className="absolute inset-0 bg-radial-glow opacity-50" />
@@ -10,7 +11,7 @@ export default function CTA() {
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={reduce ? false : { opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-100px' }}
           transition={{ duration: 0.6 }}

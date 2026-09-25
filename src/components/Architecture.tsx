@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 
 const stages = [
   {
@@ -31,6 +31,7 @@ const stages = [
 ]
 
 export default function Architecture() {
+  const reduce = useReducedMotion();
   return (
     <section id="architecture" className="relative py-24 sm:py-32 overflow-hidden">
       {/* Subtle background */}
@@ -39,7 +40,7 @@ export default function Architecture() {
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Section header */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={reduce ? false : { opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-100px' }}
           transition={{ duration: 0.6 }}
@@ -65,7 +66,7 @@ export default function Architecture() {
             {stages.map((stage, i) => (
               <motion.div
                 key={stage.num}
-                initial={{ opacity: 0, x: -30 }}
+                initial={reduce ? false : { opacity: 0, x: -30 }}
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true, margin: '-60px' }}
                 transition={{ duration: 0.5, delay: i * 0.15 }}
@@ -98,7 +99,7 @@ export default function Architecture() {
 
         {/* Architecture diagram (simplified visual) */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={reduce ? false : { opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-60px' }}
           transition={{ duration: 0.6, delay: 0.3 }}

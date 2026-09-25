@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { Shield, AlertTriangle, Lock, Eye } from 'lucide-react'
 
 const threats = [
@@ -29,6 +29,7 @@ const threats = [
 ]
 
 export default function Security() {
+  const reduce = useReducedMotion();
   return (
     <section id="security" className="relative py-24 sm:py-32 overflow-hidden">
       <div className="absolute inset-0 bg-radial-glow opacity-30" />
@@ -37,7 +38,7 @@ export default function Security() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
           {/* Left: copy */}
           <motion.div
-            initial={{ opacity: 0, x: -30 }}
+            initial={reduce ? false : { opacity: 0, x: -30 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true, margin: '-100px' }}
             transition={{ duration: 0.6 }}
@@ -67,7 +68,7 @@ export default function Security() {
 
           {/* Right: threat cards */}
           <motion.div
-            initial={{ opacity: 0, x: 30 }}
+            initial={reduce ? false : { opacity: 0, x: 30 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true, margin: '-100px' }}
             transition={{ duration: 0.6, delay: 0.2 }}
@@ -96,7 +97,7 @@ export default function Security() {
             {threats.map((t, i) => (
               <motion.div
                 key={t.label}
-                initial={{ opacity: 0, y: 15 }}
+                initial={reduce ? false : { opacity: 0, y: 15 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.4, delay: 0.3 + i * 0.1 }}

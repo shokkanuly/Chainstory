@@ -282,3 +282,41 @@
   text-transform: uppercase;
   color: var(--b-text-muted);
 }
+
+/* ---- Motion ---------------------------------------------------------- */
+
+/*
+ * Theme change is a state transition, so it gets a transition. Without this the
+ * whole page hard-cuts between light and dark, which reads as a glitch rather
+ * than a choice. Only colour is animated, never layout.
+ *
+ * The 1ms floor on * is deliberate: transitioning every element is expensive,
+ * so this applies briefly and only to paint properties.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  :root,
+  body {
+    transition: background-color 240ms cubic-bezier(0.16, 1, 0.3, 1),
+      color 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+/*
+ * The last line of defence. Components honour prefers-reduced-motion through
+ * src/lib/motion.ts, but a stray CSS animation or a dependency's transition
+ * would slip past that. This catches anything missed without having to trust
+ * every file.
+ *
+ * Durations go to 0.01ms rather than 0 so that animationend and transitionend
+ * still fire; code that waits for them would otherwise hang.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

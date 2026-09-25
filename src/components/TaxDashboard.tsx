@@ -11,6 +11,9 @@ import {
   WarningIcon,
 } from './icons';
 import { getChainConfig } from '../services/chains';
+import { motion } from 'framer-motion';
+import AnimatedNumber from './AnimatedNumber';
+import { useStagger } from '../lib/motion';
 
 interface Props {
   /** Drives the native gas symbol: ETH on most chains, POL on Polygon. */
@@ -67,6 +70,9 @@ const STAT_CARDS = [
 ];
 
 export default function TaxDashboard({ summary, chainId = 'ethereum' }: Props) {
+  // Sequence communicates that these were computed together, in order.
+  const { container, child } = useStagger();
+
   return (
     <div className="dashboard">
       <div className="dashboard-header-row">
@@ -79,24 +85,30 @@ export default function TaxDashboard({ summary, chainId = 'ethereum' }: Props) {
         </h3>
       </div>
 
-      <div className="stat-cards">
+      <motion.div
+        className="stat-cards"
+        variants={container}
+        initial="hidden"
+        whileInView="show"
+        viewport={{ once: true, amount: 0.3 }}
+      >
         {STAT_CARDS.map((card) => {
           const value = card.getValue(summary);
           const variant = card.getVariant(value);
           return (
-            <div key={card.key} className="stat-card">
+            <motion.div key={card.key} className="stat-card" variants={child}>
               <div className="flex items-center justify-between">
                 <span className="stat-card-label">{card.label}</span>
                 <span className="text-base"><InlineIcon icon={card.icon} size={16} /></span>
               </div>
               <div className={`stat-card-value ${variant}`}>
-                {card.format(value)}
+                <AnimatedNumber value={value} format={card.format} />
               </div>
               <div className="stat-card-sub">{card.sub}</div>
-            </div>
+            </motion.div>
           );
         })}
-      </div>
+      </motion.div>
 
       <div className="gas-summary flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <div className="flex items-center gap-2">

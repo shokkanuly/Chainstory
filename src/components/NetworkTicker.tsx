@@ -1,5 +1,5 @@
 // src/components/NetworkTicker.tsx — Premium Multi-Chain Network Stats
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 
 export interface ChainStat {
   id: string;
@@ -26,6 +26,7 @@ interface Props {
 }
 
 export default function NetworkTicker({ selectedChain, onSelectChain }: Props) {
+  const reduce = useReducedMotion();
   return (
     <div className="w-full space-y-4">
       <div className="flex items-center justify-between">
@@ -45,8 +46,8 @@ export default function NetworkTicker({ selectedChain, onSelectChain }: Props) {
           return (
             <motion.button
               key={chain.id}
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={reduce ? undefined : { y: -2 }}
+              whileTap={reduce ? undefined : { scale: 0.98 }}
               onClick={() => onSelectChain(chain.id)}
               className={`text-left rounded-xl border p-4 transition-all duration-200 cursor-pointer ${
                 isSelected
