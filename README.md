@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/Gemini_AI-JSON_Schema-4285F4?logo=google&logoColor=white" alt="Gemini" />
   <img src="https://img.shields.io/badge/Chains-5_EVM_Networks-F6851B?logo=ethereum&logoColor=white" alt="Multi-Chain" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License" />
-  <img src="https://img.shields.io/badge/tests-33_passing-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-69_passing-brightgreen" alt="Tests" />
   <img src="https://img.shields.io/badge/status-beta-blue" alt="Status: beta" />
 </p>
 
@@ -15,7 +15,7 @@
 
 Paste an Ethereum address. Get back a readable history, a draft tax report, a reputation summary, and a risk check — no wallet connection required.
 
-> **Project status: beta.** The app builds clean, lints clean, and passes 33 tests. Chain reads, tax accounting, approval decoding and contract risk lookups all hit real data. What it still does *not* cover is listed honestly in [Known Limitations](#known-limitations) — read it before filing anything based on the tax output.
+> **Project status: beta.** The app builds clean, lints clean, and passes 69 tests. Chain reads, tax accounting, approval decoding and contract risk lookups all hit real data. What it still does *not* cover is listed honestly in [Known Limitations](#known-limitations) — read it before filing anything based on the tax output.
 
 ---
 
@@ -122,7 +122,6 @@ That is not the same as "nothing leaves your machine." To do its job the browser
 | Google Gemini (`generativelanguage.googleapis.com`) | Transaction metadata — addresses, values, method names — for description generation |
 | DefiLlama (`coins.llama.fi`) | Token symbols and timestamps for historical pricing |
 | CoinGecko (`api.coingecko.com`) | Token symbols and dates (fallback pricing) |
-| enstate.rs | ENS names you enter, for resolution |
 
 If you want zero third-party AI exposure, leave `VITE_GEMINI_API_KEY` unset — the deterministic keyword fallback generates descriptions for 100% of transactions offline, and no transaction data reaches Google.
 
@@ -343,7 +342,7 @@ npm run validate   # Run just the end-to-end wallet fixture suite
 
 ### Testing
 
-33 tests across four suites, run by `npm test`:
+69 tests across five suites, run by `npm test`:
 
 | Suite | Covers |
 | :--- | :--- |
@@ -381,7 +380,7 @@ Shipped:
 - [x] Contract risk reads real explorer data; unknown reported as unknown
 - [x] Approval calldata decoded for the true spender, revocations netted out
 - [x] ONNX runtime no longer downloaded when no model is deployed
-- [x] Vitest suite (33 tests) + GitHub Actions CI
+- [x] Vitest suite (69 tests) + GitHub Actions CI
 - [x] `METHOD_HINTS` and chain configs de-duplicated
 
 Next, by impact:
