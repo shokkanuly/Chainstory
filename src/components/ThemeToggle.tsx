@@ -12,7 +12,7 @@ import { MonitorIcon, MoonIcon, SunIcon } from '@phosphor-icons/react';
 
 type Theme = 'light' | 'dark' | 'system';
 
-const STORAGE_KEY = 'chainstory-theme';
+const STORAGE_KEY = 'tripwire-theme';
 
 function readStored(): Theme {
   try {

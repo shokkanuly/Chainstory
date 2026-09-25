@@ -8,7 +8,7 @@
 // an `OracleHealth` record that travels with the assessment. Nothing in this
 // module is allowed to turn "I could not tell" into "looks fine".
 
-export type ChainId = 'ethereum' | 'arbitrum' | 'base' | 'optimism' | 'solana';
+export type ChainId = 'ethereum' | 'arbitrum' | 'base' | 'optimism';
 
 /** A single outflow from a protected bridge or vault. */
 export interface BridgeTransfer {

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/brand/chainstory-mark.svg" width="72" alt="" />
+  <img src="public/brand/tripwire-mark.svg" width="72" alt="" />
 </p>
 
 <h1 align="center">Tripwire</h1>
@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/Solidity-0.8.37-363636?logo=solidity&logoColor=white" alt="Solidity" />
   <img src="https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/viem-2.56-FFC517" alt="viem" />
-  <img src="https://img.shields.io/badge/tests-173_passing-brightgreen" alt="173 tests passing" />
+  <img src="https://img.shields.io/badge/tests-104_passing-brightgreen" alt="104 tests passing" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
 </p>
 
@@ -122,7 +122,7 @@ against **no verifiable burn at all**.
 | Oracle and contract agree on the threshold | 9 cross-layer tests |
 | Incident replays, end to end | 41 tests |
 | Gas: check an outflow · accept an attestation | 34k · 61k |
-| Total | **173 tests passing** |
+| Total | **104 tests passing** |
 
 The dashboard runs the exact contract bytecode the tests run, and a test fails
 if they ever differ.
@@ -133,8 +133,8 @@ if they ever differ.
 git clone https://github.com/shokkanuly/Chainstory.git
 cd Chainstory
 npm install
-npm run dev          # open http://localhost:5173/tripwire
-npm test             # 173 tests
+npm run dev          # open http://localhost:5173
+npm test             # 104 tests
 ```
 
 No API keys needed for the Tripwire demo.
@@ -147,11 +147,7 @@ No API keys needed for the Tripwire demo.
 | [`src/tripwire/replay/`](src/tripwire/replay/) | The three incidents and the replay engine |
 | [`src/components/tripwire/`](src/components/tripwire/) | The `/tripwire` dashboard |
 | [`contracts/evm/`](contracts/evm/) | TripwireGuardian in Solidity, and its tests |
-| [`src/services/`](src/services/) | Multi-chain indexing and screening, from ChainStory |
 
-Tripwire is built on **ChainStory**, our wallet-intelligence engine, which
-still runs at [`/app`](https://retold-nu.vercel.app/app) — see
-[docs/chainstory.md](docs/chainstory.md).
 
 ## Sources
 

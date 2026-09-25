@@ -10,7 +10,6 @@
 // time: all three of these exploits drained in a single release.
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowCounterClockwiseIcon,
@@ -32,7 +31,7 @@ import './tripwire.css';
 import RiskTimeline from './RiskTimeline';
 import { VERDICT_COLOR, VERDICT_LABEL } from './verdict';
 import { useReplay } from './useReplay';
-import { BLOCK_SECONDS, INCIDENTS, YEAR_TO_DATE, type Incident } from '@/tripwire/replay/incidents';
+import { BLOCK_SECONDS, INCIDENTS, type Incident } from '@/tripwire/replay/incidents';
 import type { ReplaySnapshot, RouteStatus, RouteView, Strategy } from '@/tripwire/replay/engine';
 import type { ControllerState, ReplayController } from '@/tripwire/replay/controller';
 import { clock, reportDate, usd } from '@/tripwire/replay/format';
@@ -62,15 +61,14 @@ const ROUTE_STATUS: Record<RouteStatus, { label: string; color: string; icon: Ic
 };
 
 export default function TripwireDashboard() {
-  const [params, setParams] = useSearchParams();
-  const initial = INCIDENTS.find((i) => i.id === params.get('incident'))?.id ?? 'kelp';
+  const initial = INCIDENTS.find((i) => i.id === new URLSearchParams(location.search).get('incident'))?.id ?? 'kelp';
   const [state, controller] = useReplay(initial);
   const incident = INCIDENTS.find((i) => i.id === state.incidentId)!;
   const snap = state.replay;
 
   const select = (id: Incident['id']) => {
     if (id === state.incidentId && state.status !== 'error') return;
-    setParams({ incident: id }, { replace: true });
+    history.replaceState(null, '', `?incident=${id}`);
     void controller.select(id);
   };
 
@@ -79,12 +77,12 @@ export default function TripwireDashboard() {
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
       <header>
-        <p className="b-eyebrow">Tripwire · incident replay</p>
+        <p className="b-eyebrow">A circuit breaker for bridges</p>
         <h1 className="mt-2 text-3xl font-bold tracking-[-0.03em] sm:text-4xl">Would it have stopped them?</h1>
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          By mid-May 2026, bridge exploits had cost ${(YEAR_TO_DATE.lossUsd / 1e6).toFixed(1)}M across at least{' '}
-          {YEAR_TO_DATE.exploits} hacks. Replay three of them through Tripwire’s risk oracle and the real guardian
-          contract, and see exactly where a circuit breaker helps — and where it can’t.
+          Every major bridge drain of 2026 was a single transaction, so a breaker has to act before it executes.
+          Tripwire checks that each payout is backed by a burn it can verify — and if not, pauses that route. Replay
+          three real exploits through its oracle and guardian contract, and see where that works, and where it can’t.
         </p>
       </header>
 
