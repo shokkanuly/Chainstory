@@ -1,18 +1,21 @@
-// The guardian executed in a real EVM, against the bytecode compile.mjs just
-// produced. Each describe block corresponds to one invariant in the contract's
-// header comment, and each test tries to break it.
+// The guardian executed in a real EVM. Each describe block corresponds to one
+// invariant in the contract's header comment, and each test tries to break it.
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { hexToSignature, keccak256, signatureToHex, toHex, type Hex } from 'viem';
+import { hashTypedData, hexToSignature, keccak256, signatureToHex, toHex, type Hex } from 'viem';
+import { compileGuardian } from '../compile.mjs';
+import { attestationDomain, ATTESTATION_TYPES } from '../../../src/tripwire/onChain.js';
+import type { GuardianVM } from '../../../src/tripwire/guardianVM.js';
 import {
   CHAIN_ID,
-  Guardian,
+  artifact,
   attacker,
   bridge,
+  deployGuardian,
   oracle,
   owner,
+  relayer,
   signAttestation,
-  stranger,
   type Attestation,
 } from './evm.js';
 
@@ -21,15 +24,15 @@ const OTHER_ROUTE = keccak256(toHex('base:op:WETH'));
 const CAP = 1_000_000n;
 const WINDOW = 3600n;
 const HOUR = 3600n;
+const DAY = 24n * HOUR;
 
 enum Status { ACTIVE, RATE_LIMITED, PAUSED }
-enum Tier { NONE, HIGH, CRITICAL }
 
-let g: Guardian;
+let g: GuardianVM;
 let nonce = 0n;
 
 beforeEach(async () => {
-  g = await Guardian.deploy();
+  g = await deployGuardian();
   expect((await g.send(owner, 'configureRoute', [ROUTE, CAP, WINDOW])).ok).toBe(true);
   expect((await g.send(owner, 'setProtected', [bridge.address, true])).ok).toBe(true);
 });
@@ -44,16 +47,29 @@ const att = (over: Partial<Attestation> = {}): Attestation => ({
 
 async function submit(a: Attestation, sig?: Hex) {
   const signature = sig ?? (await signAttestation(oracle, g.address, a));
-  return g.send(stranger, 'submitAttestation', [a.routeId, a.riskScore, a.validUntil, a.nonce, signature]);
+  return g.send(relayer, 'submitAttestation', [a.routeId, a.riskScore, a.validUntil, a.nonce, signature]);
 }
 
-const route = () => g.read<{ pausedUntil: bigint; tier: number; outflowInWindow: bigint }>('getRoute', [ROUTE]);
+const pausedUntil = async () => (await g.read<{ pausedUntil: bigint }>('getRoute', [ROUTE])).pausedUntil;
 
 // --------------------------------------------------------------------------
 
+// The dashboard ships the committed artifact. If it drifts from the source,
+// the demo runs a contract nobody tested.
+describe('artifact', () => {
+  it('the committed artifact is exactly what the source compiles to', () => {
+    const fresh = compileGuardian();
+    expect(fresh.errors).toEqual([]);
+    expect(fresh.ours).toEqual([]);
+    expect(artifact.bytecode, 'stale artifact: run `node contracts/evm/compile.mjs`').toBe(fresh.artifact.bytecode);
+  });
+});
+
 describe('deployment', () => {
   it('rejects a zero oracle, so the guardian cannot be deployed un-pausable', async () => {
-    expect(await Guardian.deployExpectingRevert('0x0000000000000000000000000000000000000000')).toBe('ZeroAddress');
+    await expect(deployGuardian('0x0000000000000000000000000000000000000000')).rejects.toMatchObject({
+      reason: 'ZeroAddress',
+    });
   });
 
   it('records the owner and oracle it was given', async () => {
@@ -68,17 +84,9 @@ describe('EIP-712 encoding', () => {
   it('viem signs the same digest the contract verifies', async () => {
     const a = att();
     const onChain = await g.read<Hex>('hashAttestation', [a.routeId, a.riskScore, a.validUntil, a.nonce]);
-    const { hashTypedData } = await import('viem');
     const offChain = hashTypedData({
-      domain: { name: 'TripwireGuardian', version: '1', chainId: CHAIN_ID, verifyingContract: g.address },
-      types: {
-        Attestation: [
-          { name: 'routeId', type: 'bytes32' },
-          { name: 'riskScore', type: 'uint256' },
-          { name: 'validUntil', type: 'uint256' },
-          { name: 'nonce', type: 'uint256' },
-        ],
-      },
+      domain: attestationDomain(CHAIN_ID, g.address),
+      types: ATTESTATION_TYPES,
       primaryType: 'Attestation',
       message: a,
     });
@@ -104,8 +112,7 @@ describe('EIP-7265 outflow cap', () => {
   });
 
   it('refuses outflow reports from contracts it does not protect', async () => {
-    const res = await g.send(attacker, 'onTokenOutflow', [ROUTE, 1n]);
-    expect(res.error).toBe('NotProtected');
+    expect((await g.send(attacker, 'onTokenOutflow', [ROUTE, 1n])).error).toBe('NotProtected');
   });
 
   // Failing closed on a route the guardian knows nothing about.
@@ -119,39 +126,24 @@ describe('EIP-7265 outflow cap', () => {
   });
 });
 
-describe('tiered pausing', () => {
-  it('HIGH risk (76-90) pauses the route for the 4-hour review cooldown', async () => {
-    expect((await submit(att({ riskScore: 80n }))).ok).toBe(true);
-    const r = await route();
-    expect(r.tier).toBe(Tier.HIGH);
-    expect(r.pausedUntil).toBe(g.now + 4n * HOUR);
+describe('pausing', () => {
+  it('an accepted attestation pauses the route for 24 hours', async () => {
+    expect((await submit(att())).ok).toBe(true);
+    expect(await pausedUntil()).toBe(g.now + DAY);
     expect(await g.read('isPaused', [ROUTE])).toBe(true);
     expect(await g.read('routeStatus', [ROUTE])).toBe(Status.PAUSED);
     expect((await g.send(bridge, 'onTokenOutflow', [ROUTE, 1n])).error).toBe('RoutePaused');
   });
 
-  it('CRITICAL risk (91-100) triggers the 24-hour lockdown', async () => {
-    expect((await submit(att({ riskScore: 95n }))).ok).toBe(true);
-    const r = await route();
-    expect(r.tier).toBe(Tier.CRITICAL);
-    expect(r.pausedUntil).toBe(g.now + 24n * HOUR);
+  // Inclusive, to match the oracle's own `score >= 0.75` rule.
+  it('treats 75 as the inclusive threshold: 74 is refused, 75 pauses', async () => {
+    expect((await submit(att({ riskScore: 74n }))).error).toBe('ScoreBelowThreshold');
+    expect((await submit(att({ riskScore: 75n }))).ok).toBe(true);
   });
 
-  it('treats the thresholds as strict: 75 is refused, 76 is HIGH, 90 is HIGH, 91 is CRITICAL', async () => {
-    expect((await submit(att({ riskScore: 75n }))).error).toBe('ScoreBelowThreshold');
-    expect((await submit(att({ riskScore: 76n }))).ok).toBe(true);
-    expect((await route()).tier).toBe(Tier.HIGH);
-
-    g = await Guardian.deploy();
-    await g.send(owner, 'configureRoute', [ROUTE, CAP, WINDOW]);
-    expect((await submit(att({ riskScore: 90n }))).ok).toBe(true);
-    expect((await route()).tier).toBe(Tier.HIGH);
-    expect((await submit(att({ riskScore: 91n }))).ok).toBe(true);
-    expect((await route()).tier).toBe(Tier.CRITICAL);
-  });
-
-  it('rejects a score above 100', async () => {
+  it('accepts 100 and rejects anything above it', async () => {
     expect((await submit(att({ riskScore: 101n }))).error).toBe('InvalidScore');
+    expect((await submit(att({ riskScore: 100n }))).ok).toBe(true);
   });
 
   it('pauses only the attested route, not the rest of the bridge', async () => {
@@ -165,35 +157,22 @@ describe('tiered pausing', () => {
   it('refuses an attestation for an unconfigured route', async () => {
     expect((await submit(att({ routeId: OTHER_ROUTE }))).error).toBe('RouteNotConfigured');
   });
-});
 
-// A pause only ever moves forward.
-describe('pause monotonicity', () => {
-  it('a HIGH attestation cannot shorten an active CRITICAL lockdown', async () => {
-    await submit(att({ riskScore: 95n }));
-    const lockdownEnd = (await route()).pausedUntil;
+  // A fresh attestation restarts the clock, so it can only extend a pause.
+  it('a second attestation extends the pause rather than shortening it', async () => {
+    await submit(att());
+    const first = await pausedUntil();
     g.warp(HOUR);
-    expect((await submit(att({ riskScore: 80n }))).ok).toBe(true);
-    const r = await route();
-    expect(r.pausedUntil).toBe(lockdownEnd);
-    expect(r.tier).toBe(Tier.CRITICAL);
-  });
-
-  it('a CRITICAL attestation escalates an active HIGH pause', async () => {
-    await submit(att({ riskScore: 80n }));
-    g.warp(HOUR);
-    await submit(att({ riskScore: 95n }));
-    const r = await route();
-    expect(r.tier).toBe(Tier.CRITICAL);
-    expect(r.pausedUntil).toBe(g.now + 24n * HOUR);
+    await submit(att());
+    expect(await pausedUntil()).toBe(first + HOUR);
   });
 });
 
 // Every pause expires; nothing the oracle does can brick a route.
 describe('expiry and escape hatches', () => {
-  it('a pause lifts on its own when the cooldown ends', async () => {
-    await submit(att({ riskScore: 80n }));
-    g.warp(4n * HOUR - 1n);
+  it('a pause lifts on its own after 24 hours', async () => {
+    await submit(att());
+    g.warp(DAY - 1n);
     expect((await g.send(bridge, 'onTokenOutflow', [ROUTE, 1n])).error).toBe('RoutePaused');
     g.warp(1n);
     expect(await g.read('isPaused', [ROUTE])).toBe(false);
@@ -201,10 +180,9 @@ describe('expiry and escape hatches', () => {
   });
 
   it('the owner can resume early', async () => {
-    await submit(att({ riskScore: 95n }));
+    await submit(att());
     expect((await g.send(owner, 'resume', [ROUTE])).ok).toBe(true);
     expect(await g.read('isPaused', [ROUTE])).toBe(false);
-    expect((await route()).tier).toBe(Tier.NONE);
   });
 
   it('rotating the oracle stops the old key being able to pause', async () => {
@@ -217,7 +195,9 @@ describe('expiry and escape hatches', () => {
   });
 
   it('refuses a zero oracle on rotation', async () => {
-    expect((await g.send(owner, 'setOracle', ['0x0000000000000000000000000000000000000000'])).error).toBe('ZeroAddress');
+    expect((await g.send(owner, 'setOracle', ['0x0000000000000000000000000000000000000000'])).error).toBe(
+      'ZeroAddress'
+    );
   });
 
   it.each([
@@ -243,8 +223,7 @@ describe('attestation replay protection', () => {
   // Identical bytecode is deployed to four chains.
   it('a signature produced for another chain is rejected', async () => {
     const a = att();
-    const arbitrumSig = await signAttestation(oracle, g.address, a, 42161);
-    expect((await submit(a, arbitrumSig)).error).toBe('InvalidSigner');
+    expect((await submit(a, await signAttestation(oracle, g.address, a, 42161))).error).toBe('InvalidSigner');
   });
 
   it('a signature produced for another guardian deployment is rejected', async () => {
@@ -260,8 +239,7 @@ describe('attestation replay protection', () => {
     expect(res.errorArgs).toEqual([attacker.address]);
   });
 
-  // Tampering with any signed field changes the digest.
-  it('a signature cannot be reused with a raised score', async () => {
+  it('a signature cannot be reused with a different score', async () => {
     const a = att({ riskScore: 80n });
     const sig = await signAttestation(oracle, g.address, a);
     expect((await submit({ ...a, riskScore: 99n }, sig)).error).toBe('InvalidSigner');
@@ -280,8 +258,6 @@ describe('attestation replay protection', () => {
     expect((await submit(att({ validUntil: g.now + 600n }))).ok).toBe(true);
   });
 
-  // OpenZeppelin rejects the upper-half s, so no second valid signature exists
-  // for an attestation that was already accepted.
   it('a malleated signature (s -> n - s) is rejected', async () => {
     const a = att();
     const sig = hexToSignature(await signAttestation(oracle, g.address, a));
@@ -314,10 +290,22 @@ describe('gas', () => {
     await g.send(bridge, 'onTokenOutflow', [ROUTE, 1n]); // warm the slots
     const outflow = await g.send(bridge, 'onTokenOutflow', [ROUTE, 1n]);
     const attest = await submit(att());
-    // Recorded, not guessed: see the README table. Ceilings leave headroom
-    // for compiler drift while still failing on a real regression.
     expect(outflow.gas).toBeLessThan(40_000n);
     expect(attest.gas).toBeLessThan(90_000n);
     console.log(`gas — onTokenOutflow (warm): ${outflow.gas}, submitAttestation: ${attest.gas}`);
+  });
+});
+
+// Regression: concurrent calls on one VM corrupted ethereumjs's state trie
+// ("Stack underflow"). GuardianVM now serialises every operation.
+describe('GuardianVM concurrency', () => {
+  it('survives many overlapping reads and writes', async () => {
+    const results = await Promise.all([
+      ...Array.from({ length: 10 }, () => g.read('routeStatus', [ROUTE])),
+      ...Array.from({ length: 5 }, () => g.send(bridge, 'onTokenOutflow', [ROUTE, 1n])),
+      ...Array.from({ length: 10 }, () => g.read('isPaused', [ROUTE])),
+    ]);
+    expect(results).toHaveLength(25);
+    expect((await g.read<{ outflowInWindow: bigint }>('getRoute', [ROUTE])).outflowInWindow).toBe(5n);
   });
 });

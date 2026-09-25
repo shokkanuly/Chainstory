@@ -83,10 +83,16 @@ export function proofPayoutMismatch(
   config: ScorerConfig
 ): RiskSignal | null {
   const { provenBurnUsd, claimedPayoutUsd } = transfer;
+  // Null is "this route exposes no proof to check" — nothing to say. Zero is
+  // different: Tripwire looked for the source-chain burn and found none it
+  // could verify. That is the worst case of this invariant, not a skip: it is
+  // what a forged cross-chain message (Kelp DAO) and a malformed proof that
+  // the relay accepted (Syscoin) look like from the destination chain.
   if (provenBurnUsd == null || claimedPayoutUsd == null) return null;
-  if (provenBurnUsd <= 0) return null;
+  if (claimedPayoutUsd <= 0) return null;
 
-  const gap = Math.abs(claimedPayoutUsd - provenBurnUsd) / provenBurnUsd;
+  const gap =
+    provenBurnUsd > 0 ? Math.abs(claimedPayoutUsd - provenBurnUsd) / provenBurnUsd : Number.POSITIVE_INFINITY;
   if (gap <= config.payoutTolerance) {
     return {
       id: 'proof_payout_mismatch',
@@ -104,9 +110,14 @@ export function proofPayoutMismatch(
     weight: 0.4,
     deterministic: true,
     reason:
-      `Claimed payout $${claimedPayoutUsd.toLocaleString()} does not match the ` +
-      `proven burn of $${provenBurnUsd.toLocaleString()} ` +
-      `(${(gap * 100).toFixed(1)}% gap).`,
+      provenBurnUsd <= 0
+        ? `Payout of $${claimedPayoutUsd.toLocaleString('en-US')} has no verifiable source-chain burn behind it.`
+        : claimedPayoutUsd >= provenBurnUsd * 2
+          ? // "96400% gap" is true and unreadable; a multiple says it.
+            `Claimed payout $${claimedPayoutUsd.toLocaleString('en-US')} is ` +
+            `${Math.round(claimedPayoutUsd / provenBurnUsd).toLocaleString('en-US')}× the proven burn of $${provenBurnUsd.toLocaleString('en-US')}.`
+          : `Claimed payout $${claimedPayoutUsd.toLocaleString('en-US')} does not match the ` +
+            `proven burn of $${provenBurnUsd.toLocaleString('en-US')} (${(gap * 100).toFixed(1)}% gap).`,
   };
 }
 
@@ -286,15 +297,13 @@ export function scoreTransfer(input: ScoreInput): RiskAssessment {
     totalWeight > 0 ? signals.reduce((sum, s) => sum + s.score * s.weight, 0) / totalWeight : 0;
 
   // Two floors, for two different reasons. A deterministic signal is proof of a
-  // broken invariant and trips outright. A severe-but-probabilistic signal is
-  // not proof, so it does not trip on its own — but it must not be averaged
-  // below the point where a human would see it either.
+  // broken invariant, so it scores as proof: 1.0, not the trip threshold. (It
+  // used to floor to exactly 0.75, which read as "barely over the line" for a
+  // proven theft, and sat on the one value the guardian then refused.) A
+  // severe-but-probabilistic signal is not proof, so it does not trip on its
+  // own — but it must not be averaged below where a human would see it either.
   const severeFired = signals.some((s) => !s.deterministic && s.score >= config.severeSignal);
-  const floor = firedDeterministic
-    ? config.tripThreshold
-    : severeFired
-      ? config.elevatedThreshold
-      : 0;
+  const floor = firedDeterministic ? 1 : severeFired ? config.elevatedThreshold : 0;
   const score = clamp01(Math.max(weighted, floor));
 
   const verdict: Verdict =

@@ -257,3 +257,47 @@ describe('a single severe signal', () => {
     expect(res.verdict).not.toBe('trip');
   });
 });
+
+// Regression: the payout rule used to return no signal when the proven burn
+// was zero, skipping the worst case of its own invariant. A payout with no
+// verifiable source-chain burn is how forged messages (Kelp DAO) and accepted
+// malformed proofs (Syscoin) appear from the destination chain.
+describe('unbacked payout', () => {
+  it('trips on a payout with no verifiable burn behind it', () => {
+    const res = score({
+      transfer: transfer({ provenBurnUsd: 0, claimedPayoutUsd: 40_000 }),
+      baseline: baseline(),
+      recent: [],
+      screening: cleanList,
+      now: NOW,
+    });
+    expect(res.verdict).toBe('trip');
+    expect(res.signals.find((s) => s.id === 'proof_payout_mismatch')?.reason).toContain('no verifiable');
+  });
+
+  it('still says nothing when the route exposes no proof at all', () => {
+    const res = score({
+      transfer: transfer({ provenBurnUsd: null, claimedPayoutUsd: null }),
+      baseline: baseline(),
+      recent: [],
+      screening: cleanList,
+      now: NOW,
+    });
+    expect(res.signals.some((s) => s.id === 'proof_payout_mismatch')).toBe(false);
+  });
+});
+
+describe('mismatch reason', () => {
+  it('states a large overpayment as a multiple of the burn', () => {
+    const res = score({
+      transfer: transfer({ provenBurnUsd: 12_000, claimedPayoutUsd: 11_580_000 }),
+      baseline: baseline(),
+      recent: [],
+      screening: cleanList,
+      now: NOW,
+    });
+    expect(res.signals.find((s) => s.id === 'proof_payout_mismatch')?.reason).toBe(
+      'Claimed payout $11,580,000 is 965× the proven burn of $12,000.'
+    );
+  });
+});

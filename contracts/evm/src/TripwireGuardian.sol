@@ -17,13 +17,11 @@ import {ITripwireGuardian} from "./ITripwireGuardian.sol";
 ///        cap, or resume a route. A stolen oracle key is a denial of service on
 ///        the routes it attests against, never a theft.
 ///
-///      - Every pause expires on its own. HIGH risk buys a 4-hour review
-///        cooldown, CRITICAL a 24-hour lockdown; neither can brick the route.
-///        The owner can resume early, and can rotate a compromised oracle.
-///
-///      - A pause only ever moves forward. A HIGH attestation arriving during a
-///        CRITICAL lockdown cannot shorten it, so an attacker holding a
-///        low-score attestation cannot use it to lift a harder pause.
+///      - Every pause expires on its own, 24 hours after the attestation that
+///        set it, so an oracle can never brick a route. A fresh attestation
+///        restarts the clock, and can therefore only extend a pause, never
+///        shorten one. The owner can resume early and rotate a compromised
+///        oracle.
 ///
 ///      - Attestations are EIP-712 typed data. The domain binds chain id and
 ///        this contract's address, so a signature for Base cannot be replayed
@@ -37,12 +35,6 @@ import {ITripwireGuardian} from "./ITripwireGuardian.sol";
 ///      - An unconfigured route rejects outflows. Failing closed on a route the
 ///        guardian knows nothing about is the only safe default for a breaker.
 contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
-    enum Tier {
-        NONE,
-        HIGH,
-        CRITICAL
-    }
-
     /// @dev Two storage slots. Slot 0: cap, outflowInWindow. Slot 1: the rest.
     struct Route {
         uint128 cap;
@@ -50,17 +42,14 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         uint64 windowStart;
         uint64 windowSeconds;
         uint64 pausedUntil;
-        Tier tier;
     }
 
     uint256 public constant MAX_SCORE = 100;
-    /// @notice Scores strictly above this pause the route.
-    uint256 public constant HIGH_RISK_THRESHOLD = 75;
-    /// @notice Scores strictly above this escalate to a lockdown.
-    uint256 public constant CRITICAL_RISK_THRESHOLD = 90;
-
-    uint64 public constant HIGH_RISK_COOLDOWN = 4 hours;
-    uint64 public constant CRITICAL_LOCKDOWN = 24 hours;
+    /// @notice Scores at or above this pause the route. Inclusive, to match the
+    ///         oracle's own `score >= 0.75` trip rule: with a strict `>` the
+    ///         oracle's most certain verdict (exactly 0.75) was refused on-chain.
+    uint256 public constant TRIP_THRESHOLD = 75;
+    uint64 public constant PAUSE_DURATION = 24 hours;
     uint256 public constant MAX_ATTESTATION_TTL = 10 minutes;
 
     bytes32 public constant ATTESTATION_TYPEHASH = keccak256(
@@ -77,13 +66,7 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
 
     event RouteConfigured(bytes32 indexed routeId, uint128 cap, uint64 windowSeconds);
     event OutflowRecorded(bytes32 indexed routeId, uint256 amount, uint256 windowTotal);
-    event AttestationAccepted(
-        bytes32 indexed routeId,
-        Tier tier,
-        uint256 riskScore,
-        uint256 nonce,
-        uint64 pausedUntil
-    );
+    event AttestationAccepted(bytes32 indexed routeId, uint256 riskScore, uint256 nonce, uint64 pausedUntil);
     event RouteResumed(bytes32 indexed routeId);
     event OracleUpdated(address indexed previous, address indexed next);
     event ProtectedSet(address indexed caller, bool allowed);
@@ -137,9 +120,7 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
 
     /// @notice Lift a pause early, once a human review has cleared the route.
     function resume(bytes32 routeId) external onlyOwner {
-        Route storage r = _routes[routeId];
-        r.pausedUntil = 0;
-        r.tier = Tier.NONE;
+        _routes[routeId].pausedUntil = 0;
         emit RouteResumed(routeId);
     }
 
@@ -177,7 +158,7 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         bytes calldata signature
     ) external {
         if (riskScore > MAX_SCORE) revert InvalidScore(riskScore);
-        if (riskScore <= HIGH_RISK_THRESHOLD) revert ScoreBelowThreshold(riskScore);
+        if (riskScore < TRIP_THRESHOLD) revert ScoreBelowThreshold(riskScore);
         if (block.timestamp > validUntil) revert AttestationExpired(validUntil);
         if (validUntil > block.timestamp + MAX_ATTESTATION_TTL) revert AttestationTtlTooLong(validUntil);
         if (usedNonces[nonce]) revert NonceAlreadyUsed(nonce);
@@ -190,17 +171,9 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
 
         usedNonces[nonce] = true;
 
-        (Tier tier, uint64 duration) = riskScore > CRITICAL_RISK_THRESHOLD
-            ? (Tier.CRITICAL, CRITICAL_LOCKDOWN)
-            : (Tier.HIGH, HIGH_RISK_COOLDOWN);
-
-        uint64 until = uint64(block.timestamp) + duration;
-        if (until > r.pausedUntil) {
-            r.pausedUntil = until;
-            r.tier = tier;
-        }
-
-        emit AttestationAccepted(routeId, r.tier, riskScore, nonce, r.pausedUntil);
+        uint64 until = uint64(block.timestamp) + PAUSE_DURATION;
+        r.pausedUntil = until;
+        emit AttestationAccepted(routeId, riskScore, nonce, until);
     }
 
     // --- views ---------------------------------------------------------------
