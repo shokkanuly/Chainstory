@@ -1,58 +1,36 @@
+// src/components/Footer.tsx — shared by the landing page, Retold and Tripwire.
 import Logo from './Logo'
-// src/components/Footer.tsx — Premium Footer
+
+const LINKS = [
+  { label: 'Retold app', href: '/app' },
+  { label: 'Tripwire replay', href: '/tripwire' },
+  { label: 'FAQ', href: '/#faq' },
+  { label: 'GitHub', href: 'https://github.com/shokkanuly/Chainstory' },
+]
+
 export default function Footer() {
-  const footerLinks = {
-    Product: ['Features', 'Architecture', 'Tax Reports', 'Security API'],
-    Developers: ['GitHub', 'API Reference', 'Documentation', 'Changelog'],
-    Resources: ['Tax Guide', 'DeFi Glossary', 'Blog', 'Status'],
-    Legal: ['Privacy Policy', 'Terms of Service', 'Disclaimer'],
-  }
-
   return (
-    <footer className="border-t border-border bg-card/20">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-14 sm:py-16">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-10">
-          {/* Brand */}
-          <div className="col-span-2 md:col-span-1">
-            <a href="/" aria-label="Retold home" className="flex items-center mb-4">
-              <Logo size={24} />
+    <footer className="border-t border-border">
+      <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-12 sm:px-6 lg:flex-row lg:items-start lg:justify-between lg:px-8">
+        <div className="max-w-sm">
+          <a href="/" aria-label="Retold home">
+            <Logo size={26} />
+          </a>
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            Read any wallet. Protect every bridge. Retold and Tripwire are read-only: nothing to connect, nothing to sign.
+          </p>
+        </div>
+        <nav className="flex flex-wrap gap-x-6 gap-y-2 font-mono text-[12px] uppercase tracking-[0.12em]">
+          {LINKS.map((l) => (
+            <a key={l.href} href={l.href} className="text-muted-foreground hover:text-foreground">
+              {l.label}
             </a>
-            <p className="text-xs text-muted-foreground leading-relaxed max-w-[220px]">
-              Wallet intelligence — understand any wallet's story, draft tax estimates, and risk in plain English.
-            </p>
-          </div>
-
-          {/* Link columns */}
-          {Object.entries(footerLinks).map(([category, links]) => (
-            <div key={category}>
-              <h4 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-4">
-                {category}
-              </h4>
-              <ul className="space-y-2.5">
-                {links.map((link) => (
-                  <li key={link}>
-                    <a
-                      href="#"
-                      className="text-[13px] text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      {link}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
           ))}
-        </div>
-
-        {/* Bottom bar */}
-        <div className="mt-14 pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-muted-foreground">
-            © 2026 Retold · Tripwire
-          </p>
-          <p className="text-[11px] text-muted-foreground/60 max-w-xl text-center sm:text-right leading-relaxed">
-            <strong>Disclaimer:</strong> Retold generates a DRAFT Form 8949 / Schedule D estimate to review with a qualified tax professional. This tool is for informational and educational purposes only and does not constitute formal tax or financial advice.
-          </p>
-        </div>
+        </nav>
+      </div>
+      <div className="mx-auto max-w-7xl border-t border-border px-4 py-5 text-[11px] leading-relaxed text-muted-foreground sm:px-6 lg:px-8">
+        © 2026 Retold · Tripwire · MIT. Retold’s tax output is a draft Form 8949 estimate to review with a qualified tax
+        professional, not tax advice. Tripwire is not yet deployed to a live chain.
       </div>
     </footer>
   )

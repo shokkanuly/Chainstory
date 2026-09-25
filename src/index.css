@@ -1,11 +1,15 @@
 @import "tailwindcss";
-@import "@fontsource-variable/sora";
-@import "@fontsource-variable/geist-mono";
+@import "@fontsource/space-grotesk/400.css";
+@import "@fontsource/space-grotesk/500.css";
+@import "@fontsource/space-grotesk/600.css";
+@import "@fontsource/space-grotesk/700.css";
+@import "@fontsource/dm-mono/400.css";
+@import "@fontsource/dm-mono/500.css";
 @import "./styles/brand.css";
 
 @theme {
-  --font-sans: 'Sora Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', monospace;
+  --font-sans: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, 'SF Mono', monospace;
 
   --color-background: var(--b-canvas);
   --color-foreground: var(--b-text);
@@ -19,7 +23,7 @@
   --color-secondary-foreground: var(--b-text-muted);
   --color-muted: var(--b-surface);
   --color-muted-foreground: var(--b-text-muted);
-  --color-accent: #4c7cff;
+  --color-accent: #a664fc;
   --color-accent-foreground: #ffffff;
   --color-destructive: var(--b-loss);
   --color-destructive-foreground: #ffffff;
@@ -27,12 +31,12 @@
   --color-input: var(--b-line);
   --color-ring: var(--b-ink);
 
-  --color-chain: #4c7cff;
-  --color-chain-dim: #8b5cf6;
+  --color-chain: #a664fc;
+  --color-chain-dim: #59edf7;
   --color-signal-green: var(--b-gain);
   --color-signal-amber: var(--b-warn);
   --color-signal-red: var(--b-loss);
-  --color-glow: rgba(76, 124, 255, 0.10);
+  --color-glow: rgba(166, 100, 252, 0.12);
 
   --radius: 1rem;
 }

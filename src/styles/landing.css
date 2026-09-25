@@ -1,0 +1,86 @@
+/* Landing page surfaces, after the reference design: a near-black canvas,
+ * a faint ledger grid, and accent glows. Everything else uses brand.css. */
+
+.l-page {
+  background:
+    radial-gradient(900px 520px at 85% -10%, rgba(166, 100, 252, 0.16), transparent 70%),
+    radial-gradient(700px 480px at -10% 30%, rgba(89, 237, 247, 0.07), transparent 70%),
+    var(--b-canvas);
+}
+
+/* The ledger grid: blocks, faintly. Masked so it fades out below the fold. */
+.l-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 0%, #000 30%, transparent 75%);
+}
+
+.l-label {
+  font-family: var(--b-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: var(--b-text-muted);
+}
+
+.l-display {
+  font-weight: 600;
+  letter-spacing: -0.075em;
+  line-height: 0.9;
+}
+
+.l-h2 {
+  font-weight: 600;
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+  font-size: clamp(2.4rem, 5.4vw, 4.4rem);
+}
+
+/* A card with its accent glowing from the top-right corner. Set --glow. */
+.l-card {
+  --glow: var(--b-purple);
+  background-color: rgba(22, 22, 29, 0.7);
+  background-image: radial-gradient(
+    circle at 80% 19%,
+    color-mix(in oklab, var(--glow) 16%, transparent),
+    transparent 200px
+  );
+  border: 1px solid var(--b-line);
+  border-radius: 17px;
+}
+
+/* The chain ticker. Paused for anyone who asked their OS to stop motion. */
+.l-marquee {
+  display: flex;
+  width: max-content;
+  animation: l-marquee 38s linear infinite;
+}
+@keyframes l-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-marquee {
+    animation: none;
+  }
+}
+
+/* The translation card leans in, like a receipt on a desk. */
+.l-tilt {
+  transform: perspective(1400px) rotateY(-9deg) rotateX(4deg);
+}
+@media (max-width: 1023px) {
+  .l-tilt {
+    transform: none;
+  }
+}
+
+.l-faq summary::-webkit-details-marker {
+  display: none;
+}
+.l-faq[open] .l-faq-plus {
+  transform: rotate(45deg);
+}

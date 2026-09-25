@@ -50,13 +50,19 @@
   --b-loss-wash: #fdecef;
   --b-warn-wash: #fef4e6;
 
+  /* Section accents, one per section, from the reference design. */
+  --b-purple: #a664fc;
+  --b-cyan: #59edf7;
+  --b-amber: #fcc845;
+  --b-red: #ed615a;
+
   /* Shape: exactly three radii. */
   --b-r-pill: 999px;
   --b-r-lg: 24px;
   --b-r-md: 16px;
 
-  --b-font: 'Sora Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --b-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', monospace;
+  --b-font: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --b-mono: 'DM Mono', ui-monospace, 'SF Mono', monospace;
 }
 
 /* ---- Dark mode ------------------------------------------------------- */
@@ -76,19 +82,19 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --b-canvas: #0b0b0e;
-  --b-surface: #141418;
-  --b-raised: #1a1a1f;
-  --b-ink: #ffffff;
+  --b-canvas: #0d0d12;
+  --b-surface: #121218;
+  --b-raised: #16161d;
+  --b-ink: #a664fc;
 
-  --b-text: #f4f4f5;
-  --b-text-muted: #a1a1aa;
-  --b-text-faint: #71717a;
-  --b-on-ink: #0b0b0e;
-  --b-on-ink-muted: rgba(11, 11, 14, 0.72);
+  --b-text: #f5f2eb;
+  --b-text-muted: #9b9bab;
+  --b-text-faint: #6c6c7a;
+  --b-on-ink: #0d0d12;
+  --b-on-ink-muted: rgba(13, 13, 18, 0.72);
 
-  --b-line: #26262b;
-  --b-line-strong: #34343b;
+  --b-line: #2e2e38;
+  --b-line-strong: #3a3a46;
 
   --b-blue-wash: #171a2e;
   --b-violet-wash: #1d1830;
@@ -107,19 +113,19 @@
   :root:not([data-theme='light']) {
     color-scheme: dark;
 
-    --b-canvas: #0b0b0e;
-    --b-surface: #141418;
-    --b-raised: #1a1a1f;
-    --b-ink: #ffffff;
+    --b-canvas: #0d0d12;
+    --b-surface: #121218;
+    --b-raised: #16161d;
+    --b-ink: #a664fc;
 
-    --b-text: #f4f4f5;
-    --b-text-muted: #a1a1aa;
-    --b-text-faint: #71717a;
-    --b-on-ink: #0b0b0e;
-    --b-on-ink-muted: rgba(11, 11, 14, 0.72);
+    --b-text: #f5f2eb;
+    --b-text-muted: #9b9bab;
+    --b-text-faint: #6c6c7a;
+    --b-on-ink: #0d0d12;
+    --b-on-ink-muted: rgba(13, 13, 18, 0.72);
 
-    --b-line: #26262b;
-    --b-line-strong: #34343b;
+    --b-line: #2e2e38;
+    --b-line-strong: #3a3a46;
 
     --b-blue-wash: #171a2e;
     --b-violet-wash: #1d1830;
@@ -137,7 +143,7 @@
 /* The ink button inverts with the theme, so its hover must too. */
 :root[data-theme='dark'] .b-btn--primary:hover,
 :root:not([data-theme='light']) .b-btn--primary:hover {
-  background: #e4e4e7;
+  background: #b881fd;
 }
 
 /* ---- Brand primitives ------------------------------------------------ */
@@ -254,7 +260,7 @@
 }
 
 .b-card {
-  background: var(--b-canvas);
+  background: var(--b-raised);
   border: 1px solid var(--b-line);
   border-radius: var(--b-r-md);
 }

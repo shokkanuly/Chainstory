@@ -4,15 +4,13 @@ import { useLocation } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Menu, X } from 'lucide-react'
 import Logo from './Logo'
-import ThemeToggle from './ThemeToggle'
 
 // Absolute, so the links work from /app and /tripwire as well as the landing page.
 const navLinks = [
+  { label: 'How it works', href: '/#answers' },
   { label: 'Tripwire', href: '/tripwire' },
-  { label: 'Features', href: '/#features' },
-  { label: 'Architecture', href: '/#architecture' },
-  { label: 'How It Works', href: '/#how-it-works' },
-  { label: 'Security', href: '/#security' },
+  { label: 'Networks', href: '/#networks' },
+  { label: 'FAQ', href: '/#faq' },
 ]
 
 export default function Navbar() {
@@ -42,8 +40,11 @@ export default function Navbar() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <a href="/" aria-label="Retold home" className="flex items-center">
+          <a href="/" aria-label="Retold home" className="flex items-center gap-2.5">
             <Logo size={30} name={product} />
+            <span className="rounded-full border px-2 py-0.5 font-mono text-[10px] tracking-[0.14em] text-[var(--b-purple)]" style={{ borderColor: 'color-mix(in oklab, var(--b-purple) 45%, transparent)' }}>
+              BETA
+            </span>
           </a>
 
           {/* Desktop nav */}
@@ -61,20 +62,19 @@ export default function Navbar() {
 
           {/* CTA */}
           <div className="hidden md:flex items-center gap-3">
-            <ThemeToggle className="mr-1" />
             <a
               href="https://github.com/shokkanuly/Chainstory"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[13px] font-medium text-muted-foreground hover:text-foreground transition-colors px-3 py-2 rounded-lg hover:bg-secondary/60"
+              className="rounded-full border border-border px-4 py-2 text-[13px] font-medium text-foreground transition-colors hover:border-[var(--b-line-strong)] hover:bg-secondary"
             >
-              GitHub
+              GitHub ↗
             </a>
             <a
               href="/app"
               className="b-btn b-btn--primary !px-4 !py-2.5 !text-[13px]"
             >
-              Launch App
+              Launch app
             </a>
           </div>
 
@@ -117,7 +117,7 @@ export default function Navbar() {
                   onClick={() => setMobileOpen(false)}
                   className="b-btn b-btn--primary w-full"
                 >
-                  Launch App
+                  Launch app
                 </a>
               </div>
             </div>
