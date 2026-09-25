@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4c7cff"/>
+      <stop offset="0.5" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#22d3c8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="#ffffff"/>
+
+  <g transform="translate(96,86)">
+    <rect x="0" y="12" width="40" height="26" rx="13" fill="none" stroke="url(#brand)" stroke-width="7"/>
+    <rect x="24" y="12" width="40" height="26" rx="13" fill="none" stroke="url(#brand)" stroke-width="7"/>
+  </g>
+  <text x="184" y="121" font-size="26" font-weight="600" letter-spacing="4.5" fill="#111114">CHAINSTORY</text>
+
+  <text x="96" y="304" font-size="84" font-weight="700" letter-spacing="-3" fill="#111114">Understand any wallet</text>
+  <text x="96" y="398" font-size="84" font-weight="700" letter-spacing="-3" fill="url(#brand)">without connecting yours.</text>
+
+  <text x="96" y="480" font-size="27" fill="#6b7280">Paste an address. Get a readable history, a draft tax report, an approval audit and a risk check.</text>
+
+  <rect x="96" y="548" width="1408" height="128" rx="24" fill="#f5f5f7"/>
+  <text x="140" y="596" font-size="14" font-weight="600" letter-spacing="2.4" fill="#9ca3af">EXPLORER</text>
+  <text x="140" y="636" font-size="22" fill="#6b7280" font-family="'SF Mono', Menlo, monospace">swapExactETHForTokens &#183; 2000000000000000000 wei</text>
+  <text x="900" y="596" font-size="14" font-weight="600" letter-spacing="2.4" fill="#8b5cf6">CHAINSTORY</text>
+  <text x="900" y="636" font-size="24" font-weight="600" fill="#111114">Swapped 2.0 ETH for 3,400 USDC</text>
+
+  <rect x="96" y="724" width="322" height="84" rx="42" fill="#111114"/>
+  <text x="257" y="775" font-size="26" font-weight="600" fill="#ffffff" text-anchor="middle">Paste an address &#8594;</text>
+  <text x="452" y="762" font-size="20" font-weight="600" fill="#111114">github.com/shokkanuly/Chainstory</text>
+  <text x="452" y="792" font-size="17" fill="#6b7280">Beta &#183; open source &#183; MIT &#183; 5 EVM chains &#183; read-only</text>
+</svg>

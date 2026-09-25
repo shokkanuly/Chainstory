@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4c7cff"/>
+      <stop offset="0.5" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#22d3c8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="1200" fill="#ffffff"/>
+
+  <!-- identity: gradient mark (gradient use 1 of 2) -->
+  <g transform="translate(88,104)">
+    <rect x="0" y="12" width="40" height="26" rx="13" fill="none" stroke="url(#brand)" stroke-width="7"/>
+    <rect x="24" y="12" width="40" height="26" rx="13" fill="none" stroke="url(#brand)" stroke-width="7"/>
+  </g>
+  <text x="176" y="139" font-size="27" font-weight="600" letter-spacing="4.5" fill="#111114">CHAINSTORY</text>
+  <rect x="424" y="112" width="74" height="34" rx="17" fill="#f3eeff"/>
+  <text x="461" y="135" font-size="15" font-weight="600" letter-spacing="1.6" fill="#8b5cf6" text-anchor="middle">BETA</text>
+
+  <!-- headline (gradient use 2 of 2) -->
+  <text x="88" y="306" font-size="78" font-weight="700" letter-spacing="-2.5" fill="#111114">Your wallet&#8217;s history,</text>
+  <text x="88" y="396" font-size="78" font-weight="700" letter-spacing="-2.5" fill="url(#brand)">in plain English.</text>
+
+  <!-- before -->
+  <rect x="88" y="474" width="1024" height="166" rx="24" fill="#f5f5f7"/>
+  <text x="128" y="518" font-size="14" font-weight="600" letter-spacing="2.4" fill="#9ca3af">WHAT A BLOCK EXPLORER SHOWS YOU</text>
+  <text x="128" y="566" font-size="23" fill="#6b7280" font-family="'SF Mono', Menlo, monospace">0x7ff36ab5000000000000000000000000000000000000&#8230;</text>
+  <text x="128" y="604" font-size="23" fill="#6b7280" font-family="'SF Mono', Menlo, monospace">Value: 2000000000000000000 wei</text>
+
+  <!-- arrow -->
+  <g stroke="#d4d4d8" stroke-width="4" stroke-linecap="round">
+    <line x1="600" y1="664" x2="600" y2="700"/>
+    <polyline points="586,688 600,702 614,688" fill="none"/>
+  </g>
+
+  <!-- after -->
+  <rect x="88" y="726" width="1024" height="162" rx="24" fill="#ffffff" stroke="#e7e7ea" stroke-width="2"/>
+  <text x="128" y="770" font-size="14" font-weight="600" letter-spacing="2.4" fill="#9ca3af">WHAT CHAINSTORY SHOWS YOU</text>
+  <text x="128" y="836" font-size="36" font-weight="600" letter-spacing="-0.8" fill="#111114">Swapped 2.0 ETH for 3,400 USDC on Uniswap V3</text>
+
+  <!-- proof chips -->
+  <g font-size="19" font-weight="500">
+    <rect x="88" y="936" width="252" height="54" rx="27" fill="#eef1ff"/>
+    <text x="214" y="971" fill="#3a5fd0" text-anchor="middle">5 EVM chains</text>
+    <rect x="356" y="936" width="292" height="54" rx="27" fill="#e6fbf8"/>
+    <text x="502" y="971" fill="#0e8579" text-anchor="middle">Draft Form 8949 CSV</text>
+    <rect x="664" y="936" width="300" height="54" rx="27" fill="#f3eeff"/>
+    <text x="814" y="971" fill="#7048d8" text-anchor="middle">Live approval audit</text>
+  </g>
+
+  <!-- CTA -->
+  <rect x="88" y="1032" width="336" height="86" rx="43" fill="#111114"/>
+  <text x="256" y="1084" font-size="27" font-weight="600" fill="#ffffff" text-anchor="middle">Paste an address &#8594;</text>
+  <text x="456" y="1070" font-size="21" font-weight="600" fill="#111114">github.com/shokkanuly/Chainstory</text>
+  <text x="456" y="1100" font-size="18" fill="#6b7280">No wallet connection. No signature. Open source, MIT.</text>
+
+  <text x="88" y="1166" font-size="17" fill="#9ca3af">Ethereum &#183; Arbitrum &#183; Base &#183; Optimism &#183; Polygon</text>
+</svg>

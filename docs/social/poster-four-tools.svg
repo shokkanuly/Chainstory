@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4c7cff"/>
+      <stop offset="0.5" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#22d3c8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="1200" fill="#111114"/>
+
+  <g transform="translate(88,104)">
+    <rect x="0" y="12" width="40" height="26" rx="13" fill="none" stroke="url(#brand)" stroke-width="7"/>
+    <rect x="24" y="12" width="40" height="26" rx="13" fill="none" stroke="url(#brand)" stroke-width="7"/>
+  </g>
+  <text x="176" y="139" font-size="27" font-weight="600" letter-spacing="4.5" fill="#ffffff">CHAINSTORY</text>
+
+  <text x="88" y="288" font-size="72" font-weight="700" letter-spacing="-2.4" fill="#ffffff">One address in.</text>
+  <text x="88" y="372" font-size="72" font-weight="700" letter-spacing="-2.4" fill="url(#brand)">Four answers out.</text>
+
+  <g>
+    <!-- row 1 -->
+    <rect x="88" y="464" width="500" height="196" rx="24" fill="#1a1a1f" stroke="#2a2a31" stroke-width="2"/>
+    <text x="128" y="518" font-size="14" font-weight="600" letter-spacing="2.4" fill="#4c7cff">STORY FEED</text>
+    <text x="128" y="566" font-size="30" font-weight="600" fill="#ffffff">Readable history</text>
+    <text x="128" y="606" font-size="19" fill="rgba(255,255,255,0.62)">Every transaction as one</text>
+    <text x="128" y="634" font-size="19" fill="rgba(255,255,255,0.62)">plain-English sentence.</text>
+
+    <rect x="612" y="464" width="500" height="196" rx="24" fill="#1a1a1f" stroke="#2a2a31" stroke-width="2"/>
+    <text x="652" y="518" font-size="14" font-weight="600" letter-spacing="2.4" fill="#22d3c8">TAX &#183; DRAFT</text>
+    <text x="652" y="566" font-size="30" font-weight="600" fill="#ffffff">FIFO cost basis</text>
+    <text x="652" y="606" font-size="19" fill="rgba(255,255,255,0.62)">Short/long-term lots, gas</text>
+    <text x="652" y="634" font-size="19" fill="rgba(255,255,255,0.62)">deducted, 8949 CSV + PDF.</text>
+
+    <!-- row 2 -->
+    <rect x="88" y="684" width="500" height="196" rx="24" fill="#1a1a1f" stroke="#2a2a31" stroke-width="2"/>
+    <text x="128" y="738" font-size="14" font-weight="600" letter-spacing="2.4" fill="#8b5cf6">APPROVALS</text>
+    <text x="128" y="786" font-size="30" font-weight="600" fill="#ffffff">What can drain you</text>
+    <text x="128" y="826" font-size="19" fill="rgba(255,255,255,0.62)">Live ERC-20 allowances,</text>
+    <text x="128" y="854" font-size="19" fill="rgba(255,255,255,0.62)">decoded from calldata.</text>
+
+    <rect x="612" y="684" width="500" height="196" rx="24" fill="#1a1a1f" stroke="#2a2a31" stroke-width="2"/>
+    <text x="652" y="738" font-size="14" font-weight="600" letter-spacing="2.4" fill="#f5a524">PRE-SCAN RISK</text>
+    <text x="652" y="786" font-size="30" font-weight="600" fill="#ffffff">Before you sign</text>
+    <text x="652" y="826" font-size="19" fill="rgba(255,255,255,0.62)">Verification, deploy age,</text>
+    <text x="652" y="854" font-size="19" fill="rgba(255,255,255,0.62)">proxy and admin powers.</text>
+  </g>
+
+  <rect x="88" y="944" width="1024" height="2" fill="#2a2a31"/>
+
+  <text x="88" y="1006" font-size="22" fill="rgba(255,255,255,0.72)">Read-only. Nothing to connect, nothing to sign, nothing to approve.</text>
+
+  <rect x="88" y="1044" width="336" height="86" rx="43" fill="#ffffff"/>
+  <text x="256" y="1096" font-size="27" font-weight="600" fill="#111114" text-anchor="middle">Try the beta &#8594;</text>
+  <text x="456" y="1082" font-size="21" font-weight="600" fill="#ffffff">github.com/shokkanuly/Chainstory</text>
+  <text x="456" y="1112" font-size="18" fill="rgba(255,255,255,0.55)">Beta. Tax output is a draft &#8212; limitations documented in the README.</text>
+</svg>
