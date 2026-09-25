@@ -5,11 +5,13 @@ import { Menu, X } from 'lucide-react'
 import Logo from './Logo'
 import ThemeToggle from './ThemeToggle'
 
+// Absolute, so the links work from /app and /tripwire as well as the landing page.
 const navLinks = [
-  { label: 'Features', href: '#features' },
-  { label: 'Architecture', href: '#architecture' },
-  { label: 'How It Works', href: '#how-it-works' },
-  { label: 'Security', href: '#security' },
+  { label: 'Tripwire', href: '/tripwire' },
+  { label: 'Features', href: '/#features' },
+  { label: 'Architecture', href: '/#architecture' },
+  { label: 'How It Works', href: '/#how-it-works' },
+  { label: 'Security', href: '/#security' },
 ]
 
 export default function Navbar() {
