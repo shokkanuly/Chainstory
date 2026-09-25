@@ -32,7 +32,7 @@
 
   <rect x="88" y="1032" width="336" height="86" rx="43" fill="#111114"/>
   <text x="256" y="1084" font-size="27" font-weight="600" fill="#ffffff" text-anchor="middle">Paste an address &#8594;</text>
-  <text x="456" y="1070" font-size="21" font-weight="600" fill="#111114">github.com/shokkanuly/Chainstory</text>
+  <text x="456" y="1070" font-size="21" font-weight="600" fill="#111114">retold-nu.vercel.app</text>
   <text x="456" y="1100" font-size="18" fill="#6b7280">No wallet connection. No signature. Open source, MIT.</text>
 
   <text x="88" y="1166" font-size="17" fill="#9ca3af">Ethereum &#183; Arbitrum &#183; Base &#183; Optimism &#183; Polygon</text></svg>

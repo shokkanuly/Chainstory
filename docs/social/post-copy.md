@@ -1,7 +1,8 @@
 # Launch copy — X and Threads
 
-Link used throughout: `github.com/shokkanuly/Chainstory`.
-Swap it for the live app URL before posting if you have one deployed.
+App: **https://retold-nu.vercel.app** — this is the link that should go in
+every post. The GitHub repo is mentioned only where the point is that the
+project is open source.
 
 Every claim below is checked against the README. Nothing here promises
 something the beta does not do.
@@ -63,8 +64,8 @@ something the beta does not do.
 > I'm looking for people who will actually paste an address and tell me where
 > it gets it wrong. That feedback is worth more to me than stars.
 >
-> Open source, MIT. Break it and tell me how:
-> github.com/shokkanuly/Chainstory
+> Open source, MIT. Try it: https://retold-nu.vercel.app
+> Break it and tell me how: github.com/shokkanuly/Chainstory
 
 ---
 
@@ -78,7 +79,7 @@ Attach `poster-x-card.png`.
 > 5 EVM chains. No wallet connection — it's read-only.
 > Beta, open source, and the limitations are documented.
 >
-> github.com/shokkanuly/Chainstory
+> https://retold-nu.vercel.app
 
 ---
 
@@ -111,7 +112,7 @@ Attach `poster-plain-english.png`.
 > It's open source. If you paste an address and it gets something wrong, that
 > is exactly what I want to hear.
 >
-> github.com/shokkanuly/Chainstory
+> https://retold-nu.vercel.app
 
 ## Threads — follow-up post, a day or two later
 
