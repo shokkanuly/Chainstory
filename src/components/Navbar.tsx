@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Menu, X } from 'lucide-react'
+import Logo from './ui/Logo'
 
 const navLinks = [
   { label: 'Features', href: '#features' },
@@ -34,15 +35,8 @@ export default function Navbar() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <a href="#" className="flex items-center gap-2.5 group">
-            <div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-chain/10 border border-chain/20 group-hover:glow-chain transition-all duration-300">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-chain">
-                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-              </svg>
-            </div>
-            <span className="text-lg font-bold tracking-tight">
-              Chain<span className="text-chain">Story</span>
-            </span>
+          <a href="#" className="flex items-center">
+            <Logo height={26} />
           </a>
 
           {/* Desktop nav */}
