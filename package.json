@@ -1,5 +1,5 @@
 {
-  "name": "block-chain-project",
+  "name": "tripwire",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -40,5 +40,6 @@
     "typescript": "~6.0.2",
     "vite": "^8.1.1",
     "vitest": "^3.2.7"
-  }
+  },
+  "description": "A predictive, cross-chain circuit breaker for bridges."
 }
