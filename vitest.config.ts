@@ -5,6 +5,13 @@ export default defineConfig({
     // Services are pure and DOM-free; component helpers under test are plain
     // functions, so the faster node environment is enough.
     environment: 'node',
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'server/**/*.test.ts'],
+    include: [
+      'src/**/*.test.ts',
+      'src/**/*.test.tsx',
+      'server/**/*.test.ts',
+      // The guardian, executed in an in-process EVM against freshly compiled
+      // bytecode. See contracts/evm/README.md.
+      'contracts/**/*.test.ts',
+    ],
   },
 });

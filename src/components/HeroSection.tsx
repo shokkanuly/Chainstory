@@ -5,7 +5,7 @@ export default function HeroSection() {
     <section className="hero" id="hero">
       <div className="hero__container">
         <div className="hero__badge">
-          <span className="hero__badge-icon">✨</span>
+          <span className="hero__badge-icon"></span>
           <span>Crafting Digital Excellence</span>
         </div>
 

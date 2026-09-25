@@ -196,3 +196,91 @@ describe('resolveKey', () => {
     expect(resolveKey('ethereum', { ETHERSCAN_API_KEY: '   ' })).toBeNull();
   });
 });
+
+// ENS resolution lives behind the proxy because the browser-side third-party
+// resolver it replaced failed open: when the service 500'd, the unresolved name
+// went to the explorer, which rejected it, and the app blamed a missing key.
+describe('ENS resolution', () => {
+  const VITALIK = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
+  const word = (addr: string) => '0x' + '0'.repeat(24) + addr.slice(2).toLowerCase();
+  const ZERO_WORD = '0x' + '0'.repeat(64);
+
+  /** Registry lookup first, then the resolver's addr(). */
+  function ensFetch(results: string[]) {
+    const calls: string[] = [];
+    let i = 0;
+    const impl = vi.fn(async (url: string) => {
+      calls.push(String(url));
+      return { ok: true, status: 200, json: async () => ({ result: results[i++] }) } as any;
+    });
+    return { impl: impl as unknown as typeof fetch, calls };
+  }
+
+  it('reads the registry and returns the resolved address', async () => {
+    const { impl, calls } = ensFetch([word('0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41'), word(VITALIK)]);
+    const res = await handleExplorer(
+      req({ chain: 'ethereum', module: 'ens', action: 'resolve', name: 'vitalik.eth' }),
+      ENV,
+      'ens-1',
+      impl
+    );
+    expect(res.status).toBe(200);
+    expect((res.body as { address: string }).address.toLowerCase()).toBe(VITALIK.toLowerCase());
+    // EIP-137 namehash of vitalik.eth, so a bad hash cannot pass silently.
+    expect(calls[0]).toContain('ee6c4522aab0003e8d14cd40a6af439055fd2577951148c14b6cea9a53475835');
+    expect(calls[0]).toContain('chainid=1');
+  });
+
+  it('reports a name with no resolver rather than falling through', async () => {
+    const { impl } = ensFetch([ZERO_WORD]);
+    const res = await handleExplorer(
+      req({ chain: 'ethereum', module: 'ens', action: 'resolve', name: 'nonexistent-xyz.eth' }),
+      ENV,
+      'ens-2',
+      impl
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('reports a name whose resolver holds no address', async () => {
+    const { impl } = ensFetch([word('0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41'), ZERO_WORD]);
+    const res = await handleExplorer(
+      req({ chain: 'ethereum', module: 'ens', action: 'resolve', name: 'unset.eth' }),
+      ENV,
+      'ens-3',
+      impl
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it.each([
+    ['not-an-ens-name', 'vitalik'],
+    ['a non-eth TLD', 'vitalik.com'],
+    ['a hex address', VITALIK],
+    ['unicode, which needs UTS-46 to be safe', 'vitaIik.eth'.replace('I', 'ı')],
+    ['an empty name', ''],
+  ])('rejects %s', async (_label, name) => {
+    const { impl } = ensFetch([]);
+    const res = await handleExplorer(
+      req({ chain: 'ethereum', module: 'ens', action: 'resolve', name }),
+      ENV,
+      'ens-4',
+      impl
+    );
+    expect(res.status).toBe(400);
+    expect(impl).not.toHaveBeenCalled();
+  });
+
+  // The whole point of the allowlist is that the proxy is not a generic RPC.
+  it('still refuses a raw eth_call, so ENS did not open a passthrough', async () => {
+    const { impl } = ensFetch([]);
+    const res = await handleExplorer(
+      req({ chain: 'ethereum', module: 'proxy', action: 'eth_call', to: VITALIK, data: '0xdeadbeef' }),
+      ENV,
+      'ens-5',
+      impl
+    );
+    expect(res.status).toBe(400);
+    expect(impl).not.toHaveBeenCalled();
+  });
+});

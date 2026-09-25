@@ -1,0 +1,29 @@
+/* Status colours for the replay: clear, elevated, trip.
+ *
+ * Not the brand's --b-gain / --b-warn / --b-loss. Run through the dataviz
+ * palette validator, those three FAIL the normal-vision floor: warn and loss
+ * sit 10.9 apart (OKLab x100) against a floor of 15, so "elevated" and "trip"
+ * — the two states this whole page turns on — would be hard to tell apart
+ * even with full colour vision. Each set below passes all five checks against
+ * its own surface: lightness band, chroma floor, CVD separation, the
+ * normal-vision floor, and 3:1 contrast. Dark is its own validated set, not a
+ * flip of light. Colour never carries a status alone: every one ships with an
+ * icon and a label.
+ */
+:root {
+  --tw-clear: #0e9e90;
+  --tw-elevated: #b8860b;
+  --tw-trip: #d03b5b;
+}
+:root[data-theme='dark'] {
+  --tw-clear: #1fa58f;
+  --tw-elevated: #b88a2c;
+  --tw-trip: #cf3a66;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --tw-clear: #1fa58f;
+    --tw-elevated: #b88a2c;
+    --tw-trip: #cf3a66;
+  }
+}

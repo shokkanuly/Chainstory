@@ -22,7 +22,7 @@ function generateMockTransactionsForAddress(address: string): RawTransaction[] {
       blockNumber: '19482010',
       timeStamp: String(now - day * 0.2),
       from: address,
-      to: '0xd8da6bf26964af9ded7eed9e03e53415d37aa96045',
+      to: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
       value: '1500000000000000000', // 1.5 ETH
       gas: '21000',
       gasPrice: '22000000000',
@@ -189,8 +189,30 @@ export async function fetchMultiWalletTransactions(addresses: string[]): Promise
     uniqueAddresses.map(async (addr) => {
       let targetAddr = addr;
       if (!isValidEthAddress(addr)) {
-        const resolved = await resolveENS(addr);
-        if (resolved) targetAddr = resolved;
+        let resolved: string | null = null;
+        let reason = `Could not resolve ${addr}. Check the name, or paste a 0x address.`;
+        try {
+          resolved = await resolveENS(addr);
+        } catch (err) {
+          if (err instanceof NoServerKeyError) {
+            reason = 'No explorer API key configured on the server';
+          }
+        }
+        if (!resolved) {
+          // Never hand an unresolved name to the explorer. It answers 400
+          // "Invalid value for address", which previously surfaced as a
+          // misleading "add an API key" notice.
+          return {
+            transactions: generateMockTransactionsForAddress(addr),
+            result: {
+              transactions: [],
+              source: 'demo' as const,
+              demoReason: reason,
+            },
+            resolved: addr,
+          };
+        }
+        targetAddr = resolved;
       }
 
       const [normalResult, tokenTxs] = await Promise.all([
@@ -204,7 +226,7 @@ export async function fetchMultiWalletTransactions(addresses: string[]): Promise
         if (!txMap.has(tx.hash)) txMap.set(tx.hash, { ...tx, walletLabel: addr });
       }
 
-      return { transactions: Array.from(txMap.values()), result: normalResult };
+      return { transactions: Array.from(txMap.values()), result: normalResult, resolved: targetAddr };
     })
   );
 
@@ -226,17 +248,33 @@ export async function fetchMultiWalletTransactions(addresses: string[]): Promise
     ),
     source: demoResult ? 'demo' : 'live',
     demoReason: demoResult?.result.demoReason,
+    resolvedAddresses: results.map((r) => r.resolved),
   };
 }
 
+/**
+ * Resolve an ENS name through our own proxy, which reads the ENS registry.
+ *
+ * This used to call enstate.rs from the browser. When that service started
+ * answering 500, resolution returned null, the caller passed the unresolved
+ * name straight to the explorer, and the app showed synthetic data blaming a
+ * missing API key that was in fact present. One unreliable third party is now
+ * off the critical path.
+ */
 export async function resolveENS(name: string): Promise<string | null> {
   try {
-    const res = await fetch(`https://enstate.rs/n/${name}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.address || null;
+    const data = await explorerRequest('ethereum', {
+      module: 'ens',
+      action: 'resolve',
+      name,
+    });
+    return typeof data?.address === 'string' ? data.address : null;
   } catch (err) {
-    console.error("ENS resolution failed", err);
+    // A missing server key is a different problem from an unresolvable name,
+    // and conflating the two is what made the original failure so hard to
+    // read. Let the caller tell the user which one actually happened.
+    if (err instanceof NoServerKeyError) throw err;
+    console.warn(`ENS resolution failed for ${name}`, err);
     return null;
   }
 }

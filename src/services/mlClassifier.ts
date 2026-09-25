@@ -107,12 +107,12 @@ async function loadOnnxModel(): Promise<boolean> {
     // Dynamic import so the runtime is fetched only when a model exists.
     const ort = await import('onnxruntime-web');
     onnxSession = await ort.InferenceSession.create(MODEL_URL);
-    console.log('✅ ONNX model loaded successfully — ML classification active');
+    console.log('ONNX model loaded successfully — ML classification active');
     return true;
   } catch (err) {
     onnxLoadError = err instanceof Error ? err.message : String(err);
     console.warn(
-      '⚠️ ONNX model present but failed to load — falling back to the rule-based classifier.',
+      'ONNX model present but failed to load — falling back to the rule-based classifier.',
       onnxLoadError
     );
     return false;

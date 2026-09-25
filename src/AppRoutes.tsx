@@ -1,15 +1,30 @@
 import { lazy, Suspense } from 'react'
 import { Route, Routes } from 'react-router-dom'
-import App from './App.tsx'
+import Landing from './pages/Landing.tsx'
+import Workspace from './pages/Workspace.tsx'
 
 // The v2 shell carries its own fonts and token sheet, so it is code-split to
-// keep them off the critical path of the current UI.
+// keep them off the critical path of the main app.
 const PrototypeApp = lazy(() => import('./prototype/PrototypeApp.tsx'))
+// The incident replay runs an in-browser EVM; keep it off every other page's bundle.
+const TripwirePage = lazy(() => import('./pages/Tripwire.tsx'))
 
 export default function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<App />} />
+      {/* Marketing */}
+      <Route path="/" element={<Landing />} />
+      {/* The analyser, on its own page */}
+      <Route path="/app" element={<Workspace />} />
+      {/* Tripwire: the incident replay */}
+      <Route
+        path="/tripwire"
+        element={
+          <Suspense fallback={<div style={{ minHeight: '100dvh' }} />}>
+            <TripwirePage />
+          </Suspense>
+        }
+      />
       <Route
         path="/v2"
         element={
@@ -18,7 +33,7 @@ export default function AppRoutes() {
           </Suspense>
         }
       />
-      <Route path="*" element={<App />} />
+      <Route path="*" element={<Landing />} />
     </Routes>
   )
 }

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 667 534" width="667" height="534" role="img" aria-label="ChainStory">
+  <title>ChainStory</title>
+  <defs>
+    <!-- Each bar carries the gradient across its own box, so a short bar
+         shows the same violet-to-blue travel as a long one. -->
+    <linearGradient id="cs-bar" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6e6afa"/>
+      <stop offset="0.45" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#5598de"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#cs-bar)">
+    <polygon points="300,66.8 667,0 667,127.3 300,194.1"/>
+    <polygon points="0,236.8 667,170.1 667,297.4 0,364.1"/>
+    <polygon points="0,406.9 500,340.2 500,467.5 0,534.2"/>
+  </g>
+</svg>

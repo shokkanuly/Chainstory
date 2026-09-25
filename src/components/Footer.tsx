@@ -1,3 +1,4 @@
+import Logo from './Logo'
 // src/components/Footer.tsx — Premium Footer
 export default function Footer() {
   const footerLinks = {
@@ -13,15 +14,8 @@ export default function Footer() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-10">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
-            <a href="#" className="flex items-center gap-2 mb-4">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-chain/10 border border-chain/20">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-chain">
-                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-                </svg>
-              </div>
-              <span className="text-[15px] font-bold tracking-tight">
-                Chain<span className="text-chain">Story</span>
-              </span>
+            <a href="/" aria-label="ChainStory home" className="flex items-center mb-4">
+              <Logo size={24} />
             </a>
             <p className="text-xs text-muted-foreground leading-relaxed max-w-[220px]">
               Wallet intelligence — understand any wallet's story, draft tax estimates, and risk in plain English.

@@ -4,6 +4,7 @@
 // since revoked. The netting logic lives in services/tokenApprovals.ts.
 
 import { formatAddress } from '../services/etherscan';
+import { InlineIcon, KeyIcon } from './icons';
 import { extractApprovalsFromTransactions } from '../services/tokenApprovals';
 import type { ClassifiedTransaction } from '../types';
 
@@ -22,7 +23,7 @@ export default function TokenApprovalsPanel({ transactions, walletAddress }: Pro
       {/* Header */}
       <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
         <div className="flex items-center gap-2.5">
-          <span className="text-lg">🔑</span>
+          <span className="text-lg"><InlineIcon icon={KeyIcon} size={16} /></span>
           <div>
             <h3 className="text-sm font-bold text-white tracking-tight">Token Approvals History</h3>
             <p className="text-xs text-slate-400">
@@ -58,7 +59,7 @@ export default function TokenApprovalsPanel({ transactions, walletAddress }: Pro
             <div className="flex items-center gap-3">
               {app.isUnlimited ? (
                 <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-1 rounded-lg font-bold text-[11px]">
-                  ⚠️ Unlimited Approval
+                  Unlimited Approval
                 </span>
               ) : (
                 <span className="bg-slate-700/50 text-slate-300 px-2.5 py-1 rounded-lg text-[11px]">
