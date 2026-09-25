@@ -105,7 +105,7 @@ circuit breaker returns a clean score for a transfer it never examined.
 | Path | What |
 | :--- | :--- |
 | `src/tripwire/` | The risk oracle: rules, scoring, verdicts |
-| `contracts/` | EVM guardian (Solidity), identical bytecode across 4 chains |
+| `contracts/evm/` | EVM guardian (Solidity), identical bytecode across 4 chains |
 | `solana/` | Anchor guardian program — not yet written |
 | `src/services/` | Chain indexing, feature extraction, contract intel, screening — from ChainStory, reused as oracle inputs |
 | `src/components/`, `src/pages/` | The wallet-intelligence app and the incident dashboard |
@@ -123,19 +123,20 @@ Honest, and short.
 | Piece | State |
 | :--- | :--- |
 | Risk oracle — 4 rules, verdicts, degraded handling | **Working**, 16 tests |
-| EVM guardian | **Compiles clean**, behaviour untested — needs Foundry |
+| EVM guardian — EIP-712, tiered pausing | **Verified**: 35/35 EVM tests, 12/12 mutants killed. Foundry suite written and type-checked, not yet executed |
+| Oracle → guardian score mapping | **Known bug** — the Verus case is refused on-chain. Pinned; see [contracts/evm/README.md](contracts/evm/README.md) |
 | Solana Anchor guardian | Not started — needs the Rust/Anchor toolchain |
 | Incident replay against real Verus / Syscoin / Kelp sequences | Not started — needs the real on-chain sequences pulled |
 | Attestation signing service | Not started |
 | ChainStory wallet intelligence | Working — see [docs/chainstory.md](docs/chainstory.md) |
 
 Nothing here is deployed, and the guardian should not be until its test suite
-exists. See [contracts/README.md](contracts/README.md).
+exists. See [contracts/evm/README.md](contracts/evm/README.md).
 
 ```bash
 npm install
-npm test                      # oracle tests
-node contracts/compile.mjs    # guardian builds clean
+npm test                          # oracle + guardian, in a real EVM
+node contracts/evm/compile.mjs    # build, size, warnings
 npm run dev
 ```
 
