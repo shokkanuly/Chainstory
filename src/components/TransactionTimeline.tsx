@@ -1,6 +1,14 @@
 // src/components/TransactionTimeline.tsx — Premium Transaction Explorer
 import { useState } from 'react';
 import type { ClassifiedTransaction, TaxCategory } from '../types';
+import {
+  CATEGORY_ICON,
+  InlineIcon,
+  CircleIcon,
+  InfoIcon,
+  MagnifyingGlassIcon,
+  type PhosphorIcon,
+} from './icons';
 import TransactionCard from './TransactionCard';
 import ExportButton from './ExportButton';
 
@@ -12,12 +20,12 @@ interface Props {
 
 type FilterValue = TaxCategory | 'all';
 
-const FILTERS: { label: string; value: FilterValue; icon: string }[] = [
-  { label: 'All', value: 'all', icon: '⬡' },
-  { label: 'Trades', value: 'trade', icon: '💱' },
-  { label: 'Income', value: 'income', icon: '💎' },
-  { label: 'Transfers', value: 'transfer', icon: '↔️' },
-  { label: 'NFT', value: 'nft', icon: '🖼️' },
+const FILTERS: { label: string; value: FilterValue; icon: PhosphorIcon }[] = [
+  { label: 'All', value: 'all', icon: CircleIcon },
+  { label: 'Trades', value: 'trade', icon: CATEGORY_ICON.trade },
+  { label: 'Income', value: 'income', icon: CATEGORY_ICON.income },
+  { label: 'Transfers', value: 'transfer', icon: CATEGORY_ICON.transfer },
+  { label: 'NFT', value: 'nft', icon: CATEGORY_ICON.nft },
 ];
 
 export default function TransactionTimeline({ transactions, walletAddress, isCapped }: Props) {
@@ -68,7 +76,7 @@ export default function TransactionTimeline({ transactions, walletAddress, isCap
               className={`filter-tab ${activeFilter === f.value ? 'active' : ''}`}
               onClick={() => setActiveFilter(f.value)}
             >
-              <span className="filter-tab-icon">{f.icon}</span>
+              <span className="filter-tab-icon"><InlineIcon icon={f.icon} size={13} /></span>
               {f.label}
               <span className="filter-tab-count">{counts[f.value] || 0}</span>
             </button>
@@ -96,7 +104,7 @@ export default function TransactionTimeline({ transactions, walletAddress, isCap
 
       {isCapped && (
         <div className="timeline-capped-note">
-          ℹ️ Showing your 100 most recent transactions.
+          <InlineIcon icon={InfoIcon} size={13} /> Showing your 100 most recent transactions.
         </div>
       )}
 
@@ -104,7 +112,7 @@ export default function TransactionTimeline({ transactions, walletAddress, isCap
       <div className="timeline-list">
         {filtered.length === 0 ? (
           <div className="timeline-empty">
-            <div className="timeline-empty-icon">🔎</div>
+            <div className="timeline-empty-icon"><MagnifyingGlassIcon size={28} weight="regular" aria-hidden /></div>
             <p className="text-sm text-muted-foreground">No transactions match your filter.</p>
           </div>
         ) : (

@@ -1,5 +1,5 @@
 // src/components/NetworkTicker.tsx — Premium Multi-Chain Network Stats
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 
 export interface ChainStat {
   id: string;
@@ -17,7 +17,7 @@ const CHAIN_STATS: ChainStat[] = [
   { id: 'arbitrum', name: 'Arbitrum One', symbol: 'ARB', icon: '◈', tps: '38.5', gasGwei: '0.1', status: 'online', color: '#28a0f0' },
   { id: 'base', name: 'Base', symbol: 'BASE', icon: '●', tps: '42.1', gasGwei: '0.05', status: 'online', color: '#0052ff' },
   { id: 'optimism', name: 'OP Mainnet', symbol: 'OP', icon: '◉', tps: '29.8', gasGwei: '0.08', status: 'online', color: '#ff0420' },
-  { id: 'polygon', name: 'Polygon', symbol: 'POL', icon: '⬡', tps: '54.0', gasGwei: '32', status: 'online', color: '#8247e5' },
+  { id: 'polygon', name: 'Polygon', symbol: 'POL', icon: '', tps: '54.0', gasGwei: '32', status: 'online', color: '#8247e5' },
 ];
 
 interface Props {
@@ -26,6 +26,7 @@ interface Props {
 }
 
 export default function NetworkTicker({ selectedChain, onSelectChain }: Props) {
+  const reduce = useReducedMotion();
   return (
     <div className="w-full space-y-4">
       <div className="flex items-center justify-between">
@@ -45,8 +46,8 @@ export default function NetworkTicker({ selectedChain, onSelectChain }: Props) {
           return (
             <motion.button
               key={chain.id}
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={reduce ? undefined : { y: -2 }}
+              whileTap={reduce ? undefined : { scale: 0.98 }}
               onClick={() => onSelectChain(chain.id)}
               className={`text-left rounded-xl border p-4 transition-all duration-200 cursor-pointer ${
                 isSelected

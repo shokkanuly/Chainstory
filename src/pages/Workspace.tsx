@@ -1,31 +1,35 @@
-// src/App.tsx — Blockchair Explorer UI & Multi-Chain AI Tax Engine
-import { useState, useCallback, useMemo, useEffect } from 'react';
-import Navbar from '@/components/Navbar';
-import Hero from '@/components/Hero';
-import NetworkTicker from '@/components/NetworkTicker';
-import Features from '@/components/Features';
-import Architecture from '@/components/Architecture';
-import HowItWorks from '@/components/HowItWorks';
-import Security from '@/components/Security';
-import CTA from '@/components/CTA';
-import Footer from '@/components/Footer';
+// src/pages/Workspace.tsx
+//
+// The analyser, on its own route. It used to sit halfway down the landing page,
+// so the thing people came for was four scrolls below the fold. A wallet tool
+// should open onto the wallet.
+//
+// Accepts ?address=... so the landing page CTA can hand a wallet straight over.
 
-import WalletInput from './components/WalletInput';
-import TaxDashboard from './components/TaxDashboard';
-import { computeSummary } from './services/taxSummary';
-import TransactionTimeline from './components/TransactionTimeline';
-import WalletIntelligenceCard from './components/WalletIntelligenceCard';
-import TokenApprovalsPanel from './components/TokenApprovalsPanel';
-import ContractRiskModal from './components/ContractRiskModal';
-import type { ChainId, ClassifiedTransaction, DataSource, RawTransaction, B2BSimulationResult } from './types';
-import { fetchMultiWalletTransactions, weiToEth } from './services/etherscan';
-import { classifyAll } from './services/classifier';
-import { calculateFifoTaxReport } from './services/fifoEngine';
-import { simulateTransactionPayload } from './services/b2bSimulation';
-import { resolveAsset } from './services/assetResolver';
-import './App.css';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import Navbar from '@/components/Navbar';
+import Footer from '@/components/Footer';
+import NetworkTicker from '@/components/NetworkTicker';
+
+import WalletInput from '../components/WalletInput';
+import TaxDashboard from '../components/TaxDashboard';
+import { computeSummary } from '../services/taxSummary';
+import TransactionTimeline from '../components/TransactionTimeline';
+import WalletIntelligenceCard from '../components/WalletIntelligenceCard';
+import TokenApprovalsPanel from '../components/TokenApprovalsPanel';
+import ContractRiskModal from '../components/ContractRiskModal';
+import type { ChainId, ClassifiedTransaction, DataSource, RawTransaction, B2BSimulationResult } from '../types';
+import { fetchMultiWalletTransactions, weiToEth } from '../services/etherscan';
+import { classifyAll } from '../services/classifier';
+import { calculateFifoTaxReport } from '../services/fifoEngine';
+import { simulateTransactionPayload } from '../services/b2bSimulation';
+import { resolveAsset } from '../services/assetResolver';
+import { InlineIcon, MagnifyingGlassIcon, ShieldCheckIcon, WarningIcon } from '../components/icons';
+import '../App.css';
 
 type AppState = 'idle' | 'fetching' | 'classifying' | 'done' | 'error';
+
 
 // Sample data shown before the visitor searches anything. Flagged `isDemo`
 // so the same banner that covers explorer fallbacks also covers this.
@@ -144,7 +148,8 @@ const INITIAL_MOCK_TRANSACTIONS: ClassifiedTransaction[] = [
   },
 ];
 
-export default function App() {
+export default function Workspace() {
+  const [searchParams] = useSearchParams();
   const [appState, setAppState] = useState<AppState>('done');
   const [walletAddresses, setWalletAddresses] = useState<string[]>(['vitalik.eth']);
   const [selectedChain, setSelectedChain] = useState<ChainId | 'all'>('all');
@@ -282,15 +287,18 @@ export default function App() {
 
   const isLoading = appState === 'fetching' || appState === 'classifying';
 
+  // A wallet handed over from the landing page loads immediately.
+  useEffect(() => {
+    const handoff = searchParams.get('address');
+    if (handoff) void handleAnalyze([handoff]);
+    // Only on the initial address, not on every handleAnalyze identity change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   return (
-    <div className="min-h-screen bg-background text-foreground selection:bg-chain/30 selection:text-chain">
-      {/* Top Navbar */}
+    <div className="min-h-[100dvh] bg-background text-foreground">
       <Navbar />
-
-      {/* Blockchair Hero */}
-      <Hero onAnalyze={handleAnalyze} />
-
-      {/* Main Block Explorer & Tax Workspace */}
+      <main className="pt-20">
       <section id="app-workspace" className="relative py-16 border-t border-border/50">
         {/* Subtle background wash */}
         <div className="absolute inset-0 bg-gradient-to-b from-card/30 via-transparent to-transparent pointer-events-none" />
@@ -315,14 +323,14 @@ export default function App() {
                 onClick={() => setShowRiskModal(true)}
                 className="inline-flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 transition-all duration-200 shrink-0"
               >
-                🔍 Pre-Scan Risk &amp; Permissions
+                <InlineIcon icon={MagnifyingGlassIcon} size={14} /> Pre-Scan Risk &amp; Permissions
               </button>
 
               <button
                 onClick={handleTestB2BSimulate}
                 className="inline-flex items-center gap-2 rounded-xl border border-signal-red/25 bg-signal-red/8 px-4 py-2.5 text-xs font-semibold text-signal-red hover:bg-signal-red/15 transition-all duration-200 shrink-0"
               >
-                🛡️ Test B2B Pre-Sign API
+                <InlineIcon icon={ShieldCheckIcon} size={14} /> Test B2B Pre-Sign API
               </button>
             </div>
           </div>
@@ -345,7 +353,7 @@ export default function App() {
           {/* Data provenance banner — demo data must never look like chain data */}
           {dataSource === 'demo' && (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 p-4 text-amber-300 text-sm flex items-start gap-3">
-              <span className="text-base leading-none mt-0.5">⚠️</span>
+              <InlineIcon icon={WarningIcon} size={15} style={{ marginTop: 1 }} />
               <div>
                 <div className="font-semibold">Showing demo data — not real chain history.</div>
                 <div className="text-amber-300/75 text-xs mt-1">
@@ -360,7 +368,7 @@ export default function App() {
           {/* Error Banner */}
           {error && (
             <div className="rounded-xl border border-signal-red/30 bg-signal-red/8 p-4 text-signal-red text-sm flex items-center justify-between">
-              <span className="flex items-center gap-2">⚠️ {error}</span>
+              <span className="flex items-center gap-2"><InlineIcon icon={WarningIcon} size={14} /> {error}</span>
               <button onClick={() => setError(null)} className="text-muted-foreground hover:text-foreground text-lg leading-none">×</button>
             </div>
           )}
@@ -408,7 +416,7 @@ export default function App() {
                 transactions={filteredTransactions}
                 walletAddress={primaryWallet}
               />
-              <TaxDashboard summary={summary} />
+              <TaxDashboard summary={summary} chainId={selectedChain} />
               <TransactionTimeline
                 transactions={filteredTransactions}
                 walletAddress={walletAddresses.join(', ')}
@@ -418,16 +426,9 @@ export default function App() {
           )}
         </div>
       </section>
-
-      {/* Website Sections */}
-      <Features />
-      <Architecture />
-      <HowItWorks />
-      <Security />
-      <CTA />
+      </main>
       <Footer />
 
-      {/* Phase 2 Contract Risk Scanner Modal */}
       <ContractRiskModal
         isOpen={showRiskModal}
         onClose={() => setShowRiskModal(false)}
@@ -439,7 +440,7 @@ export default function App() {
           <div className="bg-card border border-border rounded-2xl max-w-lg w-full p-7 space-y-5 shadow-2xl shadow-black/40" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-[15px] flex items-center gap-2.5 text-foreground">
-                🛡️ Pre-Sign Security Report
+                <InlineIcon icon={ShieldCheckIcon} size={15} /> Pre-Sign Security Report
               </h3>
               <button onClick={() => setShowSimModal(false)} className="text-muted-foreground hover:text-foreground text-lg leading-none p-1 rounded-lg hover:bg-secondary transition-colors">×</button>
             </div>
@@ -464,7 +465,7 @@ export default function App() {
 
               {simResult.riskWarnings.length > 0 && (
                 <div className="space-y-1.5 bg-signal-amber/8 border border-signal-amber/15 p-4 rounded-xl text-xs text-signal-amber">
-                  <div className="font-semibold mb-1">⚠️ Warnings</div>
+                  <div className="font-semibold mb-1 flex items-center gap-1.5"><InlineIcon icon={WarningIcon} size={13} /> Warnings</div>
                   {simResult.riskWarnings.map((w, i) => (
                     <div key={i} className="pl-5">{w}</div>
                   ))}

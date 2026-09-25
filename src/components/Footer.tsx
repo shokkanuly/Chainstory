@@ -1,4 +1,4 @@
-import Logo from './ui/Logo'
+import Logo from './Logo'
 // src/components/Footer.tsx — Premium Footer
 export default function Footer() {
   const footerLinks = {
@@ -14,8 +14,8 @@ export default function Footer() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-10">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
-            <a href="#" className="flex items-center mb-4">
-              <Logo height={22} />
+            <a href="/" aria-label="ChainStory home" className="flex items-center mb-4">
+              <Logo size={24} />
             </a>
             <p className="text-xs text-muted-foreground leading-relaxed max-w-[220px]">
               Wallet intelligence — understand any wallet's story, draft tax estimates, and risk in plain English.

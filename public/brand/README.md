@@ -8,16 +8,20 @@ file from this folder.
 ## In the app
 
 ```tsx
-import Logo from '@/components/ui/Logo'
+import Logo from '@/components/Logo'
 
-<Logo />                    // lockup, 28px mark
-<Logo height={20} />        // smaller
-<Logo markOnly />           // mark alone, for tight spots
+<Logo />                    // lockup, 28px box
+<Logo size={20} />          // smaller
+<Logo showWordmark={false} />  // mark alone, for tight spots
+<Logo flat />               // single colour, for print or a stamp
 ```
 
 The mark keeps its gradient. The wordmark is drawn as a CSS mask filled with
 `currentColor`, so it takes the colour of the surrounding text and works on
-light and dark surfaces without a second asset.
+light and dark surfaces without a second asset. It is `currentColor` rather
+than a token on purpose: the `/v2` prototype has its own token space, where a
+`--b-text` reference falls back to the light-mode ink and disappears against
+that dark canvas.
 
 ## Files
 

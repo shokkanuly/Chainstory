@@ -2,18 +2,21 @@
 import type { ClassifiedTransaction, TaxCategory } from '../types';
 import { formatAddress } from '../services/etherscan';
 import { explorerTxUrl } from '../services/chains';
+import { CATEGORY_ICON, InlineIcon } from './icons';
+import { motion } from 'framer-motion';
+import { useRise } from '../lib/motion';
 
 interface Props {
   tx: ClassifiedTransaction;
   index: number;
 }
 
-const CATEGORY_META: Record<TaxCategory | 'unknown', { label: string; icon: string; className: string }> = {
-  trade: { label: 'Trade', icon: '💱', className: 'cat-trade' },
-  income: { label: 'Income', icon: '💎', className: 'cat-income' },
-  transfer: { label: 'Transfer', icon: '↔️', className: 'cat-transfer' },
-  nft: { label: 'NFT', icon: '🖼️', className: 'cat-nft' },
-  unknown: { label: 'Unknown', icon: '❓', className: 'cat-unknown' },
+const CATEGORY_META: Record<TaxCategory | 'unknown', { label: string; className: string }> = {
+  trade: { label: 'Trade', className: 'cat-trade' },
+  income: { label: 'Income', className: 'cat-income' },
+  transfer: { label: 'Transfer', className: 'cat-transfer' },
+  nft: { label: 'NFT', className: 'cat-nft' },
+  unknown: { label: 'Unknown', className: 'cat-unknown' },
 };
 
 function formatDate(date: Date): string {
@@ -39,14 +42,17 @@ function formatUsd(value: number): string {
 }
 
 export default function TransactionCard({ tx, index }: Props) {
+  const rise = useRise(Math.min(index * 0.035, 0.35), 10);
   const meta = CATEGORY_META[tx.category];
   const isLoading = tx.status === 'classifying' || tx.status === 'pending';
   const isFailed = tx.isError === '1';
 
   return (
-    <div
+    <motion.div
+      // Sequence: a feed is an ordered history, so rows arrive in order. The
+      // cap keeps a hundred rows from taking several seconds to settle.
+      {...rise}
       className={`tx-card ${isLoading ? 'tx-card--loading' : ''} ${isFailed ? 'tx-card--failed' : ''}`}
-      style={{ animationDelay: `${Math.min(index * 40, 400)}ms` }}
     >
       <div className="tx-card-inner">
         {/* Header: date + category */}
@@ -57,7 +63,8 @@ export default function TransactionCard({ tx, index }: Props) {
           </div>
           <div className="tx-card-right">
             <span className={`category-tag ${meta.className}`}>
-              {meta.icon} {meta.label}
+              <InlineIcon icon={CATEGORY_ICON[tx.category]} size={13} />
+              {meta.label}
             </span>
             {isFailed && <span className="failed-badge">Failed</span>}
           </div>
@@ -129,6 +136,6 @@ export default function TransactionCard({ tx, index }: Props) {
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }

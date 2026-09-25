@@ -36,7 +36,7 @@ import {
   RiskPanel,
   TaxPanel,
 } from './panels';
-import Logo from '../components/ui/Logo';
+import Logo from '../components/Logo';
 
 type TabId = 'activity' | 'taxes' | 'approvals' | 'risk';
 type View = 'empty' | 'loading' | 'loaded';
@@ -57,7 +57,7 @@ function Rail({ active, onChange }: { active: TabId; onChange: (t: TabId) => voi
       style={{ borderColor: 'var(--v2-line)', background: 'var(--v2-canvas)' }}
     >
       <div className="flex items-center gap-2.5 px-2 pb-5">
-        <Logo height={20} />
+        <Logo size={22} />
       </div>
 
       <nav className="flex flex-col gap-0.5">

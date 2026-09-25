@@ -133,7 +133,7 @@ export function generatePdfTaxReport(report: FifoAccountingReport): void {
 
       <div class="header">
         <div>
-          <div class="logo">⚡ ChainStory</div>
+          <div class="logo">ChainStory</div>
           <div class="subtitle">DRAFT Form 8949 / Schedule D Capital Gains Estimate</div>
         </div>
         <div style="text-align: right;">

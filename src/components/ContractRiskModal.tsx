@@ -8,6 +8,7 @@
 // reassuring "No".
 
 import { useState } from 'react';
+import { XIcon } from '@phosphor-icons/react';
 import { analyzePreventiveTokenRisk, type TokenRiskAnalysis } from '../services/preventiveScamScanner';
 import { explainContractPermissionRisk, type ContractPermissionRisk } from '../services/contractRiskExplainer';
 
@@ -81,7 +82,6 @@ export default function ContractRiskModal({ isOpen, onClose }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/90">
           <div className="flex items-center gap-2.5">
-            <span className="text-xl">🛡️</span>
             <div>
               <h2 className="text-base font-bold text-white">Preventive Risk &amp; Contract Explainer</h2>
               <p className="text-xs text-slate-400">
@@ -90,7 +90,7 @@ export default function ContractRiskModal({ isOpen, onClose }: Props) {
             </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
-            ✕
+            <XIcon size={16} weight="bold" aria-hidden />
           </button>
         </div>
 

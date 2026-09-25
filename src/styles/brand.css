@@ -59,6 +59,87 @@
   --b-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', monospace;
 }
 
+/* ---- Dark mode ------------------------------------------------------- */
+/*
+ * Same system, inverted. Two things flip rather than simply darkening:
+ *
+ *   --b-ink      The primary action is "ink on canvas". In light that is black
+ *                on white; in dark it becomes white on near-black. Keeping the
+ *                token name means every CTA follows without touching a
+ *                component.
+ *   semantics    Gain and loss are lightened, because #0e9e90 on near-black
+ *                fails contrast while #34d399 clears it.
+ *
+ * The brand gradient does not change. It is the identity, and it reads on both.
+ */
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --b-canvas: #0b0b0e;
+  --b-surface: #141418;
+  --b-raised: #1a1a1f;
+  --b-ink: #ffffff;
+
+  --b-text: #f4f4f5;
+  --b-text-muted: #a1a1aa;
+  --b-text-faint: #71717a;
+  --b-on-ink: #0b0b0e;
+  --b-on-ink-muted: rgba(11, 11, 14, 0.72);
+
+  --b-line: #26262b;
+  --b-line-strong: #34343b;
+
+  --b-blue-wash: #171a2e;
+  --b-violet-wash: #1d1830;
+  --b-teal-wash: #10241f;
+
+  --b-gain: #34d399;
+  --b-loss: #fb7185;
+  --b-warn: #fbbf24;
+  --b-gain-wash: #0f2a22;
+  --b-loss-wash: #2c1418;
+  --b-warn-wash: #2b1f0b;
+}
+
+/* Follow the operating system unless the visitor has chosen a theme. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --b-canvas: #0b0b0e;
+    --b-surface: #141418;
+    --b-raised: #1a1a1f;
+    --b-ink: #ffffff;
+
+    --b-text: #f4f4f5;
+    --b-text-muted: #a1a1aa;
+    --b-text-faint: #71717a;
+    --b-on-ink: #0b0b0e;
+    --b-on-ink-muted: rgba(11, 11, 14, 0.72);
+
+    --b-line: #26262b;
+    --b-line-strong: #34343b;
+
+    --b-blue-wash: #171a2e;
+    --b-violet-wash: #1d1830;
+    --b-teal-wash: #10241f;
+
+    --b-gain: #34d399;
+    --b-loss: #fb7185;
+    --b-warn: #fbbf24;
+    --b-gain-wash: #0f2a22;
+    --b-loss-wash: #2c1418;
+    --b-warn-wash: #2b1f0b;
+  }
+}
+
+/* The ink button inverts with the theme, so its hover must too. */
+:root[data-theme='dark'] .b-btn--primary:hover,
+:root:not([data-theme='light']) .b-btn--primary:hover {
+  background: #e4e4e7;
+}
+
 /* ---- Brand primitives ------------------------------------------------ */
 
 /* The identity gradient. Budget: twice per screen. */
@@ -200,4 +281,42 @@
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--b-text-muted);
+}
+
+/* ---- Motion ---------------------------------------------------------- */
+
+/*
+ * Theme change is a state transition, so it gets a transition. Without this the
+ * whole page hard-cuts between light and dark, which reads as a glitch rather
+ * than a choice. Only colour is animated, never layout.
+ *
+ * The 1ms floor on * is deliberate: transitioning every element is expensive,
+ * so this applies briefly and only to paint properties.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  :root,
+  body {
+    transition: background-color 240ms cubic-bezier(0.16, 1, 0.3, 1),
+      color 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+/*
+ * The last line of defence. Components honour prefers-reduced-motion through
+ * src/lib/motion.ts, but a stray CSS animation or a dependency's transition
+ * would slip past that. This catches anything missed without having to trust
+ * every file.
+ *
+ * Durations go to 0.01ms rather than 0 so that animationend and transitionend
+ * still fire; code that waits for them would otherwise hang.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
