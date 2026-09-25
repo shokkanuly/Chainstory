@@ -201,12 +201,16 @@ export default function App() {
     setError(null);
     setTransactions([]);
     setRawTransactions([]);
-    setWalletAddresses(addresses);
     setIsCapped(false);
     setAppState('fetching');
 
     try {
       const fetchResult = await fetchMultiWalletTransactions(addresses);
+      // Resolved, not raw: the FIFO engine decides acquisition vs disposal by
+      // matching this against each transaction's hex `from`/`to`, so an
+      // unresolved "name.eth" here would match nothing and quietly mis-state
+      // the whole tax report.
+      setWalletAddresses(fetchResult.resolvedAddresses ?? addresses);
       setDataSource(fetchResult.source);
       setDemoReason(fetchResult.demoReason);
       const allFetchedTxs = fetchResult.transactions;
@@ -249,7 +253,8 @@ export default function App() {
       setTransactions(initialTxs);
       setAppState('classifying');
 
-      const primaryTargetAddr = addresses[0] || '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
+      const primaryTargetAddr =
+        fetchResult.resolvedAddresses?.[0] || addresses[0] || '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
       await classifyAll(cappedTxs, primaryTargetAddr, (classified) => {
         setTransactions(prev =>
           prev.map(tx => tx.hash === classified.hash ? classified : tx)

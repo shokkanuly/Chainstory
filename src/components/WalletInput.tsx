@@ -13,7 +13,7 @@ interface Props {
 }
 
 const DEMO_WALLETS = [
-  { label: 'vitalik.eth', address: '0xd8dA6BF26964aF9Ded7ede3308C4157ed3714123', icon: '👤' },
+  { label: 'vitalik.eth', address: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045', icon: '👤' },
   { label: 'Uniswap LP', address: '0x1a9C8182C09F50C8318d769245beA52c32BE35BC', icon: '🦄' },
 ];
 

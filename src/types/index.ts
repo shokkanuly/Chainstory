@@ -17,6 +17,13 @@ export interface FetchResult {
   source: DataSource;
   /** Why we fell back to demo data, if we did. */
   demoReason?: string;
+  /**
+   * The addresses actually queried, in input order, with ENS names resolved
+   * to hex. Everything downstream — FIFO direction, approvals, intelligence —
+   * compares against on-chain `from`/`to`, so it must use these and not the
+   * raw user input.
+   */
+  resolvedAddresses?: string[];
 }
 
 export interface ChainConfig {
