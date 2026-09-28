@@ -19,6 +19,7 @@
 
 import type {
   BridgeTransfer,
+  ContractRiskSummary,
   OracleHealth,
   RiskAssessment,
   RiskSignal,
@@ -228,6 +229,71 @@ export function counterpartyScreen(
   };
 }
 
+/** A contract this young has no track record. Retold's scanner uses 30 days; a week is the sharper edge. */
+const NEW_CONTRACT_DAYS = 7;
+const YOUNG_CONTRACT_DAYS = 30;
+
+/**
+ * Rule 5 — what the money is going to.
+ *
+ * Retold's contract facts (verified source, age, upgradeability, admin
+ * functions), scored against the outflow's target. Each is a fetched fact,
+ * not an estimate, but no single one is damning: plenty of honest contracts
+ * are young, or upgradeable. All three at once — unpublished code, deployed
+ * days ago, replaceable — is the profile of a contract stood up to receive a
+ * drain, and that combination alone is enough to throttle the route: the
+ * gentlest tier, and never more on its own. Unknown facts add nothing and
+ * are named in the reason, so an unchecked contract never reads as a clean one.
+ */
+export function contractRisk(target: ContractRiskSummary, config: ScorerConfig): RiskSignal | null {
+  const { isVerified, ageDays, isUpgradeable, adminFunctions } = target;
+  // Nothing was learned about the contract: there is nothing to score.
+  if (isVerified === null && ageDays === null && isUpgradeable === null) return null;
+
+  // Whole points, divided once at the end: 0.4 + 0.3 + 0.2 in floating point
+  // is 0.8999999999999999, which would miss the 0.9 severe line by one ulp.
+  let points = 0;
+  const found: string[] = [];
+  const unknown: string[] = [];
+
+  if (isVerified === false) {
+    points += 40;
+    found.push('its source is not verified');
+  } else if (isVerified === null) unknown.push('verification');
+
+  if (ageDays === null) unknown.push('age');
+  else if (ageDays < NEW_CONTRACT_DAYS) {
+    points += 30;
+    found.push(`it was deployed ${ageDays} day(s) ago`);
+  } else if (ageDays < YOUNG_CONTRACT_DAYS) {
+    points += 15;
+    found.push(`it was deployed ${ageDays} days ago`);
+  }
+
+  if (isUpgradeable === true) {
+    points += 20;
+    found.push('its code can be replaced');
+  } else if (isUpgradeable === null) unknown.push('upgradeability');
+
+  if (adminFunctions.length > 0) {
+    points += 10;
+    found.push(`it exposes ${adminFunctions.join(', ')}`);
+  }
+
+  const score = Math.min(100, points) / 100;
+  const who = `Target contract ${target.address.slice(0, 6)}…${target.address.slice(-4)}`;
+  const unknownNote = unknown.length ? ` Could not determine its ${unknown.join(', ')}.` : '';
+
+  return {
+    id: 'contract_risk',
+    score,
+    weight: 0.2,
+    floor: score >= config.severeSignal ? config.tripThreshold : undefined,
+    reason:
+      (found.length ? `${who}: ${found.join(', ')}.` : `${who} is verified and established.`) + unknownNote,
+  };
+}
+
 export interface ScoreInput {
   transfer: BridgeTransfer;
   /** Null when no usable baseline exists for the route. */
@@ -237,6 +303,8 @@ export interface ScoreInput {
   screening: ScreeningSource;
   now: number;
   config?: ScorerConfig;
+  /** Retold's facts about the contract the outflow goes to. Optional: fetched by the caller. */
+  targetContract?: ContractRiskSummary;
 }
 
 /**
@@ -267,6 +335,8 @@ export function scoreTransfer(input: ScoreInput): RiskAssessment {
   if (mismatch) signals.push(mismatch);
   const screen = counterpartyScreen(transfer, screening);
   if (screen) signals.push(screen);
+  const contract = input.targetContract ? contractRisk(input.targetContract, config) : null;
+  if (contract) signals.push(contract);
   if (baselineFresh && baseline) {
     const size = sizeVsBaseline(transfer, baseline);
     if (size) signals.push(size);
@@ -309,7 +379,9 @@ export function scoreTransfer(input: ScoreInput): RiskAssessment {
   // severe-but-probabilistic signal is not proof, so it does not trip on its
   // own — but it must not be averaged below where a human would see it either.
   const severeFired = signals.some((s) => !s.deterministic && s.score >= config.severeSignal);
-  const floor = firedDeterministic ? 1 : severeFired ? config.elevatedThreshold : 0;
+  // A signal may also name the tier it justifies alone (contract risk: throttle).
+  const signalFloor = Math.max(0, ...signals.map((s) => (s.score > 0 ? (s.floor ?? 0) : 0)));
+  const floor = firedDeterministic ? 1 : Math.max(severeFired ? config.elevatedThreshold : 0, signalFloor);
   const score = clamp01(Math.max(weighted, floor));
 
   const verdict: Verdict =

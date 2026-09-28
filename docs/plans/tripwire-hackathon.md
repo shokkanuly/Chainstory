@@ -116,11 +116,27 @@ words from the model). Advisory only; nothing signs (I1).
 - Mutation-test each tier property (as before: every mutant must be caught).
 - *Done when:* contract tests + cross-layer tests pass; mutation run reports 0 survivors.
 
-**Stage 2 — Scorer reuses Retold's contract risk (S)** · depends on 1
+**Stage 2 — Scorer reuses Retold's contract risk (S)** · depends on 1 · ✅ done 2026-09-28
 - `ContractRiskSummary` input + `contract_risk` signal; pluggable `apiClient` transport.
 - *Done when:* a unit test shows an unverified, 1-day-old, upgradeable target raises the
   score into THROTTLE with no other anomaly; the browser path is unchanged (existing
   tests green).
+- Result: `scoreTransfer` takes an optional `targetContract`; rule 5 `contract_risk`
+  scores unverified (40) + deployed < 7 days (30, or < 30 days 15) + upgradeable (20) +
+  pause/mint functions (10), in whole points (0.4 + 0.3 + 0.2 in floats is
+  0.8999999999999999 and missed the line — the done-when test caught it). Signals may now
+  carry a `floor`; `contract_risk` at ≥ 0.9 floors the total to the THROTTLE threshold,
+  so contract facts alone throttle and never delay or freeze. Two of the three do not act
+  on their own; unknown facts add nothing and are named. `tripwire/contractSummary.ts`
+  maps Retold's `ContractIntel` to the summary (pure). `apiClient` has
+  `setExplorerTransport`; the default is the unchanged HTTP call to `/api/explorer`
+  (pinned by a URL test), and `server/explorerTransport.ts` runs `handleExplorer`
+  in-process for Node. 269/269 tests; built without Stage 1's uncommitted code, and
+  touches none of its files except shared `riskScorer.ts` (new rule and one line in the
+  aggregation).
+- Found for Stage 4: the explorer proxy knows mainnet chain ids only, so on Sepolia /
+  Base Sepolia contract facts will read "unchecked" (and score nothing) until the
+  handler's `CHAIN_IDS` gains the testnets.
 
 **Stage 3 — Watcher → attestor loop, locally (M)** · depends on 2
 - `scripts/tripwire/watch.ts` (poll ingress logs), `attest.ts` (single signer),

@@ -40,6 +40,38 @@ export interface ExplorerParams {
   [key: string]: string | number | undefined;
 }
 
+/** What explorerRequest reads from a response: a subset of fetch's Response. */
+export interface TransportResponse {
+  status: number;
+  json(): Promise<any>;
+}
+
+/** Delivers one explorer query to the key-holding proxy. */
+export type ExplorerTransport = (
+  chainId: ChainId,
+  params: Record<string, string>
+) => Promise<TransportResponse>;
+
+/** The default, in the browser: our own origin's /api/explorer, where the key is injected. */
+export const httpExplorerTransport: ExplorerTransport = (chainId, params) => {
+  const url = new URL(`${API_BASE}/explorer`, window.location.origin);
+  url.searchParams.set('chain', chainId);
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+  return fetch(url.toString());
+};
+
+let transport: ExplorerTransport = httpExplorerTransport;
+
+/**
+ * Route explorer calls somewhere other than HTTP. A Node process — the
+ * Tripwire watcher — has no window.location and no /api to call, so it passes
+ * server/explorerTransport.ts, which runs the same proxy handler in-process.
+ * null restores the HTTP default.
+ */
+export function setExplorerTransport(next: ExplorerTransport | null): void {
+  transport = next ?? httpExplorerTransport;
+}
+
 /**
  * Call the explorer proxy with throttling and exponential backoff.
  *
@@ -54,13 +86,12 @@ export async function explorerRequest(
 ): Promise<any> {
   await throttle();
 
-  const url = new URL(`${API_BASE}/explorer`, window.location.origin);
-  url.searchParams.set('chain', chainId);
+  const query: Record<string, string> = {};
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) url.searchParams.set(key, String(value));
+    if (value !== undefined) query[key] = String(value);
   }
 
-  const res = await fetch(url.toString());
+  const res = await transport(chainId, query);
 
   if (res.status === 503) {
     throw new NoServerKeyError();
@@ -76,7 +107,7 @@ export async function explorerRequest(
     throw new Error(`Explorer proxy HTTP ${res.status}`);
   }
 
-  if (!res.ok) {
+  if (res.status < 200 || res.status >= 300) {
     throw new Error(`Explorer proxy HTTP ${res.status}`);
   }
 
