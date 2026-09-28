@@ -11,6 +11,7 @@
 // already has a deterministic keyword fallback that covers every transaction,
 // so description generation never becomes a hard dependency.
 
+import { acceptCheckPhrasing, buildCheckPrompt } from './checkPhrasing.js';
 import { rateLimit, type HandlerResponse } from './explorerHandler.js';
 
 // Tried in order; the loop falls through on any non-OK response (404 retired,
@@ -126,7 +127,14 @@ export async function handleGemini(
     return { status: 400, body: { error: 'Expected a transaction object' } };
   }
 
-  const prompt = buildPrompt(body as DescribeRequest);
+  // The /check page asks for its verdict to be worded; everything else is a
+  // transaction description. Both get their prompt built here, never sent.
+  const isCheck = (body as { kind?: unknown }).kind === 'check';
+  const prompt = isCheck ? buildCheckPrompt(body) : buildPrompt(body as DescribeRequest);
+  if (prompt === null) {
+    return { status: 400, body: { error: 'Expected a badge and known reason ids' } };
+  }
+  const maxWords = isCheck ? 30 : 15;
 
   for (const endpoint of GEMINI_ENDPOINTS) {
     try {
@@ -147,7 +155,7 @@ export async function handleGemini(
               properties: {
                 description: {
                   type: 'STRING',
-                  description: 'One plain English sentence summary of max 15 words',
+                  description: `One plain English sentence of max ${maxWords} words`,
                 },
               },
               required: ['description'],
@@ -182,7 +190,9 @@ export async function handleGemini(
         .replace(/```.*$/gm, '')
         .trim();
 
-      if (cleaned) return { status: 200, body: { description: cleaned } };
+      if (cleaned && (!isCheck || acceptCheckPhrasing(cleaned))) {
+        return { status: 200, body: { description: cleaned } };
+      }
     } catch {
       // Try the next endpoint.
     }

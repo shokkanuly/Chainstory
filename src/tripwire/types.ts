@@ -65,7 +65,24 @@ export type SignalId =
   | 'proof_payout_mismatch'
   | 'size_vs_baseline'
   | 'withdrawal_velocity'
-  | 'counterparty_screen';
+  | 'counterparty_screen'
+  | 'contract_risk';
+
+/**
+ * What Retold's contract checks know about the contract an outflow goes to:
+ * explorer facts, fetched by the caller so the scorer stays pure. Every field
+ * can be null, meaning the explorer could not say — never "fine".
+ */
+export interface ContractRiskSummary {
+  address: string;
+  /** Source published on the explorer. */
+  isVerified: boolean | null;
+  ageDays: number | null;
+  /** A proxy, or an upgrade function in the verified ABI: the code can be replaced. */
+  isUpgradeable: boolean | null;
+  /** Pause / mint / ownership functions in the verified ABI. Empty when none were found or the ABI is unknown. */
+  adminFunctions: string[];
+}
 
 export interface RiskSignal {
   id: SignalId;
@@ -80,6 +97,11 @@ export interface RiskSignal {
    * away by other signals looking calm.
    */
   deterministic?: boolean;
+  /**
+   * The lowest total score this signal justifies on its own, when it fires.
+   * Unlike `deterministic`, not proof: it sets a tier, not a certainty.
+   */
+  floor?: number;
 }
 
 /**

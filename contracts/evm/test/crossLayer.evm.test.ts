@@ -8,19 +8,27 @@ import { describe, expect, it } from 'vitest';
 import { keccak256, toHex } from 'viem';
 import { deployGuardian, oracle, owner, relayer, signAttestation } from './evm.js';
 import { DEFAULT_CONFIG, scoreTransfer } from '../../../src/tripwire/riskScorer.js';
-import { ON_CHAIN_TRIP_THRESHOLD, toOnChainScore } from '../../../src/tripwire/onChain.js';
+import {
+  ON_CHAIN_DELAY_THRESHOLD,
+  ON_CHAIN_FREEZE_THRESHOLD,
+  ON_CHAIN_THROTTLE_THRESHOLD,
+  ResponseTier,
+  getTierForScore,
+  toOnChainScore,
+} from '../../../src/tripwire/onChain.js';
 
 const NOW = 1_780_000_000;
 const ROUTE = keccak256(toHex('eth:arb:USDC'));
 
-async function guardianAccepts(riskScore: bigint) {
+/** Submit one attestation to a fresh guardian; report whether it landed and the tier it left. */
+async function guardianResponse(riskScore: bigint) {
   const g = await deployGuardian();
   await g.send(owner, 'configureRoute', [ROUTE, 1_000_000n, 3600n]);
   const a = { routeId: ROUTE, riskScore, validUntil: g.now + 300n, nonce: 1n };
   const res = await g.send(relayer, 'submitAttestation', [
     a.routeId, a.riskScore, a.validUntil, a.nonce, await signAttestation(oracle, g.address, a),
   ]);
-  return res.ok;
+  return { accepted: res.ok, tier: await g.read<number>('currentTier', [ROUTE]) };
 }
 
 describe('oracle → guardian boundary', () => {
@@ -39,20 +47,35 @@ describe('oracle → guardian boundary', () => {
       now: NOW,
     });
     expect(assessment.verdict).toBe('trip');
-    expect(await guardianAccepts(toOnChainScore(assessment.score!))).toBe(true);
+    expect(await guardianResponse(toOnChainScore(assessment.score!))).toEqual({
+      accepted: true,
+      tier: ResponseTier.FREEZE,
+    });
   });
 
-  it('the thresholds line up exactly', () => {
-    expect(toOnChainScore(DEFAULT_CONFIG.tripThreshold)).toBe(BigInt(ON_CHAIN_TRIP_THRESHOLD));
+  // Read from the deployed bytecode, not from a copy of it.
+  it('the scorer, the TS mirror and the contract agree on every threshold', async () => {
+    const g = await deployGuardian();
+    for (const [scorer, mirror, name] of [
+      [DEFAULT_CONFIG.tripThreshold, ON_CHAIN_THROTTLE_THRESHOLD, 'THROTTLE_THRESHOLD'],
+      [DEFAULT_CONFIG.delayThreshold, ON_CHAIN_DELAY_THRESHOLD, 'DELAY_THRESHOLD'],
+      [DEFAULT_CONFIG.freezeThreshold, ON_CHAIN_FREEZE_THRESHOLD, 'FREEZE_THRESHOLD'],
+    ] as const) {
+      expect(await g.read(name)).toBe(BigInt(mirror));
+      expect(toOnChainScore(scorer)).toBe(BigInt(mirror));
+    }
   });
 
-  // Floor, not round: rounding would lift 0.645 to 65 and pause on a transfer
-  // the oracle only rated `elevated`.
-  it.each([0.6449, 0.645, 0.6499999, 0.65, 0.6500001, 0.85, 0.95, 1])(
-    'score %s: the oracle trips exactly when the guardian accepts',
+  // Floor, not round: rounding would lift 0.645 to 65 and throttle a transfer
+  // the oracle only rated `elevated`, or lift 0.945 into FREEZE.
+  it.each([0.6449, 0.645, 0.6499999, 0.65, 0.6500001, 0.8499, 0.85, 0.9499, 0.95, 1])(
+    'score %s: the oracle trips exactly when the guardian accepts, at the same tier',
     async (score) => {
       const oracleTrips = score >= DEFAULT_CONFIG.tripThreshold;
-      expect(await guardianAccepts(toOnChainScore(score))).toBe(oracleTrips);
+      expect(await guardianResponse(toOnChainScore(score))).toEqual({
+        accepted: oracleTrips,
+        tier: getTierForScore(score),
+      });
     }
   );
 });

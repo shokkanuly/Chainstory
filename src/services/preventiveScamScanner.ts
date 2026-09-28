@@ -40,6 +40,22 @@ const KNOWN_MALICIOUS: Record<string, { symbol: string; name: string; summary: s
   },
 };
 
+/** The name the flag list is shown under, per the I9 wording policy. */
+export const FLAG_LIST_NAME = 'Retold curated phishing list';
+
+export interface FlaggedAddress {
+  address: string;
+  name: string;
+  summary: string;
+}
+
+/** Look an address up on the curated flag list. null means not listed, never "safe". */
+export function lookupFlaggedAddress(address: string): FlaggedAddress | null {
+  const clean = (address || '').trim().toLowerCase();
+  const hit = KNOWN_MALICIOUS[clean];
+  return hit ? { address: clean, name: hit.name, summary: hit.summary } : null;
+}
+
 export async function analyzePreventiveTokenRisk(
   tokenInput: string,
   chainId: ChainId = 'ethereum'

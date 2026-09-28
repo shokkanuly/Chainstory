@@ -67,7 +67,20 @@ export async function explainContractPermissionRisk(
     return unknownResult(clean, 'That is not a valid 42-character EVM address.');
   }
 
-  const intel = await fetchContractIntel(clean, chainId);
+  return explainContractIntel(await fetchContractIntel(clean, chainId));
+}
+
+/**
+ * The explanation itself, from facts already fetched. Pure, so a caller that
+ * holds the facts — the pre-sign check, or a test with a recorded fixture —
+ * gets exactly the reading the live path gives.
+ */
+export function explainContractIntel(intel: ContractIntel): ContractPermissionRisk {
+  const clean = intel.address;
+
+  if (!isAddressShaped(clean)) {
+    return unknownResult(clean, 'That is not a valid 42-character EVM address.');
+  }
 
   if (intel.status === 'unavailable') {
     return {

@@ -115,12 +115,37 @@ words from the model). Advisory only; nothing signs (I1).
 - Shared thresholds; cross-layer tests for every boundary (64/65, 84/85, 94/95).
 - Mutation-test each tier property (as before: every mutant must be caught).
 - *Done when:* contract tests + cross-layer tests pass; mutation run reports 0 survivors.
+- Result (finished 2026-09-28): `npm run test:mutants` (`contracts/evm/mutate.mjs`)
+  breaks 14 tier properties one at a time — DELAY cap, DELAY hold and its boundary,
+  escalate-only, refresh not reopening the hold, reconfigure keeping the tier, resume
+  clearing everything, each threshold off by one, FREEZE pausing — and all 14 are
+  caught. The first run had one survivor, "resume keeps the DELAY hold clock": the
+  stale clock is invisible to outflows but not to `getRoute`, which the dashboard
+  reads, so the resume test now asserts the cleared state. `contracts/evm/README.md`
+  updated to the tiers and measured numbers (6,819 bytes; 53 + 12 tests; gas 36,704 /
+  84,485).
 
-**Stage 2 — Scorer reuses Retold's contract risk (S)** · depends on 1
+**Stage 2 — Scorer reuses Retold's contract risk (S)** · depends on 1 · ✅ done 2026-09-28
 - `ContractRiskSummary` input + `contract_risk` signal; pluggable `apiClient` transport.
 - *Done when:* a unit test shows an unverified, 1-day-old, upgradeable target raises the
   score into THROTTLE with no other anomaly; the browser path is unchanged (existing
   tests green).
+- Result: `scoreTransfer` takes an optional `targetContract`; rule 5 `contract_risk`
+  scores unverified (40) + deployed < 7 days (30, or < 30 days 15) + upgradeable (20) +
+  pause/mint functions (10), in whole points (0.4 + 0.3 + 0.2 in floats is
+  0.8999999999999999 and missed the line — the done-when test caught it). Signals may now
+  carry a `floor`; `contract_risk` at ≥ 0.9 floors the total to the THROTTLE threshold,
+  so contract facts alone throttle and never delay or freeze. Two of the three do not act
+  on their own; unknown facts add nothing and are named. `tripwire/contractSummary.ts`
+  maps Retold's `ContractIntel` to the summary (pure). `apiClient` has
+  `setExplorerTransport`; the default is the unchanged HTTP call to `/api/explorer`
+  (pinned by a URL test), and `server/explorerTransport.ts` runs `handleExplorer`
+  in-process for Node. 269/269 tests; built without Stage 1's uncommitted code, and
+  touches none of its files except shared `riskScorer.ts` (new rule and one line in the
+  aggregation).
+- Found for Stage 4: the explorer proxy knows mainnet chain ids only, so on Sepolia /
+  Base Sepolia contract facts will read "unchecked" (and score nothing) until the
+  handler's `CHAIN_IDS` gains the testnets.
 
 **Stage 3 — Watcher → attestor loop, locally (M)** · depends on 2
 - `scripts/tripwire/watch.ts` (poll ingress logs), `attest.ts` (single signer),
@@ -128,6 +153,24 @@ words from the model). Advisory only; nothing signs (I1).
 - First against the in-process EVM (`GuardianVM`), so it runs in CI.
 - *Done when:* `npm run tripwire:demo:local` prints NONE → THROTTLE → FREEZE and a test
   asserts the on-chain tier after each attack.
+- Result (✅ 2026-09-28): `scripts/tripwire/` — `events.ts` (burn / release feeds, polled
+  with a cursor), `watch.ts` (pairs each release with its burn, looks up the recipient's
+  contract facts, scores before execution; holds no key), `attest.ts` (the single signer;
+  signs only to escalate the route's tier), `attack.ts` (four scripted steps),
+  `localLoop.ts`, `demoLocal.ts`. `npm run tripwire:demo:local` prints NONE → THROTTLE →
+  DELAY → FREEZE against the real bytecode; `scripts/tripwire/__tests__/localLoop.test.ts`
+  asserts the tier after each step, the attested scores (65, 85, 100), DELAY holding the
+  900k payout while an honest 40k one pays, and FREEZE stopping the forged release.
+  `tsconfig.scripts.json` puts the scripts under `tsc -b` (strict).
+- Found and fixed: DELAY was unreachable. With a burn visible, the calm proof signal
+  carries 0.4 of the weight, so no non-proof evidence could score above 0.65. New rule:
+  a drain-profile contract (contract risk ≥ 0.9) *and* anomalous volume (size or velocity
+  ≥ 0.9) corroborate each other → floor at the DELAY threshold, never FREEZE. The ladder:
+  one strong suspicion → THROTTLE; two independent ones → DELAY; proof → FREEZE. Only
+  fires when contract facts are supplied, so the replay and cross-layer tests are unchanged.
+- The old `scripts/demo/attackSimulation.ts` forced its moderate score
+  (`Math.max(score, 0.72)`) and listed a DELAY step it never ran. `demo:attack` now runs
+  the new loop; the old file is kept, marked superseded.
 
 **Stage 4 — Public testnet (M)** · depends on 3 · **needs the human (see §6)**
 - Deploy `MockBridge` (ingress, Sepolia) and `TripwireGuardian` + `ProtectedVault`
@@ -135,15 +178,35 @@ words from the model). Advisory only; nothing signs (I1).
 - Run the same demo against testnets.
 - *Done when:* verified contract pages exist; the demo prints tx hashes a judge can open.
 
-**Stage 5 — "Check before you sign" page (M)** · independent of 1–4
+**Stage 5 — "Check before you sign" page (M)** · independent of 1–4 · ✅ done 2026-09-28
 - `/check` page; fixtures for a benign ERC-20 transfer and an unlimited approval to a
   fresh unverified contract; I11: selectors sourced from EIP-20.
 - *Done when:* the two fixtures render green and red with the stated reasons; no code
   path signs or sends.
+- Result: `services/preSignCheck.ts` runs decode → `simulateTransactionPayload` →
+  `explainContractIntel` (the pure half of `explainContractPermissionRisk`, split out so
+  fixtures run the real logic) → flag-list check → badge. The approval's risk is read
+  from the **spender** argument, not from `to` (the token). Red = a flagged address, or
+  an unlimited allowance to a spender that is fresh (< 30 days), unverified, a plain
+  wallet, or could not be checked; unlimited to a verified, long-lived spender is yellow.
+  Scenarios live in `services/preSignScenarios.ts`, shared by the page and the tests:
+  real EIP-20 calldata, synthetic explorer facts on placeholder addresses, labelled as
+  such on the page. `src/testing/noSigning.test.ts` walks every module `/check` can reach
+  and fails on any signing, sending or wallet-connect call (and proves it can see one).
+  Optional AI wording goes through the existing `/api/describe`: the client sends the
+  badge and reason ids only, and a reply with a digit or address is discarded (docs/06
+  §4). Fixed on the way: the pre-sign simulation named the token as the spender, found
+  "unlimited" by searching the whole calldata for f's, and threw on a malformed value
+  (I8). 256/256 tests (45 new); typecheck and lint clean.
 
 **Stage 6 — Pitch + docs (S)** · depends on all
 - README scope table (🔨 built vs 🗺️ roadmap), ADR-012, docs/05 status, video.
 - *Done when:* every claim in the README and pitch is either tested or marked roadmap.
+- Progress 2026-09-28: ADR-013 (the server-side key proxy in `api/` + `server/`) is written
+  as **Proposed**, with the list of invariant and doc lines to reword once approved. It
+  also records a finding: Retold's transaction descriptions send full addresses to Gemini
+  automatically, against `docs/06` §2. The flagged claims ("72 hours", "sub-5ms", "$2.8B")
+  appear in no tracked file; they are in untracked drafts or the Colosseum profile.
 
 ## 5. Risks
 

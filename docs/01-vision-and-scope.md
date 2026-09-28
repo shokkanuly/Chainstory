@@ -20,7 +20,7 @@ not *what happened to me*. This causes three concrete pains:
 
 ## Product principles
 
-1. **Client-side and read-only.** No backend, no wallet connection, no custody.
+1. **Client-side and read-only.** Analysis runs in the browser; the only server code is two stateless key proxies (ADR-013). No wallet connection, no custody.
 2. **Explain, don't just decode.** Every output is a sentence a non-technical person understands, backed by structured evidence.
 3. **Numbers from code, words from models.** LLMs never produce amounts, assets, or accusations.
 4. **Honest confidence.** Every story carries source and confidence; uncertainty is shown, not hidden.

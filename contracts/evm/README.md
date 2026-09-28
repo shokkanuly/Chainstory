@@ -1,15 +1,25 @@
 # TripwireGuardian — EVM
 
 One contract, identical bytecode on any EVM chain: an EIP-7265-style rolling
-outflow cap, plus oracle-driven route pausing for the releases a volume cap
-cannot see.
+outflow cap, plus an oracle-driven, graduated response for the releases a
+volume cap cannot see.
 
 ## Behaviour
 
-- An attestation scoring **75 or more** (inclusive; out of 100) pauses its route
-  for **24 hours**. Below 75, or above 100, it reverts.
-- A fresh attestation restarts the 24 hours, so it can only extend a pause.
-- The owner can resume early and rotate the oracle key.
+- An attestation (a score out of 100, thresholds inclusive) sets a tier on its
+  route for **24 hours**. Below 65, or above 100, it reverts.
+
+  | Tier | Score | Effect |
+  | :--- | :--- | :--- |
+  | THROTTLE | ≥ 65 | The window cap is halved |
+  | DELAY | ≥ 85 | The cap stays halved, and any outflow above 10% of the cap is held for 30 minutes |
+  | FREEZE | ≥ 95 | Every outflow reverts |
+
+- Tiers only escalate while active: a lower score is accepted but ignored. A
+  same-tier attestation extends the 24 hours without reopening DELAY's 30-minute hold.
+- Reconfiguring a route's cap leaves its tier in place. Only the owner's
+  `resume` lifts a tier early, and it clears everything. The owner can also
+  rotate the oracle key.
 
 ## Safety properties
 
@@ -17,8 +27,8 @@ Each is enforced by the contract and broken deliberately by a test.
 
 | Property | Attack it closes |
 | :--- | :--- |
-| The oracle can pause, and nothing else | A stolen oracle key is a denial of service on the routes it attests against, never a theft |
-| Every pause expires after 24 hours | An oracle cannot brick a route |
+| The oracle can tighten a route, and nothing else | A stolen oracle key is a denial of service on the routes it attests against, never a theft |
+| Every tier expires after 24 hours | An oracle cannot brick a route |
 | EIP-712 domain binds chain id and address | A signature for Base cannot be replayed against the same bytecode on Arbitrum |
 | Nonces are single-use; validity ≤ 10 minutes | A signed-but-unsubmitted attestation cannot be held back and fired later |
 | OpenZeppelin ECDSA rejects high-`s` | No second valid signature exists for an accepted attestation |
@@ -30,11 +40,11 @@ Each is enforced by the contract and broken deliberately by a test.
 | Check | Result |
 | :--- | :--- |
 | Compiles, solc 0.8.37 | Clean — 0 warnings in our code (5 inside vendored OpenZeppelin) |
-| Runtime size | 5622 bytes, against the 24576 EIP-170 limit |
-| Executed in an EVM | **35 / 35** against the compiled bytecode |
-| Mutation testing | **13 / 13** mutants caught — each property above, broken on purpose |
-| Oracle ↔ guardian boundary | **9** cross-layer tests: the oracle trips exactly when the guardian accepts |
-| Gas, measured | `onTokenOutflow` 34,082 warm; `submitAttestation` 60,753 |
+| Runtime size | 6,819 bytes, against the 24,576 EIP-170 limit |
+| Executed in an EVM | **53 / 53** against the compiled bytecode |
+| Mutation testing | **14 / 14** mutants caught — each tier property broken on purpose (`npm run test:mutants`) |
+| Oracle ↔ guardian boundary | **12** cross-layer tests, reading the thresholds from the bytecode: 64/65, 84/85, 94/95 |
+| Gas, measured | `onTokenOutflow` 36,704 warm; `submitAttestation` 84,485 |
 
 Tests run in `npm test` through `@ethereumjs/vm` and viem — pure TypeScript, no
 Foundry. They execute `src/tripwire/guardian.artifact.ts`, the same artifact the

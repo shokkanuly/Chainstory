@@ -3,6 +3,7 @@ import Logo from './Logo'
 
 const LINKS = [
   { label: 'Retold app', href: '/app' },
+  { label: 'Check before you sign', href: '/check' },
   { label: 'Tripwire replay', href: '/tripwire' },
   { label: 'FAQ', href: '/#faq' },
   { label: 'GitHub', href: 'https://github.com/shokkanuly/Chainstory' },

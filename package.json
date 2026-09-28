@@ -11,7 +11,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "validate": "vitest run src/services/knownWallet.test.ts",
-    "demo:attack": "tsx scripts/demo/attackSimulation.ts"
+    "demo:attack": "tsx scripts/tripwire/demoLocal.ts",
+    "test:mutants": "node contracts/evm/mutate.mjs",
+    "tripwire:demo:local": "tsx scripts/tripwire/demoLocal.ts"
   },
   "dependencies": {
     "@ethereumjs/block": "^10.1.3",

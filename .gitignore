@@ -30,3 +30,6 @@ dist-ssr
 .claude/launch.json
 .vercel
 ml/.venv/
+
+# Tripwire operator key (throwaway testnet key, never real funds)
+.env.tripwire

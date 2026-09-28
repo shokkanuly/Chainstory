@@ -23,9 +23,13 @@ adding an unrelated tx does not change other assets' results; all arithmetic is 
 
 Do **not** write "no private data leaves your device." Say:
 
-> ChainStory has no server and no accounts. Your analysis runs in your browser. To fetch history and prices, your **wallet addresses and transaction lookups are sent to the
-> RPC, indexer, and price providers you configure**. If you enable the optional AI feature, **a redacted summary of transactions is sent to Google Gemini**.
-> API keys and watchlists are stored only in your browser.
+> Retold has no accounts and stores nothing on a server. Your analysis runs in your browser. To fetch history and contract facts, **the addresses you look up
+> pass through our server to the block explorer** (Etherscan), because that is where the API key lives; our host can see your IP address and those lookups.
+> Prices come from public price APIs. When AI descriptions are available, **transaction details, including addresses and amounts, are sent through our server
+> to Google Gemini**. Watchlists are stored only in your browser.
+
+**Known gap (open decision, ADR-013):** the two rules below are the target, and `services/descriptionGenerator.ts` does not meet them today — it sends full
+addresses automatically, with no opt-in. Until that is decided, the statement above is the accurate one. `/check`'s AI wording sends no user data.
 
 Rules:
 - LLM feature is **opt-in**, off by default, with a visible indicator and a "what is sent" preview.
@@ -34,7 +38,7 @@ Rules:
 
 ## 3. Secrets and keys
 
-- Provider keys are user-supplied (Settings), stored in `localStorage`, redacted in logs, excluded from error reports and shareable URLs.
+- The explorer and Gemini keys are server environment variables, never `VITE_*` (ADR-013). Other provider keys are user-supplied (Settings), stored in `localStorage`, redacted in logs, excluded from error reports and shareable URLs.
 - A bundled key is only allowed for a hosted demo, must be domain-restricted and low-quota.
 - `.env*` and recorded fixtures are checked by a pre-commit secret scan.
 
