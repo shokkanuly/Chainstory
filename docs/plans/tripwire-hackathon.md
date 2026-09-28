@@ -115,6 +115,15 @@ words from the model). Advisory only; nothing signs (I1).
 - Shared thresholds; cross-layer tests for every boundary (64/65, 84/85, 94/95).
 - Mutation-test each tier property (as before: every mutant must be caught).
 - *Done when:* contract tests + cross-layer tests pass; mutation run reports 0 survivors.
+- Result (finished 2026-09-28): `npm run test:mutants` (`contracts/evm/mutate.mjs`)
+  breaks 14 tier properties one at a time — DELAY cap, DELAY hold and its boundary,
+  escalate-only, refresh not reopening the hold, reconfigure keeping the tier, resume
+  clearing everything, each threshold off by one, FREEZE pausing — and all 14 are
+  caught. The first run had one survivor, "resume keeps the DELAY hold clock": the
+  stale clock is invisible to outflows but not to `getRoute`, which the dashboard
+  reads, so the resume test now asserts the cleared state. `contracts/evm/README.md`
+  updated to the tiers and measured numbers (6,819 bytes; 53 + 12 tests; gas 36,704 /
+  84,485).
 
 **Stage 2 — Scorer reuses Retold's contract risk (S)** · depends on 1 · ✅ done 2026-09-28
 - `ContractRiskSummary` input + `contract_risk` signal; pluggable `apiClient` transport.

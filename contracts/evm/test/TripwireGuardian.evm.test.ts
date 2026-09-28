@@ -280,6 +280,10 @@ describe('graduated tiers', () => {
     await submit(att({ riskScore: 85n }));
     await g.send(owner, 'resume', [ROUTE]);
     expect(await tier()).toBe(Tier.NONE);
+    // State, not just behaviour: a stale review clock is invisible to outflows
+    // (entering DELAY always restarts it) but getRoute feeds the dashboard.
+    const r = await g.read<{ tierExpiresAt: bigint; delayUntil: bigint; pausedUntil: bigint }>('getRoute', [ROUTE]);
+    expect([r.tierExpiresAt, r.delayUntil, r.pausedUntil]).toEqual([0n, 0n, 0n]);
     expect((await outflow(CAP)).ok).toBe(true);
   });
 });
