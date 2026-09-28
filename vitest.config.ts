@@ -12,6 +12,8 @@ export default defineConfig({
       // The guardian, executed in an in-process EVM against freshly compiled
       // bytecode. See contracts/evm/README.md.
       'contracts/**/*.test.ts',
+      // The Tripwire operator loop (watcher, attestor), against the same EVM.
+      'scripts/**/*.test.ts',
     ],
   },
 });

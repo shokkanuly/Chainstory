@@ -381,7 +381,19 @@ export function scoreTransfer(input: ScoreInput): RiskAssessment {
   const severeFired = signals.some((s) => !s.deterministic && s.score >= config.severeSignal);
   // A signal may also name the tier it justifies alone (contract risk: throttle).
   const signalFloor = Math.max(0, ...signals.map((s) => (s.score > 0 ? (s.floor ?? 0) : 0)));
-  const floor = firedDeterministic ? 1 : Math.max(severeFired ? config.elevatedThreshold : 0, signalFloor);
+  // Corroboration. A drain-profile contract, and — independently — an outflow of
+  // anomalous size or pace: two unrelated facts pointing the same way earn
+  // DELAY. Still not proof, so never FREEZE. Without this, a route whose burns
+  // are visible could never reach DELAY: a calm proof signal carries 0.4 of
+  // the weight, which caps every non-proof score at the THROTTLE floor.
+  const severe = (id: RiskSignal['id']) => signals.some((s) => s.id === id && s.score >= config.severeSignal);
+  const corroborated =
+    severe('contract_risk') && (severe('size_vs_baseline') || severe('withdrawal_velocity'))
+      ? config.delayThreshold
+      : 0;
+  const floor = firedDeterministic
+    ? 1
+    : Math.max(severeFired ? config.elevatedThreshold : 0, signalFloor, corroborated);
   const score = clamp01(Math.max(weighted, floor));
 
   const verdict: Verdict =

@@ -1,5 +1,10 @@
 // scripts/demo/attackSimulation.ts
 //
+// SUPERSEDED by scripts/tripwire/ (`npm run tripwire:demo:local`; `demo:attack`
+// now runs that too). Kept, not deleted, but no longer run: it forced its
+// moderate score with `Math.max(score, 0.72)` and listed a DELAY step it never
+// ran. The new loop earns every tier from the watcher's own score.
+//
 // Tripwire: Cross-Chain Bridge Circuit Breaker — Live Attack Simulation CLI
 //
 // Demonstrates the full Detect → Attest → Graduated Tiered Response loop:

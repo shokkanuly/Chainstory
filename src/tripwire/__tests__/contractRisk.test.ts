@@ -80,6 +80,19 @@ describe('contract risk in the scorer', () => {
     expect(tier(worst.score)).toBe(ResponseTier.THROTTLE);
   });
 
+  it('a drain-profile contract plus anomalous volume is corroborated: DELAY, never FREEZE', () => {
+    // 10.6x the route's p95: the size signal is severe on its own.
+    const big = { amountUsd: 900_000 };
+    expect(tier(score(undefined, big).score)).toBe(ResponseTier.NONE);
+    expect(tier(score(DRAIN_PROFILE, big).score)).toBe(ResponseTier.DELAY);
+    const worst = contract({ isVerified: false, ageDays: 0, isUpgradeable: true, adminFunctions: ['pause'] });
+    expect(tier(score(worst, { amountUsd: 20_000_000 }).score)).toBe(ResponseTier.DELAY);
+    // With a matching burn the calm proof signal holds the mean at ~0.57: the
+    // corroboration floor alone lifts it, to exactly the DELAY line.
+    const backed = { amountUsd: 20_000_000, provenBurnUsd: 20_000_000, claimedPayoutUsd: 20_000_000 };
+    expect(score(worst, backed).score).toBe(DEFAULT_CONFIG.delayThreshold);
+  });
+
   it('two of the three are not enough to act on', () => {
     for (const partial of [
       contract({ isVerified: false, ageDays: 1 }),

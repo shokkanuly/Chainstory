@@ -153,6 +153,24 @@ words from the model). Advisory only; nothing signs (I1).
 - First against the in-process EVM (`GuardianVM`), so it runs in CI.
 - *Done when:* `npm run tripwire:demo:local` prints NONE → THROTTLE → FREEZE and a test
   asserts the on-chain tier after each attack.
+- Result (✅ 2026-09-28): `scripts/tripwire/` — `events.ts` (burn / release feeds, polled
+  with a cursor), `watch.ts` (pairs each release with its burn, looks up the recipient's
+  contract facts, scores before execution; holds no key), `attest.ts` (the single signer;
+  signs only to escalate the route's tier), `attack.ts` (four scripted steps),
+  `localLoop.ts`, `demoLocal.ts`. `npm run tripwire:demo:local` prints NONE → THROTTLE →
+  DELAY → FREEZE against the real bytecode; `scripts/tripwire/__tests__/localLoop.test.ts`
+  asserts the tier after each step, the attested scores (65, 85, 100), DELAY holding the
+  900k payout while an honest 40k one pays, and FREEZE stopping the forged release.
+  `tsconfig.scripts.json` puts the scripts under `tsc -b` (strict).
+- Found and fixed: DELAY was unreachable. With a burn visible, the calm proof signal
+  carries 0.4 of the weight, so no non-proof evidence could score above 0.65. New rule:
+  a drain-profile contract (contract risk ≥ 0.9) *and* anomalous volume (size or velocity
+  ≥ 0.9) corroborate each other → floor at the DELAY threshold, never FREEZE. The ladder:
+  one strong suspicion → THROTTLE; two independent ones → DELAY; proof → FREEZE. Only
+  fires when contract facts are supplied, so the replay and cross-layer tests are unchanged.
+- The old `scripts/demo/attackSimulation.ts` forced its moderate score
+  (`Math.max(score, 0.72)`) and listed a DELAY step it never ran. `demo:attack` now runs
+  the new loop; the old file is kept, marked superseded.
 
 **Stage 4 — Public testnet (M)** · depends on 3 · **needs the human (see §6)**
 - Deploy `MockBridge` (ingress, Sepolia) and `TripwireGuardian` + `ProtectedVault`
