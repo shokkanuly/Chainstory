@@ -118,6 +118,28 @@ describe('explorer proxy allowlist', () => {
     expect(impl).not.toHaveBeenCalled();
   });
 
+  it('reads one storage slot, and only a slot-shaped position', async () => {
+    // eth_getStorageAt lets an unverified ERC-1967 proxy be recognised. It must
+    // not become a way to pass arbitrary data upstream.
+    const slot = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
+    const ok = spyFetch({ jsonrpc: '2.0', result: '0x0' });
+    const res = await handleExplorer(
+      req({ chain: 'sepolia', module: 'proxy', action: 'eth_getStorageAt', address: ADDR, position: slot, tag: 'latest' }),
+      ENV, 'ip-slot', ok.impl
+    );
+    expect(res.status).toBe(200);
+    expect(ok.calls[0]).toContain('chainid=11155111');
+    expect(ok.calls[0]).toContain(`position=${slot}`);
+
+    const bad = spyFetch();
+    const rejected = await handleExplorer(
+      req({ chain: 'sepolia', module: 'proxy', action: 'eth_getStorageAt', address: ADDR, position: 'latest; drop', tag: 'latest' }),
+      ENV, 'ip-slot-bad', bad.impl
+    );
+    expect(rejected.status).toBe(400);
+    expect(bad.impl).not.toHaveBeenCalled();
+  });
+
   it('drops parameters that are not on the action allowlist', async () => {
     const { impl, calls } = spyFetch();
     // getsourcecode permits `address` only; `offset` must not survive.

@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { inProcessExplorer } from '../../../server/explorerTransport';
 import { explorerRequest, setExplorerTransport, type ExplorerTransport } from '../../services/apiClient';
-import { fetchContractIntel, type ContractIntel } from '../../services/contractIntel';
+import { EIP1967_IMPLEMENTATION_SLOT, fetchContractIntel, type ContractIntel } from '../../services/contractIntel';
 import { summariseContract } from '../contractSummary';
 import { getTierForScore, ResponseTier } from '../onChain';
 import { DEFAULT_CONFIG, scoreTransfer, type ScreeningSource } from '../riskScorer';
@@ -196,6 +196,32 @@ describe('the explorer transport', () => {
 
     // The key went upstream from the handler, as it does behind /api/explorer.
     expect(upstream.mock.calls.every(([url]) => String(url).includes('apikey=test-key'))).toBe(true);
+  });
+
+  it('recognises an unverified ERC-1967 proxy from its storage slot', async () => {
+    // The slot as the EIP states it, pinned against the derivation.
+    expect(EIP1967_IMPLEMENTATION_SLOT).toBe('0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc');
+    const impl = '4444444444444444444444444444444444444444';
+    const upstream = vi.fn(async (url: string) => {
+      const q = new URL(url).searchParams;
+      const result =
+        q.get('action') === 'eth_getCode'
+          ? '0x6080604052'
+          : q.get('action') === 'getsourcecode'
+            ? // Unverified, and the explorer does not flag it as a proxy.
+              [{ SourceCode: '', ABI: 'Contract source code not verified', ContractName: '', Proxy: '0', Implementation: '' }]
+            : q.get('action') === 'eth_getStorageAt' && q.get('position') === EIP1967_IMPLEMENTATION_SLOT
+              ? `0x${impl.padStart(64, '0')}`
+              : null;
+      return { ok: true, status: 200, json: async () => ({ status: '1', result }) } as unknown as Response;
+    });
+    setExplorerTransport(inProcessExplorer({ ETHERSCAN_API_KEY: 'k' }, upstream as unknown as typeof fetch));
+
+    const intel = await fetchContractIntel(TARGET, 'sepolia');
+    expect(intel.isProxy).toBe(true);
+    expect(intel.implementationAddress).toBe(`0x${impl}`);
+    expect(summariseContract(intel)?.isUpgradeable).toBe(true);
+    expect(upstream.mock.calls.every(([url]) => String(url).includes('chainid=11155111'))).toBe(true);
   });
 
   it('in Node with no key, the contract reads as unchecked, not clean', async () => {

@@ -13,7 +13,10 @@
     "validate": "vitest run src/services/knownWallet.test.ts",
     "demo:attack": "tsx scripts/tripwire/demoLocal.ts",
     "test:mutants": "node contracts/evm/mutate.mjs",
-    "tripwire:demo:local": "tsx scripts/tripwire/demoLocal.ts"
+    "tripwire:demo:local": "tsx scripts/tripwire/demoLocal.ts",
+    "tripwire:deploy": "tsx scripts/tripwire/testnet/deploy.ts",
+    "tripwire:verify": "tsx scripts/tripwire/testnet/verify.ts",
+    "tripwire:demo:sepolia": "tsx scripts/tripwire/testnet/demo.ts"
   },
   "dependencies": {
     "@ethereumjs/block": "^10.1.3",

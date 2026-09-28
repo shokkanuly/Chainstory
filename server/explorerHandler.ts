@@ -19,7 +19,7 @@
 
 import { keccak_256 } from '@noble/hashes/sha3.js';
 
-export type ChainId = 'ethereum' | 'arbitrum' | 'base' | 'optimism' | 'polygon';
+export type ChainId = 'ethereum' | 'arbitrum' | 'base' | 'optimism' | 'polygon' | 'sepolia';
 
 const V2_BASE = 'https://api.etherscan.io/v2/api';
 
@@ -30,6 +30,8 @@ const CHAIN_IDS: Record<ChainId, number> = {
   polygon: 137,
   base: 8453,
   arbitrum: 42161,
+  // Testnet, for Tripwire's live demo (scripts/tripwire/testnet/).
+  sepolia: 11155111,
 };
 
 /** module:action -> the query parameters that may accompany it. */
@@ -41,6 +43,8 @@ const ALLOWED: Record<string, readonly string[]> = {
   'contract:getcontractcreation': ['contractaddresses'],
   'proxy:eth_getCode': ['address', 'tag'],
   'proxy:eth_getTransactionByHash': ['txhash'],
+  // Read one storage slot: how an unverified ERC-1967 proxy is recognised.
+  'proxy:eth_getStorageAt': ['address', 'position', 'tag'],
   'block:getblockreward': ['blockno'],
 };
 
@@ -87,6 +91,7 @@ function decodeAddressWord(word: unknown): string | null {
 const IS_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const IS_TXHASH = /^0x[0-9a-fA-F]{64}$/;
 const IS_DIGITS = /^\d{1,12}$/;
+const IS_SLOT = /^0x[0-9a-fA-F]{1,64}$/;
 
 function validateParam(name: string, value: string): boolean {
   switch (name) {
@@ -97,6 +102,8 @@ function validateParam(name: string, value: string): boolean {
       return IS_ADDRESS.test(value);
     case 'txhash':
       return IS_TXHASH.test(value);
+    case 'position':
+      return IS_SLOT.test(value);
     case 'startblock':
     case 'endblock':
     case 'page':
@@ -172,6 +179,7 @@ export function resolveKey(
     base: 'BASESCAN_API_KEY',
     optimism: 'OPTIMISM_API_KEY',
     polygon: 'POLYGONSCAN_API_KEY',
+    sepolia: 'ETHERSCAN_API_KEY',
   };
   const key = env[legacyVar[chainId]] || env.ETHERSCAN_API_KEY;
   if (!key || key.trim() === '' || key.includes('your_')) return null;

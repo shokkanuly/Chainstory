@@ -62,7 +62,7 @@ export const ATTACK_STEPS: AttackStep[] = [
     ],
   },
   {
-    title: 'Moderate: a payout to a day-old, unverified, upgradeable contract',
+    title: 'Moderate: a payout to a brand-new, unverified, upgradeable contract',
     payouts: [{ recipient: DRAIN_CONTRACT, amount: 60_000n * USDC, burned: 60_000n * USDC }],
   },
   {

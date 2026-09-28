@@ -10,6 +10,13 @@
 
 import type { ChainId } from '../types';
 
+/**
+ * Chains the explorer proxy serves: the analyser's chains, plus Sepolia for
+ * Tripwire's testnet demo. Wider than ChainId on purpose, so the testnet never
+ * appears in the analyser's chain lists.
+ */
+export type ExplorerChainId = ChainId | 'sepolia';
+
 const API_BASE = '/api';
 
 /** Thrown when the server has no key configured. Callers fall back to demo data. */
@@ -48,7 +55,7 @@ export interface TransportResponse {
 
 /** Delivers one explorer query to the key-holding proxy. */
 export type ExplorerTransport = (
-  chainId: ChainId,
+  chainId: ExplorerChainId,
   params: Record<string, string>
 ) => Promise<TransportResponse>;
 
@@ -79,7 +86,7 @@ export function setExplorerTransport(next: ExplorerTransport | null): void {
  * notice, which arrives as HTTP 200 with status "0" and is easy to miss.
  */
 export async function explorerRequest(
-  chainId: ChainId,
+  chainId: ExplorerChainId,
   params: ExplorerParams,
   retries = 3,
   baseDelayMs = 1000

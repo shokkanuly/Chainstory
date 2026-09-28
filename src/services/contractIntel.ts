@@ -17,8 +17,24 @@
 // unknown rather than filling it in. A security surface that guesses is worse
 // than one that admits ignorance.
 
-import type { ChainId } from '../types';
-import { explorerRequest, NoServerKeyError } from './apiClient';
+import { keccak256, stringToHex, toHex } from 'viem';
+import { explorerRequest, NoServerKeyError, type ExplorerChainId } from './apiClient';
+
+/**
+ * Where an ERC-1967 proxy keeps its implementation address, as the EIP defines
+ * it: bytes32(uint256(keccak256('eip1967.proxy.implementation')) - 1).
+ */
+export const EIP1967_IMPLEMENTATION_SLOT = toHex(
+  BigInt(keccak256(stringToHex('eip1967.proxy.implementation'))) - 1n,
+  { size: 32 }
+);
+
+/** The implementation in the slot; null when the slot is empty; undefined when it could not be read. */
+function implementationFromSlot(word: unknown): string | null | undefined {
+  if (typeof word !== 'string' || !/^0x[0-9a-fA-F]{1,64}$/.test(word)) return undefined;
+  if (BigInt(word) === 0n) return null;
+  return `0x${word.slice(2).padStart(64, '0').slice(24)}`;
+}
 
 export interface AdminCapabilities {
   canUpgrade: boolean;
@@ -107,7 +123,7 @@ export function analyseAbi(abiJson: string): AdminCapabilities | null {
 }
 
 async function explorerCall(
-  chainId: ChainId,
+  chainId: ExplorerChainId,
   params: Record<string, string>
 ): Promise<any | null> {
   try {
@@ -122,7 +138,7 @@ async function explorerCall(
 /** Resolve a contract's deployment timestamp, tolerating older API shapes. */
 async function fetchCreationDate(
   address: string,
-  chainId: ChainId
+  chainId: ExplorerChainId
 ): Promise<Date | null> {
   const creation = await explorerCall(chainId, {
     module: 'contract',
@@ -169,7 +185,7 @@ async function fetchCreationDate(
  */
 export async function fetchContractIntel(
   address: string,
-  chainId: ChainId = 'ethereum'
+  chainId: ExplorerChainId = 'ethereum'
 ): Promise<ContractIntel> {
   const clean = (address || '').trim();
 
@@ -178,10 +194,18 @@ export async function fetchContractIntel(
   }
   let codeData: any = null;
   let sourceData: any = null;
+  let slotData: any = null;
   try {
-    [codeData, sourceData] = await Promise.all([
+    [codeData, sourceData, slotData] = await Promise.all([
       explorerCall(chainId, { module: 'proxy', action: 'eth_getCode', address: clean, tag: 'latest' }),
       explorerCall(chainId, { module: 'contract', action: 'getsourcecode', address: clean }),
+      explorerCall(chainId, {
+        module: 'proxy',
+        action: 'eth_getStorageAt',
+        address: clean,
+        position: EIP1967_IMPLEMENTATION_SLOT,
+        tag: 'latest',
+      }),
     ]);
   } catch (err) {
     if (err instanceof NoServerKeyError) {
@@ -217,9 +241,19 @@ export async function fetchContractIntel(
   const sourceCode: string = entry?.SourceCode ?? '';
   const isVerified = entry ? sourceCode.trim().length > 0 : null;
   const contractName: string | null = entry?.ContractName || null;
-  const isProxy = entry ? entry.Proxy === '1' : null;
+  // The explorer flags only the proxies it has been told about. The ERC-1967
+  // slot is on-chain fact, readable even when the source is not verified.
+  const slotImplementation = implementationFromSlot(slotData?.result);
+  const isProxy =
+    entry?.Proxy === '1' || Boolean(slotImplementation)
+      ? true
+      : entry !== null || slotImplementation === null
+        ? false
+        : null;
   const implementationAddress: string | null =
-    entry?.Implementation && entry.Implementation !== '' ? entry.Implementation : null;
+    entry?.Implementation && entry.Implementation !== ''
+      ? entry.Implementation
+      : (slotImplementation ?? null);
 
   const adminCapabilities =
     isVerified && entry?.ABI && entry.ABI !== 'Contract source code not verified'

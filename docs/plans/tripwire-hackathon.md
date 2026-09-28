@@ -177,6 +177,19 @@ words from the model). Advisory only; nothing signs (I1).
   (egress, Base Sepolia) with viem; verify source on the explorers with the Etherscan key.
 - Run the same demo against testnets.
 - *Done when:* verified contract pages exist; the demo prints tx hashes a judge can open.
+- Code ready 2026-09-28, run pending on the human's Mac (the key lives there). Sepolia
+  only: the Base Sepolia faucets wanted mainnet balance, so both bridge ends are on
+  Sepolia and one faucet funds it. `contracts/evm/src/TripwireDemo.sol` (DemoUSDC,
+  MockSourceBridge, ProtectedVault, DrainReceiver behind OpenZeppelin's ERC1967Proxy);
+  `scripts/tripwire/testnet/` — `npm run tripwire:deploy`, `tripwire:verify`,
+  `tripwire:demo:sepolia`. Contract facts come from Retold's `fetchContractIntel` through
+  the in-process explorer proxy, which now serves Sepolia and reads the ERC-1967 slot, so
+  an unverified proxy is recognised as upgradeable. Rehearsed against a local Hardhat
+  chain with Sepolia's chain id: deploy ≈ 0.0095 ETH at 1.45 gwei; demo NONE → THROTTLE →
+  DELAY → FREEZE, blocked payouts land on-chain as reverts naming the guardian's error,
+  and a second run on the same deployment starts clean (resume + configureRoute).
+  The rehearsal caught two bugs before they cost gas: OpenZeppelin's ERC1967Proxy
+  refuses empty init data, and viem's cached block number hid fresh logs from the feed.
 
 **Stage 5 — "Check before you sign" page (M)** · independent of 1–4 · ✅ done 2026-09-28
 - `/check` page; fixtures for a benign ERC-20 transfer and an unlimited approval to a
