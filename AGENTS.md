@@ -13,7 +13,8 @@ normalizes it into a chain-agnostic model, translates it into plain-English "sto
 - **v2 (planned, see `docs/05-roadmap.md`):** Solana (SVM), including ZK-compressed state (Light Protocol / Photon indexer).
 - **Stack:** React 19, TypeScript (strict), Vite, Tailwind v4, Framer Motion, `idb`, `onnxruntime-web`, optional Gemini.
   Python training scripts in `ml/`. Rust/Anchor in `programs/` (Phase 5 only, optional).
-- **Shape:** browser-only SPA. No backend, no database, no wallet connection, no custody.
+- **Shape:** browser SPA, plus two stateless key proxies (`/api/explorer`, `/api/describe`; ADR-013). No database, no accounts,
+  no wallet connection, no custody.
 
 ## 2. Read order before you code
 
@@ -30,7 +31,7 @@ If a task requires breaking one, **stop and ask the human**. Do not "work around
 | # | Invariant | Why |
 |---|-----------|-----|
 | I1 | The analysis app is **read-only and non-custodial**: no signing, no private keys, no wallet-connect, no sending txs. | Trust model; smaller attack surface. |
-| I2 | **No ChainStory backend.** Browser talks only to third-party APIs (RPC, indexers, price APIs, optional LLM). New server components need an ADR. | Core product promise. |
+| I2 | **No ChainStory backend that stores anything.** The browser talks to third-party APIs, and to the two stateless, allowlisted key proxies in `server/` (ADR-013). Any other server component, or any state on the server, needs an ADR. | Core product promise. |
 | I3 | Money is `bigint` base units + `decimals`. **Never floats for amounts.** USD uses a decimal library or fixed-point strings. | Rounding errors in tax = wrong filings. |
 | I4 | Chain-specific knowledge lives only in `src/chains/<chain>/`. Everything else consumes `NormalizedTx` from `src/domain`. | Adding a chain must not touch tax/classify/UI. |
 | I5 | Numbers, assets, and counterparties in a story come from **structured data**, never from LLM text. The LLM only phrases. | Prevents hallucinated amounts. |
@@ -38,7 +39,7 @@ If a task requires breaking one, **stop and ask the human**. Do not "work around
 | I7 | Compress/decompress, wrap/unwrap (wSOL/WETH), and transfers between the user's own wallets are **not taxable disposals**. | Prevents phantom gains. |
 | I8 | Unknown program / instruction / protocol version → generic story + low confidence. **Never throw** on unknown input. | Protocols evolve faster than we ship. |
 | I9 | Any accusation (drainer, sandwich, sanctioned, rug) carries an **evidence list** and follows the wording policy in `docs/06`. | False accusations are harmful. |
-| I10 | API keys are user-supplied, stored locally, never logged, never committed. | Secrets hygiene. |
+| I10 | API keys are never in the client bundle (no `VITE_*` keys), never logged, never committed. The explorer and Gemini keys live only in server env (ADR-013); other provider keys (Solana/Photon) are user-supplied and stored locally. | Secrets hygiene. |
 | I11 | **No invented protocol facts.** Function selectors, program IDs, tip accounts, RPC method names come from official docs or a recorded fixture. Otherwise write `TODO(verify)`. | AI-typical failure mode. |
 | I12 | All external responses (RPC, indexer, price, LLM) are **untrusted input**: validate with `zod` at the adapter boundary. On-chain strings (token names, memos) are attacker-controlled. | Injection, crashes. |
 

@@ -87,7 +87,7 @@ resolve → fetchHistory (paged) → normalize → price (batched) → classify 
 
 ## Deployment and secrets model
 
-Browser-only means keys are user-supplied. This matters more for Solana than EVM because ZK Compression reads need a
+The EVM explorer and Gemini keys sit behind the server-side proxy (ADR-013); other provider keys are user-supplied. This matters more for Solana than EVM because ZK Compression reads need a
 **Photon-capable provider** (e.g. Helius, Alchemy, Triton — `TODO(verify)` current provider list).
 
 | Concern | Decision |

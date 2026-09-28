@@ -78,7 +78,7 @@ Format: **Context → Decision → Consequences → Revisit when.** Add new entr
 **Approved:** by the human, 2026-09-28.
 
 ### ADR-013 — A narrow, stateless key proxy for the EVM explorer and Gemini (an exception to I2 and I10)
-**Status:** Proposed 2026-09-28 — records code already in `api/` and `server/`; awaiting the human's approval before the invariants are reworded.
+**Status:** Approved by the human, 2026-09-28. Records code already in `api/` and `server/`. Supersedes ADR-006's "no shared proxy" for the EVM explorer and Gemini.
 **Context:** Vite inlines every `VITE_*` variable into the client bundle, so the earlier build shipped the explorer and Gemini keys to every visitor. Moving them server side was a security fix, and it created `api/` + `server/` (Vercel functions). That contradicts I2 ("No ChainStory backend") and I10 ("API keys are user-supplied, stored locally"), and nothing recorded the exception. ADR-006 anticipated it: "consider an ADR-backed proxy (would be a deliberate I2 exception)".
 **Decision:** Allow exactly two stateless functions, and nothing else server side:
 - `/api/explorer` (`server/explorerHandler.ts`): Etherscan V2 only; an allowlist of module/action pairs, each parameter validated; ENS resolution built server side rather than a general `eth_call`.
@@ -90,5 +90,5 @@ Keys are server environment variables (`ETHERSCAN_API_KEY`, `GEMINI_API_KEY`), n
 - Every explorer lookup now passes through our origin, so the host sees the requesting IP and the address looked up, and host request logs can record both. The privacy copy in `docs/06` §2 ("ChainStory has no server") is no longer true and must change with this ADR.
 - With no key configured each path degrades rather than fails: explorer → 503 → labelled demo data or "unchecked"; describe → 503 → deterministic text.
 - Found while writing this, not changed: `services/descriptionGenerator.ts` sends full `from`/`to` addresses and values to `/api/describe` for every classified transaction, automatically. `docs/06` §2 promises the LLM feature is opt-in, off by default, with a preview, and sends truncated addresses only. The `/check` wording sends no user data (fixed phrases only), so it is not affected.
-**On approval, reword:** AGENTS.md §1 "Shape", I2 and I10; `docs/01` principle 1; `docs/02` "Browser-only means keys are user-supplied"; `docs/06` §2 privacy copy and §3 keys; the context line of ADR-006.
+**Reworded on approval (2026-09-28):** AGENTS.md §1 "Shape", I2 and I10; `docs/01` principle 1; `docs/02` "Browser-only means keys are user-supplied"; `docs/06` §2 privacy copy and §3 keys; and ADR-006 is superseded here rather than edited, per this log's rule.
 **Revisit when:** a user-supplied-key mode is wanted again (restore Settings keys, keep the proxy as the fallback), or the proxy needs state (a cache, accounts, stored results) — that would be a real backend and needs its own ADR.
