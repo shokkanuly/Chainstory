@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { XIcon } from '@phosphor-icons/react';
 import { analyzePreventiveTokenRisk, type TokenRiskAnalysis } from '../services/preventiveScamScanner';
 import { explainContractPermissionRisk, type ContractPermissionRisk } from '../services/contractRiskExplainer';
+import { decodeAbiData, type DecodedAbiResult } from '../services/abiDecoder';
 
 interface Props {
   isOpen: boolean;
@@ -18,9 +19,24 @@ interface Props {
 }
 
 const PRESETS = [
-  { label: 'Uniswap V3 Router', addr: '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45', tone: 'neutral' },
-  { label: 'Lido stETH (Proxy)', addr: '0xae7ab96520de3a18e5e111b5eaab095312d7fe84', tone: 'neutral' },
-  { label: 'Known Phishing Token', addr: '0x000000000000000000000000000000000000bad1', tone: 'danger' },
+  { 
+    label: 'Uniswap V3 Swap', 
+    addr: '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45', 
+    calldata: '0x38ed17390000000000000000000000000000000000000000000000000de0b6b3a7640000',
+    tone: 'neutral' 
+  },
+  { 
+    label: 'Unlimited Approval (Risk Trap)', 
+    addr: '0x000000000000000000000000000000000000bad1', 
+    calldata: '0x095ea7b3000000000000000000000000000000000000000000000000000000000000bad1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+    tone: 'danger' 
+  },
+  { 
+    label: 'Lido stETH (Proxy)', 
+    addr: '0xae7ab96520de3a18e5e111b5eaab095312d7fe84', 
+    calldata: '0xd0e30db0',
+    tone: 'neutral' 
+  },
 ] as const;
 
 const RECOMMENDATION_STYLES: Record<TokenRiskAnalysis['recommendation'], string> = {
@@ -44,6 +60,8 @@ function TriState({ label, value }: { label: string; value: boolean | null }) {
 
 export default function ContractRiskModal({ isOpen, onClose }: Props) {
   const [addressInput, setAddressInput] = useState('');
+  const [calldataInput, setCalldataInput] = useState('');
+  const [decodedCall, setDecodedCall] = useState<DecodedAbiResult | null>(null);
   const [tokenRisk, setTokenRisk] = useState<TokenRiskAnalysis | null>(null);
   const [contractRisk, setContractRisk] = useState<ContractPermissionRisk | null>(null);
   const [isScanning, setIsScanning] = useState(false);
@@ -51,11 +69,18 @@ export default function ContractRiskModal({ isOpen, onClose }: Props) {
 
   if (!isOpen) return null;
 
-  const runScan = async (addr: string) => {
+  const runScan = async (addr: string, calldata?: string) => {
     const target = addr.trim();
     if (!target) return;
 
     setAddressInput(target);
+    const dataToDecode = calldata ?? calldataInput;
+    if (dataToDecode.trim()) {
+      setDecodedCall(decodeAbiData(dataToDecode.trim()));
+    } else {
+      setDecodedCall(null);
+    }
+
     setIsScanning(true);
     setScanError(null);
     setTokenRisk(null);
@@ -83,9 +108,12 @@ export default function ContractRiskModal({ isOpen, onClose }: Props) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/90">
           <div className="flex items-center gap-2.5">
             <div>
-              <h2 className="text-base font-bold text-white">Preventive Risk &amp; Contract Explainer</h2>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <span>Pre-Transaction Advisory &amp; Risk Scanner</span>
+                <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Check Before Signing</span>
+              </h2>
               <p className="text-xs text-slate-400">
-                Reads verification status, deployment age and admin powers from the block explorer.
+                Inspect raw calldata, approval traps, and target contract security before sending on-chain.
               </p>
             </div>
           </div>
@@ -99,37 +127,58 @@ export default function ContractRiskModal({ isOpen, onClose }: Props) {
 
           <form
             onSubmit={(e) => { e.preventDefault(); void runScan(addressInput); }}
-            className="flex gap-2"
+            className="space-y-3"
           >
-            <input
-              type="text"
-              placeholder="Paste token or contract address (0x...)"
-              value={addressInput}
-              onChange={(e) => setAddressInput(e.target.value)}
-              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-indigo-500 text-white"
-              required
-            />
-            <button
-              type="submit"
-              disabled={isScanning}
-              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold px-5 py-2.5 rounded-xl text-xs transition"
-            >
-              {isScanning ? 'Scanning…' : 'Scan Address'}
-            </button>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Target Contract / Token Address</label>
+              <input
+                type="text"
+                placeholder="0x..."
+                value={addressInput}
+                onChange={(e) => setAddressInput(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-indigo-500 text-white"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Pending Calldata (Hex Data / Method Call)</label>
+              <input
+                type="text"
+                placeholder="Optional calldata e.g. 0x095ea7b3... (approve) or 0x38ed1739... (swap)"
+                value={calldataInput}
+                onChange={(e) => setCalldataInput(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-xs font-mono focus:outline-none focus:border-indigo-500 text-slate-300 placeholder:text-slate-500"
+              />
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="submit"
+                disabled={isScanning}
+                className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold px-6 py-2.5 rounded-xl text-xs transition cursor-pointer"
+              >
+                {isScanning ? 'Simulating & Scanning…' : 'Inspect Transaction Risk'}
+              </button>
+            </div>
           </form>
 
           {/* Quick Presets */}
-          <div className="flex items-center gap-2 flex-wrap text-xs">
-            <span className="text-slate-400 font-medium">Test Presets:</span>
+          <div className="flex items-center gap-2 flex-wrap text-xs pt-1 border-t border-slate-800/80">
+            <span className="text-slate-400 font-medium">Demo Scenarios:</span>
             {PRESETS.map((preset) => (
               <button
-                key={preset.addr}
-                onClick={() => void runScan(preset.addr)}
+                key={preset.label}
+                onClick={() => {
+                  setAddressInput(preset.addr);
+                  setCalldataInput(preset.calldata);
+                  void runScan(preset.addr, preset.calldata);
+                }}
                 disabled={isScanning}
                 className={
                   preset.tone === 'danger'
-                    ? 'px-2.5 py-1 rounded-lg bg-red-950/60 hover:bg-red-900/60 text-red-300 font-mono border border-red-800/40 disabled:opacity-50'
-                    : 'px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 font-mono disabled:opacity-50'
+                    ? 'px-2.5 py-1 rounded-lg bg-red-950/60 hover:bg-red-900/60 text-red-300 font-mono border border-red-800/40 disabled:opacity-50 cursor-pointer'
+                    : 'px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 font-mono disabled:opacity-50 cursor-pointer'
                 }
               >
                 {preset.label}
@@ -139,7 +188,7 @@ export default function ContractRiskModal({ isOpen, onClose }: Props) {
 
           {isScanning && (
             <div className="p-4 rounded-xl border border-slate-800 bg-slate-800/40 text-xs text-slate-400 animate-pulse">
-              Querying the block explorer for verification status, deployment date and ABI…
+              Parsing calldata, checking verification status, deployment age and admin capabilities…
             </div>
           )}
 
@@ -150,8 +199,31 @@ export default function ContractRiskModal({ isOpen, onClose }: Props) {
           )}
 
           {/* Results */}
-          {!isScanning && tokenRisk && contractRisk && (
+          {!isScanning && (decodedCall || (tokenRisk && contractRisk)) && (
             <div className="space-y-4 pt-2">
+
+              {/* Pre-Transaction Calldata Explanation */}
+              {decodedCall && (
+                <div className="p-4 rounded-xl border border-indigo-500/30 bg-indigo-950/30 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">Pre-Sign Calldata Advisory</span>
+                    <span className="text-[11px] font-mono bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30">
+                      {decodedCall.categoryHint.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="text-sm font-semibold text-white font-mono flex items-center gap-2">
+                    <span>Method:</span>
+                    <span className="text-amber-300">{decodedCall.methodName}</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    {decodedCall.methodName.includes('approve')
+                      ? '⚠️ CRITICAL PERMISSION: This transaction invokes an ERC-20 approval grant. If the spender is unverified or malicious, it can drain approved tokens at any time.'
+                      : decodedCall.methodName.includes('swap')
+                      ? 'DEX Router Interaction: Pre-simulating route and transfer execution parameters.'
+                      : 'EVM Function Execution detected from calldata.'}
+                  </p>
+                </div>
+              )}
 
               {/* Token / contract safety */}
               <div className="p-4 rounded-xl border border-slate-800 bg-slate-800/40 space-y-2">

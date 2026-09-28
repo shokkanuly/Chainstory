@@ -39,7 +39,7 @@ beforeEach(async () => {
 
 const att = (over: Partial<Attestation> = {}): Attestation => ({
   routeId: ROUTE,
-  riskScore: 80n,
+  riskScore: 95n,
   validUntil: g.now + 300n,
   nonce: ++nonce,
   ...over,
@@ -135,10 +135,21 @@ describe('pausing', () => {
     expect((await g.send(bridge, 'onTokenOutflow', [ROUTE, 1n])).error).toBe('RoutePaused');
   });
 
-  // Inclusive, to match the oracle's own `score >= 0.75` rule.
-  it('treats 75 as the inclusive threshold: 74 is refused, 75 pauses', async () => {
-    expect((await submit(att({ riskScore: 74n }))).error).toBe('ScoreBelowThreshold');
-    expect((await submit(att({ riskScore: 75n }))).ok).toBe(true);
+  // Inclusive, to match the oracle's tiered thresholds: 64 is refused, 65 throttles.
+  it('treats 65 as the inclusive threshold: 64 is refused, 65 accepts and throttles', async () => {
+    expect((await submit(att({ riskScore: 64n }))).error).toBe('ScoreBelowThreshold');
+    expect((await submit(att({ riskScore: 65n }))).ok).toBe(true);
+    expect(await g.read('currentTier', [ROUTE])).toBe(1); // Tier.THROTTLE
+  });
+
+  it('riskScore 85 activates DELAY tier and 95 activates FREEZE tier', async () => {
+    await submit(att({ riskScore: 85n }));
+    expect(await g.read('currentTier', [ROUTE])).toBe(2); // Tier.DELAY
+    expect(await g.read('isPaused', [ROUTE])).toBe(false);
+
+    await submit(att({ riskScore: 95n }));
+    expect(await g.read('currentTier', [ROUTE])).toBe(3); // Tier.FREEZE
+    expect(await g.read('isPaused', [ROUTE])).toBe(true);
   });
 
   it('accepts 100 and rejects anything above it', async () => {

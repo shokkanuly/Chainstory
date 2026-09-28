@@ -354,11 +354,11 @@ function TripCard({ incident, snap }: { incident: Incident; snap: ReplaySnapshot
         {!pre ? (
           <motion.div key="armed" className="p-5" exit={reduced ? undefined : { opacity: 0 }}>
             <p className="b-eyebrow flex items-center gap-1.5">
-              <GaugeIcon size={13} weight="bold" aria-hidden /> Breaker armed
+              <GaugeIcon size={13} weight="bold" aria-hidden /> Breaker armed · Graduated Response
             </p>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               Scoring every release against the route’s baseline and, independently, against the burn behind it.
-              Nothing has reached the {`0.75`} trip threshold.
+              Tiered actions: <strong>&gt;0.65 Throttle</strong> (-50% cap), <strong>&gt;0.85 Delay</strong> (timelock), and <strong>&gt;0.95 Freeze</strong> (halt).
             </p>
           </motion.div>
         ) : (
@@ -370,9 +370,15 @@ function TripCard({ incident, snap }: { incident: Incident; snap: ReplaySnapshot
             transition={{ duration: DURATION.base, ease: EASE }}
           >
             <p className="b-eyebrow flex items-center gap-1.5" style={{ color: 'var(--b-text)' }}>
-              <LightningIcon size={13} weight="fill" color="var(--tw-trip)" aria-hidden /> Breaker tripped
+              <LightningIcon size={13} weight="fill" color="var(--tw-trip)" aria-hidden /> Circuit breaker tripped
             </p>
-            <h3 className="mt-2 text-lg font-semibold leading-snug">Route paused before the release executed.</h3>
+            <h3 className="mt-2 text-lg font-semibold leading-snug">
+              {Number(pre.riskScore) >= 95
+                ? 'Route frozen before the release executed (Tier 3: Freeze).'
+                : Number(pre.riskScore) >= 85
+                  ? 'Withdrawal delayed for review window (Tier 2: Delay).'
+                  : 'Route capacity throttled by 50% (Tier 1: Throttle).'}
+            </h3>
             {reason && <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{reason}</p>}
 
             <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">

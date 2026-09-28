@@ -9,7 +9,7 @@
 // decoration and keeps the CTA legible over any part of it.
 
 import { motion, useReducedMotion } from 'framer-motion';
-import { ArrowRight, Shield, Zap, FileText } from 'lucide-react';
+import { ArrowRight, Shield, Zap, FileText, ShieldAlert } from 'lucide-react';
 
 interface Props {
   onAnalyze?: (addresses: string[]) => void;
@@ -42,12 +42,22 @@ export default function Hero({ onAnalyze }: Props) {
             {/* Fixed colours, not theme tokens: this sits on the brand gradient,
                 which does not change between themes. Using --b-ink here made the
                 label white-on-white the moment dark mode inverted it. */}
-            <span
-              className="b-pill"
-              style={{ background: 'rgba(255,255,255,0.92)', color: '#111114' }}
-            >
-              New · Multi-chain
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className="b-pill"
+                style={{ background: 'rgba(255,255,255,0.92)', color: '#111114' }}
+              >
+                New · Multi-chain
+              </span>
+              <a
+                href="/tripwire"
+                className="b-pill flex items-center gap-1.5 transition-all hover:bg-white"
+                style={{ background: 'rgba(255,255,255,0.82)', color: '#111114' }}
+              >
+                <ShieldAlert className="h-3 w-3 text-rose-600" />
+                Live: Tripwire Protocol Guardian
+              </a>
+            </div>
 
             <h1
               className="b-display mt-7 text-white text-[clamp(2.5rem,7.5vw,4.75rem)]"
@@ -72,6 +82,14 @@ export default function Hero({ onAnalyze }: Props) {
                 Analyse a wallet
                 <ArrowRight className="h-4 w-4" />
               </button>
+              <a
+                href="/tripwire"
+                className="b-btn flex items-center justify-center gap-2 font-semibold transition-all shadow-md"
+                style={{ background: '#ffffff', color: '#111114' }}
+              >
+                <ShieldAlert className="h-4 w-4 text-rose-600" />
+                Tripwire Circuit Breaker
+              </a>
               <a
                 href="#how-it-works"
                 className="inline-flex items-center justify-center px-2 py-3 text-sm font-semibold text-white underline underline-offset-[6px] decoration-white/45 transition-colors hover:decoration-white"

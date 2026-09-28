@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "validate": "vitest run src/services/knownWallet.test.ts"
+    "validate": "vitest run src/services/knownWallet.test.ts",
+    "demo:attack": "tsx scripts/demo/attackSimulation.ts"
   },
   "dependencies": {
     "@ethereumjs/block": "^10.1.3",

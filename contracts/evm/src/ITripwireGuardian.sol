@@ -11,12 +11,22 @@ interface ITripwireGuardian {
         PAUSED
     }
 
-    /// @notice EIP-7265-style outflow hook. Reverts if the route is paused, or
-    ///         if the outflow would take the rolling window past its cap.
+    enum Tier {
+        NONE,
+        THROTTLE,
+        DELAY,
+        FREEZE
+    }
+
+    /// @notice EIP-7265-style outflow hook. Reverts if the route is frozen,
+    ///         or if outflow exceeds the current (or throttled) cap.
     function onTokenOutflow(bytes32 routeId, uint256 amount) external;
 
-    /// @notice Pause a route on an EIP-712 attestation signed by the risk
-    ///         oracle. Permissionless to relay; the signature is the authority.
+    /// @notice Submit an EIP-712 attestation signed by the risk oracle.
+    ///         Applies graduated response tier:
+    ///         - riskScore >= 95: FREEZE (halts route)
+    ///         - riskScore >= 85: DELAY (enforces delay window on large transfers)
+    ///         - riskScore >= 65: THROTTLE (reduces hourly outflow cap by 50%)
     function submitAttestation(
         bytes32 routeId,
         uint256 riskScore,
@@ -28,4 +38,6 @@ interface ITripwireGuardian {
     function isPaused(bytes32 routeId) external view returns (bool);
 
     function routeStatus(bytes32 routeId) external view returns (Status);
+
+    function currentTier(bytes32 routeId) external view returns (Tier);
 }

@@ -1,0 +1,57 @@
+{
+  "slot": 280030000,
+  "blockTime": 1772550000,
+  "transaction": {
+    "signatures": [
+      "compressedTransferSig33333333333333333333333333333333333333333333333333333333333333333333333333333333"
+    ],
+    "message": {
+      "accountKeys": [
+        "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        "cTokenmWWFtJw3MnihCwT7vFaR27vsW4S3NYj2PFBZg"
+      ],
+      "instructions": [
+        {
+          "programId": "cTokenmWWFtJw3MnihCwT7vFaR27vsW4S3NYj2PFBZg",
+          "data": "transfer"
+        }
+      ]
+    }
+  },
+  "meta": {
+    "err": null,
+    "fee": 5000,
+    "preBalances": [
+      4999990000,
+      1
+    ],
+    "postBalances": [
+      4999985000,
+      1
+    ]
+  },
+  "compressionInfo": {
+    "opened_accounts": [
+      {
+        "hash": "newRecipientCmpAccountHash",
+        "owner": "4Nd1mBQtrMJVYVfKf2PJy9NZ2rBlQy2SZVHNxnLkK2s3",
+        "tokenData": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "owner": "4Nd1mBQtrMJVYVfKf2PJy9NZ2rBlQy2SZVHNxnLkK2s3",
+          "amount": "100000000"
+        }
+      }
+    ],
+    "closed_accounts": [
+      {
+        "hash": "oldSenderCmpAccountHash",
+        "owner": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        "tokenData": {
+          "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "owner": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+          "amount": "100000000"
+        }
+      }
+    ]
+  }
+}
