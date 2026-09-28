@@ -168,3 +168,49 @@ export function decodeApproval(inputHex: string | undefined): DecodedApproval | 
     isRevocation: amount === 0n,
   };
 }
+
+// -------------------------------------------------------------------
+// ERC-20 transfer(address to, uint256 amount) and
+// transferFrom(address from, address to, uint256 amount)
+// -------------------------------------------------------------------
+
+export const TRANSFER_SELECTOR = '0xa9059cbb';
+export const TRANSFER_FROM_SELECTOR = '0x23b872dd';
+
+export interface DecodedTokenTransfer {
+  /** Whose balance is debited: set for transferFrom, null for transfer (the signer's own). */
+  from: string | null;
+  recipient: string;
+  /** Raw amount in the token's base units. */
+  amount: bigint;
+}
+
+/** One 32-byte ABI word holding a right-aligned address, or null when it is not one. */
+function addressWord(word: string): string | null {
+  return /^0{24}[0-9a-f]{40}$/.test(word) ? `0x${word.slice(24)}` : null;
+}
+
+/**
+ * Decode ERC-20 transfer / transferFrom calldata, the same way decodeApproval
+ * reads approve. Returns null when the calldata is neither, or is malformed —
+ * including an address word with dirty high bits, which the ABI forbids.
+ */
+export function decodeTokenTransfer(inputHex: string | undefined): DecodedTokenTransfer | null {
+  if (!inputHex) return null;
+  const hex = inputHex.toLowerCase();
+  const isTransferFrom = hex.startsWith(TRANSFER_FROM_SELECTOR);
+  if (!isTransferFrom && !hex.startsWith(TRANSFER_SELECTOR)) return null;
+
+  const words: string[] = hex.slice(10).match(/.{64}/g) ?? [];
+  const args = words.slice(0, isTransferFrom ? 3 : 2);
+  if (args.length < (isTransferFrom ? 3 : 2) || !args.every((w) => /^[0-9a-f]{64}$/.test(w))) {
+    return null;
+  }
+
+  const [fromWord, recipientWord, amountWord] = isTransferFrom ? args : ['', ...args];
+  const from = isTransferFrom ? addressWord(fromWord ?? '') : null;
+  const recipient = addressWord(recipientWord ?? '');
+  if (!recipient || (isTransferFrom && !from) || !amountWord) return null;
+
+  return { from, recipient, amount: BigInt(`0x${amountWord}`) };
+}

@@ -8,6 +8,7 @@ import Workspace from './pages/Workspace.tsx'
 const PrototypeApp = lazy(() => import('./prototype/PrototypeApp.tsx'))
 // The incident replay runs an in-browser EVM; keep it off every other page's bundle.
 const TripwirePage = lazy(() => import('./pages/Tripwire.tsx'))
+const CheckPage = lazy(() => import('./pages/Check.tsx'))
 
 export default function AppRoutes() {
   return (
@@ -22,6 +23,15 @@ export default function AppRoutes() {
         element={
           <Suspense fallback={<div style={{ minHeight: '100dvh' }} />}>
             <TripwirePage />
+          </Suspense>
+        }
+      />
+      {/* Retold: check a pending transaction before signing it */}
+      <Route
+        path="/check"
+        element={
+          <Suspense fallback={<div style={{ minHeight: '100dvh' }} />}>
+            <CheckPage />
           </Suspense>
         }
       />

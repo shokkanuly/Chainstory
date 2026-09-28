@@ -135,11 +135,26 @@ words from the model). Advisory only; nothing signs (I1).
 - Run the same demo against testnets.
 - *Done when:* verified contract pages exist; the demo prints tx hashes a judge can open.
 
-**Stage 5 — "Check before you sign" page (M)** · independent of 1–4
+**Stage 5 — "Check before you sign" page (M)** · independent of 1–4 · ✅ done 2026-09-28
 - `/check` page; fixtures for a benign ERC-20 transfer and an unlimited approval to a
   fresh unverified contract; I11: selectors sourced from EIP-20.
 - *Done when:* the two fixtures render green and red with the stated reasons; no code
   path signs or sends.
+- Result: `services/preSignCheck.ts` runs decode → `simulateTransactionPayload` →
+  `explainContractIntel` (the pure half of `explainContractPermissionRisk`, split out so
+  fixtures run the real logic) → flag-list check → badge. The approval's risk is read
+  from the **spender** argument, not from `to` (the token). Red = a flagged address, or
+  an unlimited allowance to a spender that is fresh (< 30 days), unverified, a plain
+  wallet, or could not be checked; unlimited to a verified, long-lived spender is yellow.
+  Scenarios live in `services/preSignScenarios.ts`, shared by the page and the tests:
+  real EIP-20 calldata, synthetic explorer facts on placeholder addresses, labelled as
+  such on the page. `src/testing/noSigning.test.ts` walks every module `/check` can reach
+  and fails on any signing, sending or wallet-connect call (and proves it can see one).
+  Optional AI wording goes through the existing `/api/describe`: the client sends the
+  badge and reason ids only, and a reply with a digit or address is discarded (docs/06
+  §4). Fixed on the way: the pre-sign simulation named the token as the spender, found
+  "unlimited" by searching the whole calldata for f's, and threw on a malformed value
+  (I8). 256/256 tests (45 new); typecheck and lint clean.
 
 **Stage 6 — Pitch + docs (S)** · depends on all
 - README scope table (🔨 built vs 🗺️ roadmap), ADR-012, docs/05 status, video.

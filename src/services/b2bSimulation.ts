@@ -5,14 +5,19 @@
 // before a user signs a transaction in a Web3 wallet.
 
 import type { B2BSimulationPayload, B2BSimulationResult, TaxCategory } from '../types';
-import { decodeAbiData } from './abiDecoder';
+import { decodeAbiData, decodeApproval, decodeTokenTransfer } from './abiDecoder';
 import { getProtocolGroup, isKnownContract } from './protocolRegistry';
+
+const short = (address: string) => `${address.slice(0, 6)}...${address.slice(-4)}`;
 
 export function simulateTransactionPayload(
   payload: B2BSimulationPayload
 ): B2BSimulationResult {
   const { to, value, data } = payload;
   const decoded = decodeAbiData(data);
+  // The spender and recipient are calldata arguments; `to` is the token.
+  const approval = decodeApproval(data);
+  const transfer = decodeTokenTransfer(data);
   const protocolGroup = getProtocolGroup(to);
   const isKnown = isKnownContract(to);
 
@@ -20,7 +25,13 @@ export function simulateTransactionPayload(
   const riskWarnings: string[] = [];
   let category: TaxCategory = 'unknown';
 
-  const weiValue = BigInt(value || '0');
+  // Unknown input never throws (I8): an unparseable value reads as zero.
+  let weiValue = 0n;
+  try {
+    weiValue = BigInt(value || '0');
+  } catch {
+    riskWarnings.push('Transaction value could not be read');
+  }
   const ethValue = Number(weiValue) / 1e18;
 
   // 1. Evaluate Method & Severity
@@ -29,7 +40,9 @@ export function simulateTransactionPayload(
     severity = 'caution';
     category = 'transfer';
     riskWarnings.push('Granting spending permission to third-party contract');
-    if (data.includes('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')) {
+    // Read from the amount argument. Searching the whole calldata for 64 f's
+    // missed the uint128-max variants and could match inside other arguments.
+    if (approval?.isUnlimited) {
       severity = 'danger';
       riskWarnings.push('CRITICAL: Unlimited token allowance requested');
     }
@@ -61,7 +74,14 @@ export function simulateTransactionPayload(
 
   if (decoded.signature === '0x095ea7b3') {
     headline = 'Authorize Token Spending';
-    plainEnglishDescription = `Allow contract ${to.slice(0, 6)}...${to.slice(-4)} to spend your tokens`;
+    // Name the spender, not `to`: `to` is the token contract, and naming it
+    // here told users the wrong party would hold the permission.
+    plainEnglishDescription = approval
+      ? `Allow ${short(approval.spender)} to spend your tokens held at ${short(to)}`
+      : `Grant a spending permission on the token at ${short(to)}`;
+  } else if (transfer) {
+    headline = 'Send Tokens';
+    plainEnglishDescription = `Send tokens held at ${short(to)} to ${short(transfer.recipient)}`;
   } else if (category === 'trade') {
     headline = 'DeFi Token Swap';
     plainEnglishDescription = `Swap ${ethValue > 0 ? ethValue.toFixed(4) + ' ETH' : 'tokens'} via ${protocolGroup.toUpperCase()}`;

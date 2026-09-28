@@ -119,11 +119,24 @@ export interface DescribePayload {
  * deterministic fallback.
  */
 export async function describeTransaction(payload: DescribePayload): Promise<string | null> {
+  return requestDescription(payload);
+}
+
+/**
+ * Ask the server to word a "Check before you sign" verdict. Only the badge
+ * and reason ids are sent; the server builds the prompt from fixed phrases.
+ * Returns null whenever wording is unavailable: the verdict never depends on it.
+ */
+export async function phraseCheckVerdict(badge: string, reasonIds: string[]): Promise<string | null> {
+  return requestDescription({ kind: 'check', badge, reasons: reasonIds });
+}
+
+async function requestDescription(body: unknown): Promise<string | null> {
   try {
     const res = await fetch(`${API_BASE}/describe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
     if (!res.ok) return null;
     const data = await res.json();

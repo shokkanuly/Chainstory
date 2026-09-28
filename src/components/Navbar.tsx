@@ -8,6 +8,7 @@ import Logo from './Logo'
 // Absolute, so the links work from /app and /tripwire as well as the landing page.
 const navLinks = [
   { label: 'How it works', href: '/#answers' },
+  { label: 'Check before you sign', href: '/check' },
   { label: 'Tripwire', href: '/tripwire' },
   { label: 'Networks', href: '/#networks' },
   { label: 'FAQ', href: '/#faq' },
