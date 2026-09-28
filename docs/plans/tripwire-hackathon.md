@@ -175,6 +175,11 @@ words from the model). Advisory only; nothing signs (I1).
 **Stage 6 — Pitch + docs (S)** · depends on all
 - README scope table (🔨 built vs 🗺️ roadmap), ADR-012, docs/05 status, video.
 - *Done when:* every claim in the README and pitch is either tested or marked roadmap.
+- Progress 2026-09-28: ADR-013 (the server-side key proxy in `api/` + `server/`) is written
+  as **Proposed**, with the list of invariant and doc lines to reword once approved. It
+  also records a finding: Retold's transaction descriptions send full addresses to Gemini
+  automatically, against `docs/06` §2. The flagged claims ("72 hours", "sub-5ms", "$2.8B")
+  appear in no tracked file; they are in untracked drafts or the Colosseum profile.
 
 ## 5. Risks
 
