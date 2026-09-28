@@ -1,19 +1,9 @@
-// src/components/Logo.tsx
+// src/components/Logo.tsx — the three-bar mark and a product wordmark.
 //
-// The ChainStory mark: three staggered bars, offset right, full, then left.
-// They read as stacked blocks and as lines of a story at the same time, which
-// is the whole idea of the product.
-//
-// Geometry and gradient are traced from the supplied artwork in
-// public/brand/, not approximated by eye — the bars have three different
-// slopes, which is the kind of detail a redraw loses. The bars are drawn as
-// vector so they stay crisp at any size and cost no request; the wordmark is
-// the artwork itself, used as a mask, so its letterforms are exact rather
-// than a bet on which typeface the original used.
-//
-// Nothing else in the app draws a ChainStory mark. Import this instead.
+// One mark for both products; the wordmark says which one you are in
+// (Retold by default, Tripwire on /tripwire). Live text, so it inherits colour.
 
-const MARK_GRADIENT_ID = 'chainstory-mark-gradient';
+const MARK_GRADIENT_ID = 'brand-mark-gradient';
 
 /**
  * Bar geometry, traced from public/brand/chainstory-mark.png. Authored in the
@@ -33,10 +23,6 @@ const MARK_SCALE = MARK_W / 667;
 const MARK_H = 534 * MARK_SCALE;
 const MARK_X = (100 - MARK_W) / 2;
 const MARK_Y = (100 - MARK_H) / 2;
-
-// Wordmark proportions, measured from the supplied lockup.
-const WORD_H_PER_MARK_H = 123 / 139;
-const WORD_ASPECT = 705 / 123;
 
 export function LogoMark({
   size = 28,
@@ -82,56 +68,29 @@ export function LogoMark({
   );
 }
 
-/**
- * Mark plus wordmark.
- *
- * The wordmark is the supplied artwork painted through a CSS mask rather than
- * live text, because the two must not drift: set as text it would silently
- * change with the font stack. It is filled with a colour token, so one asset
- * serves the light marketing surface and the dark app, and the accessible
- * name is carried by the sr-only text beside it.
- */
 export default function Logo({
   size = 28,
   flat = false,
   showWordmark = true,
+  name = 'Retold',
   className,
 }: {
   size?: number;
   flat?: boolean;
   showWordmark?: boolean;
+  name?: 'Retold' | 'Tripwire';
   className?: string;
 }) {
-  const wordHeight = size * (MARK_H / 100) * WORD_H_PER_MARK_H;
-
   return (
-    <span className={`inline-flex items-center gap-2.5 ${className ?? ''}`}>
+    <span className={`inline-flex items-center gap-2 ${className ?? ''}`}>
       <LogoMark size={size} flat={flat} />
-      {showWordmark && (
-        <span
-          aria-hidden
-          style={{
-            width: wordHeight * WORD_ASPECT,
-            height: wordHeight,
-            // currentColor, not a token: the /v2 prototype defines its own
-            // token space, where --b-text falls back to the light-mode ink and
-            // renders the wordmark near-invisible on its dark canvas.
-            // Inheriting the surrounding text colour is correct on every
-            // surface, which is the point of masking rather than shipping a
-            // coloured image.
-            backgroundColor: 'currentColor',
-            WebkitMaskImage: 'url(/brand/chainstory-wordmark.png)',
-            maskImage: 'url(/brand/chainstory-wordmark.png)',
-            WebkitMaskSize: 'contain',
-            maskSize: 'contain',
-            WebkitMaskRepeat: 'no-repeat',
-            maskRepeat: 'no-repeat',
-            WebkitMaskPosition: 'center',
-            maskPosition: 'center',
-          }}
-        />
+      {showWordmark ? (
+        <span className="font-bold tracking-[-0.03em]" style={{ fontSize: size * 0.62 }}>
+          {name}
+        </span>
+      ) : (
+        <span className="sr-only">{name}</span>
       )}
-      <span className="sr-only">ChainStory</span>
     </span>
   );
 }

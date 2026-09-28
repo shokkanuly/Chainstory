@@ -1,6 +1,5 @@
-> **Note:** ChainStory is now the wallet-intelligence engine underneath
-> [Tripwire](../README.md). This document covers that engine; it is accurate,
-> and the product framing has moved to the root README.
+> **Note:** ChainStory is now called **Retold**. This document covers Retold, the
+> wallet analyser at `/app`; Tripwire is described in the [root README](../README.md).
 
 <p align="center">
   <img src="https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=white" alt="React" />

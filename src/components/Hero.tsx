@@ -42,22 +42,13 @@ export default function Hero({ onAnalyze }: Props) {
             {/* Fixed colours, not theme tokens: this sits on the brand gradient,
                 which does not change between themes. Using --b-ink here made the
                 label white-on-white the moment dark mode inverted it. */}
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className="b-pill"
-                style={{ background: 'rgba(255,255,255,0.92)', color: '#111114' }}
-              >
-                New · Multi-chain
-              </span>
-              <a
-                href="/tripwire"
-                className="b-pill flex items-center gap-1.5 transition-all hover:bg-white"
-                style={{ background: 'rgba(255,255,255,0.82)', color: '#111114' }}
-              >
-                <ShieldAlert className="h-3 w-3 text-rose-600" />
-                Live: Tripwire Protocol Guardian
-              </a>
-            </div>
+            <a
+              href="/tripwire"
+              className="b-pill"
+              style={{ background: 'rgba(255,255,255,0.92)', color: '#111114' }}
+            >
+              New · Tripwire for bridges →
+            </a>
 
             <h1
               className="b-display mt-7 text-white text-[clamp(2.5rem,7.5vw,4.75rem)]"

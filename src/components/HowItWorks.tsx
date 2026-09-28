@@ -13,7 +13,7 @@ const steps = [
     icon: Cpu,
     title: 'Auto-Classify Everything',
     description:
-      'ChainStory fetches transactions, decodes internal calls, prices assets via DefiLlama, and runs the 3-stage ML pipeline locally.',
+      'Retold fetches transactions, decodes internal calls, prices assets via DefiLlama, and runs the 3-stage classification pipeline locally.',
     step: '2',
   },
   {

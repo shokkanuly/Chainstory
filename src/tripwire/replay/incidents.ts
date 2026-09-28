@@ -250,9 +250,3 @@ export const INCIDENTS: Incident[] = [
   },
 ];
 
-/** Headline context, from the same Crypto Times report. */
-export const YEAR_TO_DATE = {
-  lossUsd: 328_600_000,
-  exploits: 8,
-  source: INCIDENTS[0].sources[0],
-};
