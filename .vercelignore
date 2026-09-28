@@ -1,0 +1,9 @@
+# The Vercel CLI uploads the local folder. Never let a key file go with it:
+# .env holds the explorer and Gemini keys, .env.tripwire the deployer key.
+.env
+.env.*
+*.pem
+node_modules
+dist
+files
+ml/.venv
