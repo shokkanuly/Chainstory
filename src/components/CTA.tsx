@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight, Zap } from 'lucide-react'
+import { ArrowRight, Zap, ShieldAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export default function CTA() {
@@ -32,21 +32,35 @@ export default function CTA() {
               <span className="text-gradient-chain">Crypto Tax Liability</span>
             </h2>
             <p className="text-lg text-muted-foreground max-w-xl mx-auto mb-8 leading-relaxed">
-              ChainStory runs entirely in your browser. No data is sent to any server.
-              Your wallets, transactions, and tax data stay on your machine.
+              Retold is read-only: no wallet connection, nothing to sign, nothing to approve.
+              Lookups go through our API to the chain explorer; your tax report is built in your browser.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Button
-                size="lg"
-                className="bg-chain hover:bg-chain-dim text-primary-foreground font-semibold glow-chain-strong text-base px-8"
-              >
-                Get Started — It's Free
-                <ArrowRight className="h-4 w-4 ml-1" />
-              </Button>
-              <Button size="lg" variant="outline" className="border-border hover:bg-accent text-base px-8">
-                View on GitHub
-              </Button>
+              <a href="/app">
+                <Button
+                  size="lg"
+                  className="bg-chain hover:bg-chain-dim text-primary-foreground font-semibold glow-chain-strong text-base px-8 cursor-pointer"
+                >
+                  Get Started — It's Free
+                  <ArrowRight className="h-4 w-4 ml-1" />
+                </Button>
+              </a>
+              <a href="/tripwire">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="border-rose-500/40 text-foreground hover:bg-rose-500/10 text-base px-8 cursor-pointer flex items-center gap-2"
+                >
+                  <ShieldAlert className="h-4 w-4 text-rose-500" />
+                  Tripwire Circuit Breaker
+                </Button>
+              </a>
+              <a href="https://github.com/shokkanuly/Chainstory" target="_blank" rel="noopener noreferrer">
+                <Button size="lg" variant="ghost" className="border-border text-base px-6">
+                  GitHub
+                </Button>
+              </a>
             </div>
           </div>
         </motion.div>

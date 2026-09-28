@@ -46,9 +46,9 @@ describe('oracle → guardian boundary', () => {
     expect(toOnChainScore(DEFAULT_CONFIG.tripThreshold)).toBe(BigInt(ON_CHAIN_TRIP_THRESHOLD));
   });
 
-  // Floor, not round: rounding would lift 0.745 to 75 and pause on a transfer
+  // Floor, not round: rounding would lift 0.645 to 65 and pause on a transfer
   // the oracle only rated `elevated`.
-  it.each([0.7449, 0.745, 0.7499999, 0.75, 0.7500001, 0.99, 1])(
+  it.each([0.6449, 0.645, 0.6499999, 0.65, 0.6500001, 0.85, 0.95, 1])(
     'score %s: the oracle trips exactly when the guardian accepts',
     async (score) => {
       const oracleTrips = score >= DEFAULT_CONFIG.tripThreshold;

@@ -51,7 +51,7 @@ export default function Security() {
               Pre-Sign <span className="text-gradient-chain">Transaction Security</span>
             </h2>
             <p className="text-muted-foreground text-lg leading-relaxed mb-6">
-              Before your users sign any transaction, ChainStory simulates the raw{' '}
+              Before your users sign any transaction, Retold simulates the raw{' '}
               <code className="text-sm bg-secondary px-1.5 py-0.5 rounded font-mono">
                 eth_sendTransaction
               </code>{' '}
@@ -60,7 +60,7 @@ export default function Security() {
             <p className="text-muted-foreground leading-relaxed">
               Integrate the{' '}
               <code className="text-sm bg-secondary px-1.5 py-0.5 rounded font-mono">
-                @chainstory/core
+                @retold/core
               </code>{' '}
               SDK into your DeFi app to give users real-time security context before they approve any contract interaction.
             </p>

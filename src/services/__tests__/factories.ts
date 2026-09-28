@@ -1,6 +1,7 @@
 // Shared fixture builders for the service tests.
 
 import type { ClassifiedTransaction, RawTransaction, TaxCategory } from '../../types';
+import { resolveAsset } from '../assetResolver';
 
 let counter = 0;
 
@@ -28,6 +29,10 @@ export function classifiedTx(
 ): ClassifiedTransaction {
   const base = rawTx(overrides as Partial<RawTransaction>);
   const ethValue = parseFloat(base.value) / 1e18;
+  // Derived exactly as the app derives them (classifier, Workspace), so a token
+  // transfer is never labelled ETH. A hardcoded 'ETH' here made fixtures
+  // disagree with their own raw fields.
+  const asset = resolveAsset(base);
   return {
     ...base,
     description: 'test transaction',
@@ -35,8 +40,8 @@ export function classifiedTx(
     confidence: 0.9,
     usdValue: null,
     ethValue,
-    assetSymbol: 'ETH',
-    assetAmount: ethValue,
+    assetSymbol: asset.symbol,
+    assetAmount: asset.amount,
     ethPriceUsd: 2000,
     status: 'classified',
     date: new Date(parseInt(base.timeStamp, 10) * 1000),

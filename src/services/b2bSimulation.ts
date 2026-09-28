@@ -1,6 +1,6 @@
 // src/services/b2bSimulation.ts
 //
-// B2B Pre-Sign Transaction Security & Narrative Simulation API (@chainstory/core).
+// B2B Pre-Sign Transaction Security & Narrative Simulation API (@retold/core).
 // Decodes raw eth_sendTransaction payloads into human-readable warnings and pre-sign narratives
 // before a user signs a transaction in a Web3 wallet.
 

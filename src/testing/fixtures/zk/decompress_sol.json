@@ -1,0 +1,43 @@
+{
+  "slot": 280020000,
+  "blockTime": 1772545000,
+  "transaction": {
+    "signatures": [
+      "decompressSolSig2222222222222222222222222222222222222222222222222222222222222222222222222222222222222"
+    ],
+    "message": {
+      "accountKeys": [
+        "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        "SysProgram1111111111111111111111111111111111"
+      ],
+      "instructions": [
+        {
+          "programId": "SysProgram1111111111111111111111111111111111",
+          "data": "decompress"
+        }
+      ]
+    }
+  },
+  "meta": {
+    "err": null,
+    "fee": 5000,
+    "preBalances": [
+      3999995000,
+      1
+    ],
+    "postBalances": [
+      4999990000,
+      1
+    ]
+  },
+  "compressionInfo": {
+    "opened_accounts": [],
+    "closed_accounts": [
+      {
+        "hash": "compressedAccountHash1111111111111111111111111",
+        "owner": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        "lamports": 1000000000
+      }
+    ]
+  }
+}

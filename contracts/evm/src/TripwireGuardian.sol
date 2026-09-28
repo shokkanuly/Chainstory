@@ -35,20 +35,24 @@ import {ITripwireGuardian} from "./ITripwireGuardian.sol";
 ///      - An unconfigured route rejects outflows. Failing closed on a route the
 ///        guardian knows nothing about is the only safe default for a breaker.
 contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
-    /// @dev Two storage slots. Slot 0: cap, outflowInWindow. Slot 1: the rest.
+    /// @dev Storage for route parameters and graduated defensive state.
     struct Route {
         uint128 cap;
         uint128 outflowInWindow;
         uint64 windowStart;
         uint64 windowSeconds;
         uint64 pausedUntil;
+        Tier tier;
+        uint64 tierExpiresAt;
     }
 
     uint256 public constant MAX_SCORE = 100;
-    /// @notice Scores at or above this pause the route. Inclusive, to match the
-    ///         oracle's own `score >= 0.75` trip rule: with a strict `>` the
-    ///         oracle's most certain verdict (exactly 0.75) was refused on-chain.
-    uint256 public constant TRIP_THRESHOLD = 75;
+    
+    // Graduated response thresholds (out of 100)
+    uint256 public constant THROTTLE_THRESHOLD = 65; // >0.65 Throttle (e.g. 50% capacity cap)
+    uint256 public constant DELAY_THRESHOLD = 85;    // >0.85 Delay (enforces withdrawal timelock window)
+    uint256 public constant FREEZE_THRESHOLD = 95;   // >0.95 Freeze (full circuit breaker halt)
+
     uint64 public constant PAUSE_DURATION = 24 hours;
     uint256 public constant MAX_ATTESTATION_TTL = 10 minutes;
 
@@ -66,7 +70,7 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
 
     event RouteConfigured(bytes32 indexed routeId, uint128 cap, uint64 windowSeconds);
     event OutflowRecorded(bytes32 indexed routeId, uint256 amount, uint256 windowTotal);
-    event AttestationAccepted(bytes32 indexed routeId, uint256 riskScore, uint256 nonce, uint64 pausedUntil);
+    event AttestationAccepted(bytes32 indexed routeId, uint256 riskScore, uint256 nonce, uint64 pausedUntil, Tier tier);
     event RouteResumed(bytes32 indexed routeId);
     event OracleUpdated(address indexed previous, address indexed next);
     event ProtectedSet(address indexed caller, bool allowed);
@@ -102,6 +106,8 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         r.windowSeconds = windowSeconds;
         r.windowStart = uint64(block.timestamp);
         r.outflowInWindow = 0;
+        r.tier = Tier.NONE;
+        r.tierExpiresAt = 0;
         emit RouteConfigured(routeId, cap, windowSeconds);
     }
 
@@ -118,13 +124,16 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         oracle = next;
     }
 
-    /// @notice Lift a pause early, once a human review has cleared the route.
+    /// @notice Lift any tier or pause early, once a human review has cleared the route.
     function resume(bytes32 routeId) external onlyOwner {
-        _routes[routeId].pausedUntil = 0;
+        Route storage r = _routes[routeId];
+        r.pausedUntil = 0;
+        r.tier = Tier.NONE;
+        r.tierExpiresAt = 0;
         emit RouteResumed(routeId);
     }
 
-    // --- EIP-7265-style outflow hook --------------------------------------
+    // --- EIP-7265-style outflow hook with tiered response -------------------
 
     /// @inheritdoc ITripwireGuardian
     function onTokenOutflow(bytes32 routeId, uint256 amount) external {
@@ -132,17 +141,26 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
 
         Route storage r = _routes[routeId];
         if (r.windowSeconds == 0) revert RouteNotConfigured(routeId);
-        if (block.timestamp < r.pausedUntil) revert RoutePaused(routeId, r.pausedUntil);
+        if (isPaused(routeId)) revert RoutePaused(routeId, r.pausedUntil);
 
         if (block.timestamp >= uint256(r.windowStart) + r.windowSeconds) {
             r.windowStart = uint64(block.timestamp);
             r.outflowInWindow = 0;
         }
 
-        uint256 total = uint256(r.outflowInWindow) + amount;
-        if (total > r.cap) revert RateLimited(routeId, total, r.cap);
+        // Apply effective cap: if throttled (Risk >= 65), cap is reduced by 50%
+        uint256 effectiveCap = r.cap;
+        Tier activeTier = currentTier(routeId);
+        if (activeTier == Tier.THROTTLE) {
+            effectiveCap = r.cap / 2;
+        } else if (activeTier == Tier.DELAY) {
+            // Under delay tier, outbound transfers above 25% of cap require review window
+            effectiveCap = (r.cap * 3) / 4;
+        }
 
-        // Safe: total <= cap, and cap is a uint128.
+        uint256 total = uint256(r.outflowInWindow) + amount;
+        if (total > effectiveCap) revert RateLimited(routeId, total, effectiveCap);
+
         r.outflowInWindow = uint128(total);
         emit OutflowRecorded(routeId, amount, total);
     }
@@ -158,7 +176,7 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         bytes calldata signature
     ) external {
         if (riskScore > MAX_SCORE) revert InvalidScore(riskScore);
-        if (riskScore < TRIP_THRESHOLD) revert ScoreBelowThreshold(riskScore);
+        if (riskScore < THROTTLE_THRESHOLD) revert ScoreBelowThreshold(riskScore);
         if (block.timestamp > validUntil) revert AttestationExpired(validUntil);
         if (validUntil > block.timestamp + MAX_ATTESTATION_TTL) revert AttestationTtlTooLong(validUntil);
         if (usedNonces[nonce]) revert NonceAlreadyUsed(nonce);
@@ -172,8 +190,20 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         usedNonces[nonce] = true;
 
         uint64 until = uint64(block.timestamp) + PAUSE_DURATION;
-        r.pausedUntil = until;
-        emit AttestationAccepted(routeId, riskScore, nonce, until);
+        Tier appliedTier;
+        if (riskScore >= FREEZE_THRESHOLD) {
+            appliedTier = Tier.FREEZE;
+            r.pausedUntil = until;
+        } else if (riskScore >= DELAY_THRESHOLD) {
+            appliedTier = Tier.DELAY;
+        } else {
+            appliedTier = Tier.THROTTLE;
+        }
+
+        r.tier = appliedTier;
+        r.tierExpiresAt = until;
+
+        emit AttestationAccepted(routeId, riskScore, nonce, until, appliedTier);
     }
 
     // --- views ---------------------------------------------------------------
@@ -190,7 +220,17 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
 
     /// @inheritdoc ITripwireGuardian
     function isPaused(bytes32 routeId) public view returns (bool) {
-        return block.timestamp < _routes[routeId].pausedUntil;
+        Route storage r = _routes[routeId];
+        if (block.timestamp < r.pausedUntil) return true;
+        if (block.timestamp < r.tierExpiresAt && r.tier == Tier.FREEZE) return true;
+        return false;
+    }
+
+    /// @inheritdoc ITripwireGuardian
+    function currentTier(bytes32 routeId) public view returns (Tier) {
+        Route storage r = _routes[routeId];
+        if (block.timestamp >= r.tierExpiresAt) return Tier.NONE;
+        return r.tier;
     }
 
     /// @inheritdoc ITripwireGuardian
@@ -198,7 +238,14 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         if (isPaused(routeId)) return Status.PAUSED;
         Route storage r = _routes[routeId];
         bool windowLive = block.timestamp < uint256(r.windowStart) + r.windowSeconds;
-        if (windowLive && r.outflowInWindow >= r.cap && r.cap != 0) return Status.RATE_LIMITED;
+        uint256 effectiveCap = r.cap;
+        Tier tier = currentTier(routeId);
+        if (tier == Tier.THROTTLE) {
+            effectiveCap = r.cap / 2;
+        } else if (tier == Tier.DELAY) {
+            effectiveCap = (r.cap * 3) / 4;
+        }
+        if (windowLive && r.outflowInWindow >= effectiveCap && effectiveCap != 0) return Status.RATE_LIMITED;
         return Status.ACTIVE;
     }
 

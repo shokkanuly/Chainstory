@@ -9,23 +9,36 @@
 // is a floor, so `verdict === 'trip'` holds exactly when the guardian accepts.
 
 import type { Hex, LocalAccount } from 'viem';
-import { DEFAULT_CONFIG } from './riskScorer.js';
 
-/** Mirrors TripwireGuardian.TRIP_THRESHOLD. */
-export const ON_CHAIN_TRIP_THRESHOLD = 75;
+/** Graduated response thresholds mirroring TripwireGuardian.sol */
+export const ON_CHAIN_THROTTLE_THRESHOLD = 65;
+export const ON_CHAIN_DELAY_THRESHOLD = 85;
+export const ON_CHAIN_FREEZE_THRESHOLD = 95;
+
+/** Default trip threshold where Guardian takes automated action (Throttle starts at 65) */
+export const ON_CHAIN_TRIP_THRESHOLD = 65;
 
 /**
- * Floor, not round: rounding would lift 0.745 to 75 and have the guardian
- * pause on a transfer the oracle only rated `elevated`.
+ * Floor, not round: rounding would lift 0.645 to 65 and have the guardian
+ * throttle on a transfer the oracle only rated clear.
  */
 export function toOnChainScore(score: number): bigint {
   return BigInt(Math.min(100, Math.max(0, Math.floor(score * 100))));
 }
 
-if (toOnChainScore(DEFAULT_CONFIG.tripThreshold) !== BigInt(ON_CHAIN_TRIP_THRESHOLD)) {
-  // Fail at import rather than in production: a drifted threshold means some
-  // oracle trips are silently refused by the contract.
-  throw new Error('Oracle trip threshold does not map onto the guardian TRIP_THRESHOLD');
+export enum ResponseTier {
+  NONE = 0,
+  THROTTLE = 1,
+  DELAY = 2,
+  FREEZE = 3,
+}
+
+export function getTierForScore(score: number): ResponseTier {
+  const onChain = Number(toOnChainScore(score));
+  if (onChain >= ON_CHAIN_FREEZE_THRESHOLD) return ResponseTier.FREEZE;
+  if (onChain >= ON_CHAIN_DELAY_THRESHOLD) return ResponseTier.DELAY;
+  if (onChain >= ON_CHAIN_THROTTLE_THRESHOLD) return ResponseTier.THROTTLE;
+  return ResponseTier.NONE;
 }
 
 export const ATTESTATION_TYPES = {

@@ -27,8 +27,12 @@ import type {
 } from './types.js';
 
 export interface ScorerConfig {
-  /** Above this, the oracle asks the guardian to pause the route. */
+  /** Above this, the oracle asks the guardian to throttle the route (>0.65). */
   tripThreshold: number;
+  /** Above this, the transfer enters delay timelock (>0.85). */
+  delayThreshold: number;
+  /** Above this, the transfer triggers an outright freeze (>0.95). */
+  freezeThreshold: number;
   /** Above this, the transfer is surfaced for review but not blocked. */
   elevatedThreshold: number;
   /** A baseline older than this is not trusted. */
@@ -52,7 +56,9 @@ export interface ScorerConfig {
 }
 
 export const DEFAULT_CONFIG: ScorerConfig = {
-  tripThreshold: 0.75,
+  tripThreshold: 0.65,
+  delayThreshold: 0.85,
+  freezeThreshold: 0.95,
   elevatedThreshold: 0.45,
   baselineMaxAgeSeconds: 6 * 3600,
   baselineMinSamples: 20,
