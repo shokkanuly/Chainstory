@@ -19,14 +19,16 @@ interface ITripwireGuardian {
     }
 
     /// @notice EIP-7265-style outflow hook. Reverts if the route is frozen,
-    ///         or if outflow exceeds the current (or throttled) cap.
+    ///         if outflow exceeds the tier's cap, or if a large outflow falls
+    ///         inside a DELAY review window.
     function onTokenOutflow(bytes32 routeId, uint256 amount) external;
 
     /// @notice Submit an EIP-712 attestation signed by the risk oracle.
-    ///         Applies graduated response tier:
-    ///         - riskScore >= 95: FREEZE (halts route)
-    ///         - riskScore >= 85: DELAY (enforces delay window on large transfers)
-    ///         - riskScore >= 65: THROTTLE (reduces hourly outflow cap by 50%)
+    ///         Applies a graduated tier for 24h, escalate-only while active:
+    ///         - riskScore >= 95: FREEZE   — every outflow reverts
+    ///         - riskScore >= 85: DELAY    — cap halved, and outflows above 10%
+    ///                                       of the cap held for 30 minutes
+    ///         - riskScore >= 65: THROTTLE — cap halved
     function submitAttestation(
         bytes32 routeId,
         uint256 riskScore,
