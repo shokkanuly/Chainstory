@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { hashTypedData, hexToSignature, keccak256, signatureToHex, toHex, type Hex } from 'viem';
 import { compileGuardian } from '../compile.mjs';
-import { attestationDomain, ATTESTATION_TYPES } from '../../../src/tripwire/onChain.js';
+import { attestationDomain, ATTESTATION_TYPES, ResponseTier as Tier } from '../../../src/tripwire/onChain.js';
 import type { GuardianVM } from '../../../src/tripwire/guardianVM.js';
 import {
   CHAIN_ID,
@@ -25,6 +25,7 @@ const CAP = 1_000_000n;
 const WINDOW = 3600n;
 const HOUR = 3600n;
 const DAY = 24n * HOUR;
+const DELAY_WINDOW = 30n * 60n;
 
 enum Status { ACTIVE, RATE_LIMITED, PAUSED }
 
@@ -139,17 +140,7 @@ describe('pausing', () => {
   it('treats 65 as the inclusive threshold: 64 is refused, 65 accepts and throttles', async () => {
     expect((await submit(att({ riskScore: 64n }))).error).toBe('ScoreBelowThreshold');
     expect((await submit(att({ riskScore: 65n }))).ok).toBe(true);
-    expect(await g.read('currentTier', [ROUTE])).toBe(1); // Tier.THROTTLE
-  });
-
-  it('riskScore 85 activates DELAY tier and 95 activates FREEZE tier', async () => {
-    await submit(att({ riskScore: 85n }));
-    expect(await g.read('currentTier', [ROUTE])).toBe(2); // Tier.DELAY
-    expect(await g.read('isPaused', [ROUTE])).toBe(false);
-
-    await submit(att({ riskScore: 95n }));
-    expect(await g.read('currentTier', [ROUTE])).toBe(3); // Tier.FREEZE
-    expect(await g.read('isPaused', [ROUTE])).toBe(true);
+    expect(await g.read('currentTier', [ROUTE])).toBe(Tier.THROTTLE);
   });
 
   it('accepts 100 and rejects anything above it', async () => {
@@ -176,6 +167,120 @@ describe('pausing', () => {
     g.warp(HOUR);
     await submit(att());
     expect(await pausedUntil()).toBe(first + HOUR);
+  });
+});
+
+// Each tier is at least as strict as the one below it, and an active tier
+// only escalates. Every test here is one way the tiers used to go wrong.
+describe('graduated tiers', () => {
+  const outflow = (amount: bigint) => g.send(bridge, 'onTokenOutflow', [ROUTE, amount]);
+  const tier = () => g.read<number>('currentTier', [ROUTE]);
+  const route = () => g.read<{ tierExpiresAt: bigint; delayUntil: bigint; pausedUntil: bigint }>('getRoute', [ROUTE]);
+
+  it.each([
+    [64n, Tier.NONE],
+    [65n, Tier.THROTTLE],
+    [84n, Tier.THROTTLE],
+    [85n, Tier.DELAY],
+    [94n, Tier.DELAY],
+    [95n, Tier.FREEZE],
+  ])('score %s applies tier %s', async (riskScore, expected) => {
+    await submit(att({ riskScore }));
+    expect(await tier()).toBe(expected);
+    expect(await g.read('isPaused', [ROUTE])).toBe(expected === Tier.FREEZE);
+  });
+
+  it('THROTTLE halves the window cap', async () => {
+    await submit(att({ riskScore: 65n }));
+    expect((await outflow(CAP / 2n)).ok).toBe(true);
+    const over = await outflow(1n);
+    expect(over.error).toBe('RateLimited');
+    expect(over.errorArgs).toEqual([ROUTE, CAP / 2n + 1n, CAP / 2n]);
+  });
+
+  // Regression: DELAY once capped at 75% while THROTTLE capped at 50%, so a
+  // riskier score loosened the limit.
+  it('DELAY is at least as strict as THROTTLE', async () => {
+    await submit(att({ riskScore: 85n }));
+    g.warp(DELAY_WINDOW);
+    expect((await outflow(CAP / 2n)).ok).toBe(true);
+    expect((await outflow(1n)).error).toBe('RateLimited');
+  });
+
+  // Regression: DELAY once applied no delay at all.
+  it('DELAY holds outflows above 10% of the cap for the review window', async () => {
+    await submit(att({ riskScore: 85n }));
+    const releaseAt = g.now + DELAY_WINDOW;
+    const held = await outflow(CAP / 10n + 1n);
+    expect(held.error).toBe('OutflowDelayed');
+    expect(held.errorArgs).toEqual([ROUTE, CAP / 10n + 1n, releaseAt]);
+    expect((await outflow(CAP / 10n)).ok).toBe(true); // small outflows still move
+    g.warp(DELAY_WINDOW - 1n);
+    expect((await outflow(CAP / 10n + 1n)).error).toBe('OutflowDelayed');
+    g.warp(1n);
+    expect((await outflow(CAP / 10n + 1n)).ok).toBe(true);
+  });
+
+  it('escalating from THROTTLE into DELAY opens the review window', async () => {
+    await submit(att({ riskScore: 65n }));
+    expect((await outflow(CAP / 10n + 1n)).ok).toBe(true);
+    await submit(att({ riskScore: 85n }));
+    expect((await outflow(CAP / 10n + 1n)).error).toBe('OutflowDelayed');
+  });
+
+  // A refresh must not let an oracle hold a route in review forever.
+  it('a repeat DELAY attestation extends the tier but not the review window', async () => {
+    await submit(att({ riskScore: 85n }));
+    const { delayUntil } = await route();
+    g.warp(DELAY_WINDOW / 2n);
+    await submit(att({ riskScore: 90n }));
+    expect((await route()).delayUntil).toBe(delayUntil);
+    expect((await route()).tierExpiresAt).toBe(g.now + DAY);
+  });
+
+  // Regression: a lower-score attestation once replaced an active FREEZE.
+  it.each([
+    [95n, 65n],
+    [95n, 85n],
+    [85n, 65n],
+  ])('an active tier from score %s is not downgraded by score %s', async (high, low) => {
+    await submit(att({ riskScore: high }));
+    const before = { tier: await tier(), ...(await route()) };
+    g.warp(HOUR);
+    expect((await submit(att({ riskScore: low }))).ok).toBe(true);
+    expect({ tier: await tier(), ...(await route()) }).toEqual(before);
+  });
+
+  it('a lower tier applies once the higher one has expired', async () => {
+    await submit(att({ riskScore: 95n }));
+    g.warp(DAY);
+    expect(await tier()).toBe(Tier.NONE);
+    await submit(att({ riskScore: 65n }));
+    expect(await tier()).toBe(Tier.THROTTLE);
+  });
+
+  it('every tier expires after 24 hours and the full cap returns', async () => {
+    await submit(att({ riskScore: 85n }));
+    g.warp(DAY - 1n);
+    expect(await tier()).toBe(Tier.DELAY);
+    g.warp(1n);
+    expect(await tier()).toBe(Tier.NONE);
+    expect((await outflow(CAP)).ok).toBe(true);
+  });
+
+  // Only `resume` lifts a tier early; reconfiguring a cap is not a back door.
+  it('reconfiguring the route leaves an active tier in place', async () => {
+    await submit(att({ riskScore: 85n }));
+    await g.send(owner, 'configureRoute', [ROUTE, CAP, WINDOW]);
+    expect(await tier()).toBe(Tier.DELAY);
+    expect((await outflow(CAP / 10n + 1n)).error).toBe('OutflowDelayed');
+  });
+
+  it('resume clears the tier and the review window', async () => {
+    await submit(att({ riskScore: 85n }));
+    await g.send(owner, 'resume', [ROUTE]);
+    expect(await tier()).toBe(Tier.NONE);
+    expect((await outflow(CAP)).ok).toBe(true);
   });
 });
 

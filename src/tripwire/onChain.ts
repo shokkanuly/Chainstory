@@ -9,14 +9,12 @@
 // is a floor, so `verdict === 'trip'` holds exactly when the guardian accepts.
 
 import type { Hex, LocalAccount } from 'viem';
+import { DEFAULT_CONFIG } from './riskScorer.js';
 
-/** Graduated response thresholds mirroring TripwireGuardian.sol */
+/** Mirror TripwireGuardian's THROTTLE/DELAY/FREEZE_THRESHOLD; the EVM tests read the contract to pin them. */
 export const ON_CHAIN_THROTTLE_THRESHOLD = 65;
 export const ON_CHAIN_DELAY_THRESHOLD = 85;
 export const ON_CHAIN_FREEZE_THRESHOLD = 95;
-
-/** Default trip threshold where Guardian takes automated action (Throttle starts at 65) */
-export const ON_CHAIN_TRIP_THRESHOLD = 65;
 
 /**
  * Floor, not round: rounding would lift 0.645 to 65 and have the guardian
@@ -24,6 +22,18 @@ export const ON_CHAIN_TRIP_THRESHOLD = 65;
  */
 export function toOnChainScore(score: number): bigint {
   return BigInt(Math.min(100, Math.max(0, Math.floor(score * 100))));
+}
+
+// Fail at import rather than in production: a drifted threshold means some
+// oracle verdicts are silently refused, or answered with the wrong tier.
+for (const [oracle, onChain] of [
+  [DEFAULT_CONFIG.tripThreshold, ON_CHAIN_THROTTLE_THRESHOLD],
+  [DEFAULT_CONFIG.delayThreshold, ON_CHAIN_DELAY_THRESHOLD],
+  [DEFAULT_CONFIG.freezeThreshold, ON_CHAIN_FREEZE_THRESHOLD],
+]) {
+  if (toOnChainScore(oracle) !== BigInt(onChain)) {
+    throw new Error(`Oracle threshold ${oracle} does not map onto guardian threshold ${onChain}`);
+  }
 }
 
 export enum ResponseTier {
