@@ -13,10 +13,23 @@
 
 import { rateLimit, type HandlerResponse } from './explorerHandler.js';
 
-const GEMINI_ENDPOINTS = [
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
+// Tried in order; the loop falls through on any non-OK response (404 retired,
+// 503 overloaded, 429 quota). The -latest aliases follow Google's retirements
+// automatically — gemini-2.0-flash and gemini-1.5-flash, the previous entries,
+// were both retired, which silently disabled every AI description. The pinned
+// models behind them were verified working on 2026-09-28.
+const GEMINI_MODELS = [
+  'gemini-flash-latest',
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+  // Lite models: less often overloaded when the flash tier returns 503.
+  'gemini-flash-lite-latest',
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
 ];
+const GEMINI_ENDPOINTS = GEMINI_MODELS.map(
+  (m) => `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`
+);
 
 const CATEGORIES = ['trade', 'income', 'transfer', 'nft', 'unknown'] as const;
 type Category = (typeof CATEGORIES)[number];
@@ -124,9 +137,12 @@ export async function handleGemini(
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             temperature: 0.1,
-            maxOutputTokens: 100,
-            response_mime_type: 'application/json',
-            response_schema: {
+            // Current models reason before answering, and those tokens count
+            // against this limit: at 100, a 638-token think left nothing for the
+            // answer and users saw "Here is" or "H".
+            maxOutputTokens: 1024,
+            responseMimeType: 'application/json',
+            responseSchema: {
               type: 'OBJECT',
               properties: {
                 description: {
@@ -143,7 +159,15 @@ export async function handleGemini(
       if (!upstream.ok) continue;
 
       const data = (await upstream.json()) as any;
-      const raw: string = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
+      const candidate = data?.candidates?.[0];
+      // Only a completed answer: a MAX_TOKENS or SAFETY stop is a fragment, and
+      // a fragment is worse than the deterministic fallback the client has.
+      if (candidate?.finishReason !== 'STOP') continue;
+      const raw: string = (candidate.content?.parts ?? [])
+        .filter((p: { thought?: boolean }) => !p.thought)
+        .map((p: { text?: string }) => p.text ?? '')
+        .join('')
+        .trim();
 
       let description = raw;
       try {

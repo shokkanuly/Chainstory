@@ -49,7 +49,12 @@ export function calculateFifoTaxReport(
   let unmatchedDisposalCount = 0;
 
   for (const tx of sortedTxs) {
-    const { symbol: assetSymbol, amount } = resolveAsset(tx);
+    // Use the amount the classifier already resolved with the chain's own
+    // decimals. Re-deriving from raw `value` assumes 18 decimals and put 1 SOL
+    // (9 decimals) on the books as 0.000000001.
+    const { symbol: assetSymbol, amount } = tx.assetSymbol
+      ? { symbol: tx.assetSymbol, amount: tx.assetAmount }
+      : resolveAsset(tx);
     const usdValue = tx.usdValue ?? 0;
     const date = tx.date;
 
@@ -70,6 +75,10 @@ export function calculateFifoTaxReport(
       gasUsd = gasNative * nativePrice;
       totalGasExpenseUsd += gasUsd;
     }
+
+    // I7: compress/decompress, wrap/unwrap and own-wallet moves never open or
+    // consume a lot. One guard here covers every caller.
+    if (tx.nonTaxableReason) continue;
 
     if (amount <= 0) continue;
 

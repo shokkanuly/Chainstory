@@ -226,52 +226,57 @@ export default function ContractRiskModal({ isOpen, onClose }: Props) {
               )}
 
               {/* Token / contract safety */}
-              <div className="p-4 rounded-xl border border-slate-800 bg-slate-800/40 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">Token &amp; Contract Safety</span>
-                  <div className="flex items-center gap-2">
-                    {tokenRisk.riskScore !== null && (
-                      <span className="text-[11px] font-mono text-slate-400">score {tokenRisk.riskScore}/100</span>
-                    )}
-                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full uppercase ${RECOMMENDATION_STYLES[tokenRisk.recommendation]}`}>
-                      {tokenRisk.recommendation.replace('_', ' ')}
-                    </span>
+              {/* Only once the token scan has returned: calldata-only checks have none. */}
+              {tokenRisk && (
+                <div className="p-4 rounded-xl border border-slate-800 bg-slate-800/40 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">Token &amp; Contract Safety</span>
+                    <div className="flex items-center gap-2">
+                      {tokenRisk.riskScore !== null && (
+                        <span className="text-[11px] font-mono text-slate-400">score {tokenRisk.riskScore}/100</span>
+                      )}
+                      <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full uppercase ${RECOMMENDATION_STYLES[tokenRisk.recommendation]}`}>
+                        {tokenRisk.recommendation.replace('_', ' ')}
+                      </span>
+                    </div>
                   </div>
+                  <p className="text-xs text-white leading-relaxed font-medium">{tokenRisk.plainEnglishSummary}</p>
+                  {tokenRisk.warnings.length > 0 && (
+                    <ul className="list-disc list-inside text-[11px] text-slate-400 space-y-0.5 pt-1">
+                      {tokenRisk.warnings.map((w, idx) => <li key={idx}>{w}</li>)}
+                    </ul>
+                  )}
                 </div>
-                <p className="text-xs text-white leading-relaxed font-medium">{tokenRisk.plainEnglishSummary}</p>
-                {tokenRisk.warnings.length > 0 && (
-                  <ul className="list-disc list-inside text-[11px] text-slate-400 space-y-0.5 pt-1">
-                    {tokenRisk.warnings.map((w, idx) => <li key={idx}>{w}</li>)}
-                  </ul>
-                )}
-              </div>
-
+              )}
               {/* Permissions & upgradeability */}
-              <div className="p-4 rounded-xl border border-slate-800 bg-slate-800/40 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">Contract Permissions &amp; Upgradeability</span>
-                  <span className="text-xs font-mono text-slate-400">{contractRisk.proxyType}</span>
-                </div>
-                <p className="text-xs text-slate-200 leading-relaxed bg-slate-900/60 p-3 rounded-lg border border-slate-800">
-                  {contractRisk.plainEnglishExplanation}
-                </p>
-                <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
-                  <TriState label="Upgradeable code" value={contractRisk.canUpgradeCode} />
-                  <TriState label="Owner / admin role" value={contractRisk.hasAdminKey} />
-                  <TriState label="Can pause transfers" value={contractRisk.canPauseTransfers} />
-                  <TriState label="Can mint supply" value={contractRisk.canMintTokens} />
-                </div>
-                {contractRisk.implementationAddress && (
-                  <div className="text-[11px] text-slate-400 font-mono pt-1">
-                    Implementation: <span className="text-slate-300">{contractRisk.implementationAddress}</span>
+              {/* Only once the contract scan has returned. */}
+              {contractRisk && (
+                <div className="p-4 rounded-xl border border-slate-800 bg-slate-800/40 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">Contract Permissions &amp; Upgradeability</span>
+                    <span className="text-xs font-mono text-slate-400">{contractRisk.proxyType}</span>
                   </div>
-                )}
-                {contractRisk.evidence.length > 0 && (
-                  <div className="text-[11px] text-slate-500 pt-1">
-                    From the verified ABI: <span className="font-mono text-slate-400">{contractRisk.evidence.join(', ')}</span>
+                  <p className="text-xs text-slate-200 leading-relaxed bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+                    {contractRisk.plainEnglishExplanation}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                    <TriState label="Upgradeable code" value={contractRisk.canUpgradeCode} />
+                    <TriState label="Owner / admin role" value={contractRisk.hasAdminKey} />
+                    <TriState label="Can pause transfers" value={contractRisk.canPauseTransfers} />
+                    <TriState label="Can mint supply" value={contractRisk.canMintTokens} />
                   </div>
-                )}
-              </div>
+                  {contractRisk.implementationAddress && (
+                    <div className="text-[11px] text-slate-400 font-mono pt-1">
+                      Implementation: <span className="text-slate-300">{contractRisk.implementationAddress}</span>
+                    </div>
+                  )}
+                  {contractRisk.evidence.length > 0 && (
+                    <div className="text-[11px] text-slate-500 pt-1">
+                      From the verified ABI: <span className="font-mono text-slate-400">{contractRisk.evidence.join(', ')}</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="text-[11px] text-slate-500 bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 leading-relaxed">
                 <strong>Notice:</strong> This reads published metadata and the verified ABI. It is not a

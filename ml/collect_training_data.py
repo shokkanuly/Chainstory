@@ -31,7 +31,8 @@ import requests
 ETHERSCAN_API_KEY = os.environ.get("ETHERSCAN_API_KEY", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+# gemini-1.5-flash was retired; the alias follows future retirements.
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
 
 # ─── Wallet Buckets ──────────────────────────────────────────────────
 # Deliberately mixed wallet set. The point of each bucket is described

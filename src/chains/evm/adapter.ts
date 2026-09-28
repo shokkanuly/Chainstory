@@ -57,11 +57,18 @@ export class EvmAdapter implements ChainAdapter<RawTransaction> {
     _ctx?: AdapterCtx
   ): AsyncIterable<Result<HistoryPage<RawTransaction>>> {
     try {
-      const txs = await fetchMultiWalletTransactions([q.address]);
+      const result = await fetchMultiWalletTransactions([q.address]);
+      // The fetcher falls back to labelled demo data when live data fails. An
+      // adapter has no demo flag, so passing it through would present synthetic
+      // history as real: report it as the expected failure it is instead.
+      if (result.source === 'demo') {
+        yield { ok: false, error: new Error(result.demoReason ?? 'Live data unavailable') };
+        return;
+      }
       yield {
         ok: true,
         value: {
-          transactions: txs,
+          transactions: result.transactions,
           hasMore: false,
         },
       };

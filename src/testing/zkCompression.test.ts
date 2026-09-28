@@ -195,6 +195,9 @@ describe('ZK Compression Normalization & Invariants (Phase 2)', () => {
         date: new Date('2026-02-24T10:00:00Z'),
         walletLabel: SUBJECT,
         tokenSymbol: 'SOL',
+        assetSymbol: 'SOL',
+        assetAmount: 1.0,
+        ethPriceUsd: 180,
       },
       {
         hash: 'tx_compress',
@@ -218,6 +221,10 @@ describe('ZK Compression Normalization & Invariants (Phase 2)', () => {
         date: new Date('2026-02-25T10:00:00Z'),
         walletLabel: SUBJECT,
         tokenSymbol: 'SOL',
+        assetSymbol: 'SOL',
+        assetAmount: 1.0,
+        ethPriceUsd: 190,
+        nonTaxableReason: 'compression',
       },
       {
         hash: 'tx_decompress',
@@ -241,6 +248,10 @@ describe('ZK Compression Normalization & Invariants (Phase 2)', () => {
         date: new Date('2026-02-26T10:00:00Z'),
         walletLabel: SUBJECT,
         tokenSymbol: 'SOL',
+        assetSymbol: 'SOL',
+        assetAmount: 1.0,
+        ethPriceUsd: 200,
+        nonTaxableReason: 'decompression',
       },
     ];
 

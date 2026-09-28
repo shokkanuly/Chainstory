@@ -84,6 +84,12 @@ export interface ClassifiedTransaction extends RawTransaction {
   ethPriceUsd: number | null;
   /** One entry per tax lot consumed — a disposal can span several lots. */
   realizedGainLosses?: RealizedGainLoss[];
+  /**
+   * Invariant I7: the wallet moved its own asset between states or wrappers, so
+   * this is neither a disposal nor an acquisition. Set from structured data (the
+   * chain normalizer's tags), never from a description. Gas is still an expense.
+   */
+  nonTaxableReason?: 'compression' | 'decompression' | 'wrap' | 'unwrap' | 'self_transfer';
 }
 
 export interface TaxSummary {

@@ -16,7 +16,10 @@ describe('Characterization Baseline Tests (EVM v1)', () => {
     expect(res.summary.storyCategoryCounts.transfer).toBe(1);
     expect(res.summary.totalProceedsUsd).toBe(4000);
     expect(res.summary.totalCostBasisUsd).toBe(4000);
-    expect(res.summary.netGainLossUsd).toBeCloseTo(-9.39, 2);
+    // Recorded, not guessed: the swap breaks even, so the net is its gas alone,
+    // charged to the sender only — 135,000 gas x 25 gwei = 0.003375 ETH at $2,000.
+    // -9.39 was the old engine, which also charged gas on incoming transfers.
+    expect(res.summary.netGainLossUsd).toBeCloseTo(-6.75, 2);
     expect(res.summary.csvLineCount).toBe(2);
   });
 
@@ -43,13 +46,16 @@ describe('Characterization Baseline Tests (EVM v1)', () => {
         usdValue: ethValue * 2000,
         ethValue,
         status: 'classified',
+        assetSymbol: 'ETH',
+        assetAmount: ethValue,
+        ethPriceUsd: 2000,
         date: new Date(parseInt(tx.timeStamp) * 1000),
       };
     });
 
-    expect(classified[0].description).toBe('simple_transfer — 5.0000 ETH');
-    expect(classified[1].description).toBe('staking_claim — 0.2000 ETH');
-    expect(classified[2].description).toBe('uniswap_swap_eth_for_tokens — 2.0000 ETH');
+    expect(classified[0].description).toBe('Simple ETH transfer (no contract call) — 5.0000 ETH');
+    expect(classified[1].description).toBe('Claim rewards / staking rewards — 0.2000 ETH');
+    expect(classified[2].description).toBe('Uniswap swap ETH for tokens — 2.0000 ETH');
   });
 
   it('generates expected CSV golden headers and row format', () => {
@@ -67,6 +73,9 @@ describe('Characterization Baseline Tests (EVM v1)', () => {
         usdValue: ethValue * 2000,
         ethValue,
         status: 'classified',
+        assetSymbol: 'ETH',
+        assetAmount: ethValue,
+        ethPriceUsd: 2000,
         date: new Date(parseInt(tx.timeStamp) * 1000),
       };
     });

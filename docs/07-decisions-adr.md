@@ -69,3 +69,10 @@ Format: **Context → Decision → Consequences → Revisit when.** Add new entr
 **Decision:** Story headlines are templates with structured slots; LLM narrative is discarded if it introduces numbers/entities not in slots.
 **Consequences:** Slightly less fluent prose; verifiable output.
 **Revisit when:** Never for tax; possibly for purely decorative text.
+
+### ADR-012 — Tripwire's write path is an operator component, outside the analysis app
+**Context:** Tripwire must sign attestations and change on-chain state (pause, throttle, delay a bridge route). I1 makes the analysis app read-only; I2 forbids a ChainStory backend.
+**Decision:** The write path — watcher, single-signer attestor, deploy scripts — lives in `scripts/tripwire/` and `contracts/`, run by a bridge operator. The analysis app never imports it, holds a key, or sends a transaction, so I1 and I2 still hold for the app. The attestation key is a throwaway testnet key in a git-ignored `.env`.
+**Consequences:** One product, two runtimes: the browser app (read-only) and an operator process (writes). Single signer is a named centralisation point; 2-of-3 threshold signing is the production path.
+**Revisit when:** Any code in `src/app` or the browser bundle needs a key, or the attestor moves to hosted infrastructure.
+**Approved:** by the human, 2026-09-28.

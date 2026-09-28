@@ -23,5 +23,8 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  // src/App.tsx is an unrouted draft (nothing imports it) with 18 type errors that
+  // blocked every build. Excluded, not deleted: finish or remove it deliberately.
+  "exclude": ["src/App.tsx"]
 }
