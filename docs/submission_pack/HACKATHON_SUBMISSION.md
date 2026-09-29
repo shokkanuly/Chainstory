@@ -3,7 +3,7 @@
 **Project Title**: ⛓️ ChainStory  
 **Tagline**: Wallet Intelligence — Understand Any Wallet's Story, Draft Taxes, and Risk in Plain English.  
 **Track**: AI & Data Accessibility / Infrastructure & Tooling  
-**Live Demo URL**: [http://localhost:5173/](http://localhost:5173/)  
+**Live Demo URL**: [https://chainstory-iota.vercel.app](https://chainstory-iota.vercel.app) · Tripwire on Sepolia: [guardian contract](https://sepolia.etherscan.io/address/0x6d01c906fa1615791641e17aca615f53885db61f)  
 **GitHub Repository**: [https://github.com/shokkanuly/Chainstory](https://github.com/shokkanuly/Chainstory)  
 
 ---

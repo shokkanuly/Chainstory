@@ -177,7 +177,12 @@ words from the model). Advisory only; nothing signs (I1).
   (egress, Base Sepolia) with viem; verify source on the explorers with the Etherscan key.
 - Run the same demo against testnets.
 - *Done when:* verified contract pages exist; the demo prints tx hashes a judge can open.
-- Code ready 2026-09-28, run pending on the human's Mac (the key lives there). Sepolia
+- ✅ Done 2026-09-29, run on the human's Mac (the key lives there): deployed, source verified
+  on Etherscan (guardian `0x6d01c906fa1615791641e17aca615f53885db61f`, vault
+  `0x6325c9ba6dbc80737ed550ec38d13ddfd397b15c`; all addresses in
+  `scripts/tripwire/testnet/deployment.sepolia.json`), and the live demo printed
+  NONE → THROTTLE → DELAY → FREEZE.
+- Code ready 2026-09-28. Sepolia
   only: the Base Sepolia faucets wanted mainnet balance, so both bridge ends are on
   Sepolia and one faucet funds it. `contracts/evm/src/TripwireDemo.sol` (DemoUSDC,
   MockSourceBridge, ProtectedVault, DrainReceiver behind OpenZeppelin's ERC1967Proxy);
@@ -215,6 +220,10 @@ words from the model). Advisory only; nothing signs (I1).
 **Stage 6 — Pitch + docs (S)** · depends on all
 - README scope table (🔨 built vs 🗺️ roadmap), ADR-012, docs/05 status, video.
 - *Done when:* every claim in the README and pitch is either tested or marked roadmap.
+- ✅ 2026-09-29: README rewritten to the current truth (live links, tiers, Sepolia
+  results, built-vs-roadmap table, 303 tests); status table in `docs/05`; video script in
+  `docs/submission_pack/VIDEO_SCRIPT.md`; AI descriptions made opt-in by the human's
+  decision. Left for the human: record the video, update the Colosseum profile.
 - Progress 2026-09-28: ADR-013 (the server-side key proxy in `api/` + `server/`) is written
   as **Proposed**, with the list of invariant and doc lines to reword once approved. It
   also records a finding: Retold's transaction descriptions send full addresses to Gemini

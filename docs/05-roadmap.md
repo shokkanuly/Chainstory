@@ -4,6 +4,24 @@ Rules for this roadmap: every phase ends with something **runnable and testable*
 Sizing is relative (S ≈ days, M ≈ 1–2 weeks, L ≈ 3+ weeks of focused work), not a date promise.
 Update the status table in `docs/README.md` and the checkboxes here as work lands.
 
+## Hackathon build (September 2026) — status
+
+Tripwire and Check before you sign, planned in [plans/tripwire-hackathon.md](plans/tripwire-hackathon.md) (each stage's result is recorded there).
+
+| Stage | What | Status |
+| :--- | :--- | :--- |
+| 0 | Unblock: build, typecheck, tests green | ✅ |
+| 1 | Graduated guardian: THROTTLE / DELAY / FREEZE, escalate-only; 14/14 mutants caught | ✅ |
+| 2 | Scorer reuses Retold's contract risk; explorer transport for Node | ✅ |
+| 3 | Watcher → attestor → guardian loop, locally, tier asserted per step | ✅ |
+| 4 | Sepolia: deployed, source verified, live demo NONE → THROTTLE → DELAY → FREEZE | ✅ |
+| 5 | Check before you sign at `/check`; nothing reachable from it can sign | ✅ |
+| 6 | README scope table, this status, ADR-013, video script | ✅ (video to record) |
+
+- [x] stage 0  - [x] stage 1  - [x] stage 2  - [x] stage 3  - [x] stage 4  - [x] stage 5  - [x] stage 6 docs  - [ ] video recorded
+
+---
+
 ```
 Phase 0 ──► Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 (gated)
  seams      Solana      ZK read     Jito/risk    Guard        attest
