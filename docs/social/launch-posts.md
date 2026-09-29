@@ -12,6 +12,23 @@ Posters are in `docs/social/posters/`:
 | Check before you sign | `check-x.png` | `check-4x5.png` |
 | Retold: the wallet reader | `retold-x.png` | `retold-4x5.png` |
 
+### One poster for both products, black and white
+
+`docs/social/brand/`, made by `node docs/social/brand-poster.mjs` (it has its
+own `SITE` line). Same design in every file; the background is the site's
+hero shader. Pick black or white to suit the feed.
+
+| Where | Size | Black | White |
+| :--- | :--- | :--- | :--- |
+| Instagram feed, Threads, Facebook, LinkedIn (the main one) | 1080×1350, 4:5 | `retold-dark-4x5.png` | `retold-light-4x5.png` |
+| X / Twitter, LinkedIn link post, YouTube community | 1600×900, 16:9 | `retold-dark-16x9.png` | `retold-light-16x9.png` |
+| Square fallback: Telegram, Discord, anywhere 4:5 crops | 1080×1080, 1:1 | `retold-dark-1x1.png` | `retold-light-1x1.png` |
+| Stories, Reels, TikTok, Shorts | 1080×1920, 9:16 | `retold-dark-9x16.png` | `retold-light-9x16.png` |
+
+The 9:16 keeps everything between 250px from the top and 300px from the
+bottom, clear of the story UI. The "$292M → $0" row is the Kelp DAO replay:
+say "in our replay" in the caption.
+
 Every claim below comes from the README. Don't add "72 hours", "sub-5ms" or a
 "$2.8B" figure. The $292M, $11.58M and ~$10M numbers are sourced in the
 README. The "$0" result is from **our replay**, so always say so.
