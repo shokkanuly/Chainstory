@@ -297,7 +297,7 @@ export default function Workspace() {
   }, [searchParams]);
 
   return (
-    <div className="min-h-[100dvh] bg-background text-foreground">
+    <div className="min-h-[100dvh] text-foreground">
       <Navbar />
       <main className="pt-20">
       <section id="app-workspace" className="relative py-16 border-t border-border/50">

@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Menu, X } from 'lucide-react'
 import Logo from './Logo'
+import ThemeToggle from './ThemeToggle'
 
 // Absolute, so the links work from /app and /tripwire as well as the landing page.
 const navLinks = [
@@ -63,6 +64,7 @@ export default function Navbar() {
 
           {/* CTA */}
           <div className="hidden md:flex items-center gap-3">
+            <ThemeToggle />
             <a
               href="https://github.com/shokkanuly/Chainstory"
               target="_blank"
@@ -112,6 +114,10 @@ export default function Navbar() {
                   {link.label}
                 </a>
               ))}
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-sm text-muted-foreground">Theme</span>
+                <ThemeToggle />
+              </div>
               <div className="pt-3 border-t border-border mt-3">
                 <a
                   href="/app"

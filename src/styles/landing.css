@@ -2,17 +2,15 @@
  * a faint ledger grid, and accent glows. Everything else uses brand.css. */
 
 .l-page {
-  background:
-    radial-gradient(900px 520px at 85% -10%, rgba(166, 100, 252, 0.16), transparent 70%),
-    radial-gradient(700px 480px at -10% 30%, rgba(89, 237, 247, 0.07), transparent 70%),
-    var(--b-canvas);
+  /* Transparent: the site-wide ambient backdrop (styles/ambient.css) shows through. */
+  background: transparent;
 }
 
 /* The ledger grid: blocks, faintly. Masked so it fades out below the fold. */
 .l-grid {
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--b-text) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--b-text) 4%, transparent) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: radial-gradient(ellipse 80% 70% at 50% 0%, #000 30%, transparent 75%);
 }
@@ -41,7 +39,7 @@
 /* A card with its accent glowing from the top-right corner. Set --glow. */
 .l-card {
   --glow: var(--b-purple);
-  background-color: rgba(22, 22, 29, 0.7);
+  background-color: color-mix(in srgb, var(--b-raised) 72%, transparent);
   background-image: radial-gradient(
     circle at 80% 19%,
     color-mix(in oklab, var(--glow) 16%, transparent),
