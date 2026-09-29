@@ -19,6 +19,7 @@ import TransactionTimeline from '../components/TransactionTimeline';
 import WalletIntelligenceCard from '../components/WalletIntelligenceCard';
 import TokenApprovalsPanel from '../components/TokenApprovalsPanel';
 import ContractRiskModal from '../components/ContractRiskModal';
+import AiDescriptionsToggle from '../components/AiDescriptionsToggle';
 import type { ChainId, ClassifiedTransaction, DataSource, RawTransaction, B2BSimulationResult } from '../types';
 import { fetchMultiWalletTransactions, weiToEth } from '../services/etherscan';
 import { classifyAll } from '../services/classifier';
@@ -349,6 +350,9 @@ export default function Workspace() {
             connectedWallet={connectedWallet}
             onWalletConnectStateChange={setConnectedWallet}
           />
+
+          {/* AI descriptions are opt-in: off by default, with a preview of what is sent. */}
+          <AiDescriptionsToggle />
 
           {/* Data provenance banner — demo data must never look like chain data */}
           {dataSource === 'demo' && (

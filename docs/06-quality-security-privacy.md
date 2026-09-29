@@ -25,11 +25,12 @@ Do **not** write "no private data leaves your device." Say:
 
 > Retold has no accounts and stores nothing on a server. Your analysis runs in your browser. To fetch history and contract facts, **the addresses you look up
 > pass through our server to the block explorer** (Etherscan), because that is where the API key lives; our host can see your IP address and those lookups.
-> Prices come from public price APIs. When AI descriptions are available, **transaction details, including addresses and amounts, are sent through our server
-> to Google Gemini**. Watchlists are stored only in your browser.
+> Prices come from public price APIs. AI descriptions are **off unless you switch them on**; when on, a short summary of each transaction (category,
+> amounts, method and token names, and addresses shortened to their first 6 and last 4 characters) is sent through our server to Google Gemini.
+> Watchlists and that switch are stored only in your browser.
 
-**Known gap (open decision, ADR-013):** the two rules below are the target, and `services/descriptionGenerator.ts` does not meet them today — it sends full
-addresses automatically, with no opt-in. Until that is decided, the statement above is the accurate one. `/check`'s AI wording sends no user data.
+Implemented in `services/aiDescriptions.ts` and `components/AiDescriptionsToggle.tsx` (the switch shows a preview built by the same function that builds
+the request). `/check`'s AI wording sends no user data at all: only the verdict and reason ids, turned into fixed phrases on the server.
 
 Rules:
 - LLM feature is **opt-in**, off by default, with a visible indicator and a "what is sent" preview.

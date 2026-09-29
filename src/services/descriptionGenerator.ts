@@ -1,12 +1,13 @@
 // src/services/descriptionGenerator.ts
 //
-// Gemini integration for description-only generation.
+// Gemini integration for description-only generation, opt-in (aiDescriptions.ts).
 // The category is already decided by the XGBoost classifier, so Gemini writes a plain-English summary.
-// Includes graceful fallback to deterministic descriptions if Gemini API returns 404 / rate limits.
+// Includes graceful fallback to deterministic descriptions when AI is off or Gemini fails.
 
 import type { RawTransaction, TaxCategory } from '../types';
 import { getMethodLabel } from './methodRegistry';
 import { describeTransaction } from './apiClient';
+import { buildDescribePayload, isAiDescriptionsEnabled } from './aiDescriptions';
 
 export async function generateDescription(
   tx: RawTransaction,
@@ -14,21 +15,13 @@ export async function generateDescription(
   ethValue: number,
   usdValue: number | null
 ): Promise<string> {
-  // Only structured fields cross the wire. The prompt is assembled on the
-  // server so the endpoint cannot be driven as a general-purpose LLM.
-  const generated = await describeTransaction({
-    from: tx.from,
-    to: tx.to,
-    category,
-    ethValue,
-    usdValue,
-    methodLabel: getMethodLabel(tx.input) ?? undefined,
-    functionName: tx.functionName,
-    tokenName: tx.tokenName,
-    tokenSymbol: tx.tokenSymbol,
-    isError: tx.isError === '1',
-  });
+  // Opt-in (docs/06 §2): with AI descriptions off, nothing leaves the device.
+  if (!isAiDescriptionsEnabled()) return generateFallbackDescription(tx, category, ethValue);
 
+  // Only structured fields cross the wire, addresses shortened. The prompt is
+  // assembled on the server so the endpoint cannot be driven as a
+  // general-purpose LLM.
+  const generated = await describeTransaction(buildDescribePayload(tx, category, ethValue, usdValue));
   return generated ?? generateFallbackDescription(tx, category, ethValue);
 }
 
