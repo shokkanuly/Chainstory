@@ -2,8 +2,9 @@
  * a faint ledger grid, and accent glows. Everything else uses brand.css. */
 
 .l-page {
-  /* Transparent: the site-wide ambient backdrop (styles/ambient.css) shows through. */
-  background: transparent;
+  /* The silk field lives in the hero only (components/motion/ShaderField.tsx);
+   * below it the page is plain canvas, so body text never sits on moving light. */
+  background: var(--b-canvas);
 }
 
 /* The ledger grid: blocks, faintly. Masked so it fades out below the fold. */
@@ -17,23 +18,42 @@
 
 .l-label {
   font-family: var(--b-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.17em;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--b-text-muted);
 }
 
+/* Display type is the one place Space Grotesk stays: at this size its
+ * character reads as voice, not as friction. */
 .l-display {
+  font-family: var(--b-font-display);
   font-weight: 600;
-  letter-spacing: -0.075em;
-  line-height: 0.9;
+  letter-spacing: -0.06em;
+  line-height: 0.92;
 }
 
 .l-h2 {
+  font-family: var(--b-font-display);
   font-weight: 600;
-  letter-spacing: -0.055em;
-  line-height: 0.98;
+  letter-spacing: -0.045em;
+  line-height: 1;
   font-size: clamp(2.4rem, 5.4vw, 4.4rem);
+}
+
+.l-h3 {
+  font-family: var(--b-font-display);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+/* Body copy on the landing: a size and colour that hold up on any section. */
+.l-body {
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  color: var(--b-text-muted);
 }
 
 /* A card with its accent glowing from the top-right corner. Set --glow. */
@@ -47,33 +67,6 @@
   );
   border: 1px solid var(--b-line);
   border-radius: 17px;
-}
-
-/* The chain ticker. Paused for anyone who asked their OS to stop motion. */
-.l-marquee {
-  display: flex;
-  width: max-content;
-  animation: l-marquee 38s linear infinite;
-}
-@keyframes l-marquee {
-  to {
-    transform: translateX(-50%);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .l-marquee {
-    animation: none;
-  }
-}
-
-/* The translation card leans in, like a receipt on a desk. */
-.l-tilt {
-  transform: perspective(1400px) rotateY(-9deg) rotateX(4deg);
-}
-@media (max-width: 1023px) {
-  .l-tilt {
-    transform: none;
-  }
 }
 
 .l-faq summary::-webkit-details-marker {

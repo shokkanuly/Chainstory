@@ -5,12 +5,14 @@
 
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import PageAurora from '@/components/motion/PageAurora';
 import TripwireDashboard from '@/components/tripwire/TripwireDashboard';
 import '../App.css';
 
 export default function TripwirePage() {
   return (
-    <div className="min-h-[100dvh] text-foreground">
+    <div className="relative isolate min-h-[100dvh] text-foreground">
+      <PageAurora />
       <Navbar />
       <main className="pt-20">
         <TripwireDashboard />
