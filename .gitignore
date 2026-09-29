@@ -23,8 +23,11 @@ dist-ssr
 *.sln
 *.sw?
 
-# Environment variables
+# Environment variables, and any copy of them (editor backups such as
+# nano's .env.save, .env.local, .env.production). They hold API keys.
 .env
+.env.*
+!.env.example
 
 # Local dev-server launch config (editor/tooling specific)
 .claude/launch.json
