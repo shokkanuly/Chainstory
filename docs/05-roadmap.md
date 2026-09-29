@@ -20,6 +20,8 @@ Tripwire and Check before you sign, planned in [plans/tripwire-hackathon.md](pla
 
 - [x] stage 0  - [x] stage 1  - [x] stage 2  - [x] stage 3  - [x] stage 4  - [x] stage 5  - [x] stage 6 docs  - [ ] video recorded
 
+Launch material: posters for X, Instagram and Threads (`node docs/social/posters.mjs` renders them) and the post copy, in [social/launch-posts.md](social/launch-posts.md).
+
 ---
 
 ```
