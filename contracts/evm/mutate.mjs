@@ -1,4 +1,4 @@
-// Mutation test for the guardian's tier logic.
+// Mutation tests for the guardian's tier logic and the vault's release review gate.
 //
 //   npm run test:mutants
 //
@@ -11,6 +11,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 const SOL = 'contracts/evm/src/TripwireGuardian.sol', ART = 'src/tripwire/guardian.artifact.ts';
 const sol = readFileSync(SOL, 'utf8'), art = readFileSync(ART, 'utf8');
+const VAULT = 'contracts/evm/src/TripwireDemo.sol', DEMO_ART = 'scripts/tripwire/testnet/contracts.artifact.ts';
+const vault = readFileSync(VAULT, 'utf8'), demoArt = readFileSync(DEMO_ART, 'utf8');
 const M = [
  ['DELAY cap: DELAY gets the full cap', 'tier == Tier.THROTTLE || tier == Tier.DELAY ? uint256(cap) / 2', 'tier == Tier.THROTTLE ? uint256(cap) / 2'],
  ['DELAY hold: never holds', 'tier == Tier.DELAY && block.timestamp < r.delayUntil && amount > r.cap / 10', 'false && tier == Tier.DELAY'],
@@ -27,6 +29,15 @@ const M = [
  ['FREEZE threshold off by one', 'riskScore >= FREEZE_THRESHOLD', 'riskScore > FREEZE_THRESHOLD'],
  ['FREEZE does not pause', 'if (incoming == Tier.FREEZE) r.pausedUntil = until;', ''],
 ];
+const REVIEW_MUTANTS = [
+ ['review signer: any signature accepted', 'if (reviewer != ITripwireOracle(address(guardian)).oracle()) revert InvalidReviewer(reviewer);', ''],
+ ['review nonce: older approvals accepted', 'if (nonce <= r.reviewNonce)', 'if (nonce == r.reviewNonce)'],
+ ['review decision: HOLD and REJECT become VERIFIED', 'r.state = decision == ReviewDecision.ALLOW\n            ? ReleaseState.VERIFIED : decision == ReviewDecision.HOLD ? ReleaseState.HELD : ReleaseState.REJECTED;', 'r.state = ReleaseState.VERIFIED;'],
+ ['review expiry: old allowance to execute stays valid', 'if (block.timestamp > r.reviewedUntil) revert ReviewExpired(r.reviewedUntil);', ''],
+ ['review rotation: old signer allowance stays valid', 'if (r.reviewer != ITripwireOracle(address(guardian)).oracle()) revert InvalidReviewer(r.reviewer);', ''],
+ ['review protection: no risk tier required', 'if (guardian.currentTier(routeId) < r.minimumTier) revert RequiredProtectionMissing(routeId, r.minimumTier);', ''],
+ ['review execution: a release can pay twice', 'r.state = ReleaseState.EXECUTED;', ''],
+];
 const results = [];
 try {
   for (const [name, from, to] of M) {
@@ -37,7 +48,19 @@ try {
     try { execSync('npx vitest run contracts/ -t "^(?!artifact)"', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
     results.push([name, caught ? 'caught' : 'SURVIVED']);
   }
-} finally { writeFileSync(SOL, sol); writeFileSync(ART, art); }
+  writeFileSync(SOL, sol);
+  for (const [name, from, to] of REVIEW_MUTANTS) {
+    if (!vault.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
+    writeFileSync(VAULT, vault.replace(from, to));
+    execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
+    let caught;
+    try { execSync('npx vitest run contracts/evm/test/releaseSafety.evm.test.ts', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
+    results.push([name, caught ? 'caught' : 'SURVIVED']);
+  }
+} finally {
+  writeFileSync(SOL, sol); writeFileSync(ART, art);
+  writeFileSync(VAULT, vault); writeFileSync(DEMO_ART, demoArt);
+}
 for (const r of results) console.log(r[1].padEnd(18), r[0]);
 const bad = results.filter((r) => r[1] !== 'caught').length;
 console.log(bad ? `${bad} of ${results.length} mutants not caught` : `all ${results.length} mutants caught`);

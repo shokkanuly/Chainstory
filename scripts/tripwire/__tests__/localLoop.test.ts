@@ -45,6 +45,7 @@ describe('the local watch → attest → guardian loop', async () => {
     const forged = steps[3].payouts[0];
     expect(forged.burned).toBe(0n);
     expect(forged.assessment.signals.find((s) => s.id === 'proof_payout_mismatch')?.deterministic).toBe(true);
-    expect(outcome(steps[3])).toEqual(['RoutePaused']);
+    expect(outcome(steps[3])).toEqual(['ReleaseRejected']);
+    expect(forged.review.ok).toBe(true);
   });
 });

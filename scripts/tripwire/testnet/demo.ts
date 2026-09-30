@@ -56,12 +56,13 @@ function print(step: TestnetStep, i: number) {
       p.attestation.action === 'skipped'
         ? `no attestation (${p.attestation.reason})`
         : `${p.attestation.action === 'submitted' ? 'attested' : 'REJECTED'} ${p.attestation.attestation.riskScore} → ${ResponseTier[p.attestation.tier]}`;
-    console.log(`    ${usdc(p.amount)} → ${short(p.recipient)} · ${p.burned === p.amount ? 'burn ✓' : p.burned === 0n ? 'NO BURN' : `burn ${usdc(p.burned)}`}`);
+    console.log(`    ${usdc(p.amount)} → ${short(p.recipient)} · ${p.burned === null ? 'SOURCE UNKNOWN' : p.burned === p.amount ? 'burn ✓' : p.burned === 0n ? 'NO BURN' : `burn ${usdc(p.burned)}`}`);
     console.log(`      score ${p.score === null ? '—' : p.score.toFixed(2)} ${p.verdict} · ${attest} · ${p.executed ? 'paid out' : `blocked: ${p.blockedBy}`}`);
     for (const r of p.reasons) console.log(`      ↳ ${r}`);
     if (p.txs.burn) console.log(`      burn     ${txLink(p.txs.burn)}`);
     console.log(`      request  ${txLink(p.txs.request)}`);
     if (p.txs.attest) console.log(`      attest   ${txLink(p.txs.attest)}`);
+    console.log(`      review   ${txLink(p.txs.review)}`);
     console.log(`      execute  ${txLink(p.txs.execute)}`);
   }
   console.log(`    guardian tier: ${ResponseTier[step.tierAfter]}`);

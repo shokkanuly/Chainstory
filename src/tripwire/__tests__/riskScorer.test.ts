@@ -58,6 +58,28 @@ describe('ordinary traffic', () => {
 // The Verus bridge verified the state root, the Merkle proof and the hash
 // binding, and never checked that the payout matched the burn.
 describe('proof/payout mismatch', () => {
+  it('detects a one-base-unit mismatch even when converting both amounts to numbers loses it', () => {
+    const burned = 10n ** 30n;
+    const claimed = burned + 1n;
+    expect(Number(burned)).toBe(Number(claimed));
+    const res = score({
+      transfer: transfer({ provenBurnUsd: Number(burned), claimedPayoutUsd: Number(claimed), backing: { burned, claimed, toleranceBps: 0n } }),
+      baseline: baseline(), recent: [], screening: cleanList, now: NOW,
+    });
+    expect(res.score).toBe(1);
+    expect(res.signals.find((s) => s.id === 'proof_payout_mismatch')?.deterministic).toBe(true);
+  });
+
+  it.each([
+    [99_000n, 0], [101_000n, 0], [98_999n, 1], [101_001n, 1],
+  ])('compares exact backing at the tolerance boundary (%s base units)', (claimed, expected) => {
+    const res = score({
+      transfer: transfer({ backing: { burned: 100_000n, claimed: BigInt(claimed), toleranceBps: 100n } }),
+      baseline: baseline(), recent: [], screening: cleanList, now: NOW,
+    });
+    expect(res.signals.find((s) => s.id === 'proof_payout_mismatch')?.score).toBe(expected);
+  });
+
   it('trips on a payout the burn does not back, even at ordinary size', () => {
     const res = score({
       transfer: transfer({ amountUsd: 25_000, provenBurnUsd: 25_000, claimedPayoutUsd: 11_580_000 }),

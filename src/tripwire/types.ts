@@ -31,6 +31,8 @@ export interface BridgeTransfer {
    */
   claimedPayoutUsd?: number | null;
   provenBurnUsd?: number | null;
+  /** Exact same-asset backing from an operator adapter. Never compare money through floating-point USD. */
+  backing?: { burned: bigint; claimed: bigint; toleranceBps: bigint };
 }
 
 /**

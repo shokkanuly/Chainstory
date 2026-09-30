@@ -34,8 +34,11 @@ import type { ContractRiskSummary, RouteBaseline } from '../../../src/tripwire/t
 import { FLAG_LIST_NAME, lookupFlaggedAddress } from '../../../src/services/preventiveScamScanner.js';
 import { ATTACK_STEPS, DRAIN_CONTRACT, USDC } from '../attack.js';
 import { Attestor, type AttestationOutcome, type GuardianPort } from '../attest.js';
-import type { BurnEvent, LogFeed, ReleaseEvent } from '../events.js';
+import { burnEventSchema, releaseEventSchema, type BurnEvent, type LogFeed, type ReleaseEvent } from '../events.js';
 import { Watcher } from '../watch.js';
+import { z } from 'zod';
+import { blockHeaderSchema, blockHashSchema, finalizedCheckpointSchema, FinalityConflictError } from '../finality.js';
+import { releaseDecision, releaseMinimumTier, signReleaseReview, type ReleaseReview } from '../review.js';
 import demo from './contracts.artifact.js';
 
 export const ROOT = resolve(import.meta.dirname, '../../..');
@@ -237,25 +240,50 @@ export function readDeployment(cfg: TestnetConfig): Deployment {
 // --- the demo -------------------------------------------------------------------
 
 /** eth_getLogs with a block cursor: the testnet counterpart of MemoryFeed. */
-class ContractEventFeed<E> implements LogFeed<E> {
+export class ContractEventFeed<E> implements LogFeed<E> {
   private cursor: bigint;
   private times = new Map<bigint, number>();
+  private anchor: { number: bigint; hash: Hex } | null = null;
 
   constructor(
     private c: Clients,
     private address: Hex,
     private abi: Abi,
     private eventName: string,
-    from: bigint,
-    private map: (args: Record<string, unknown>, timestamp: number) => E
+    private from: bigint,
+    private map: (args: Record<string, unknown>, timestamp: number) => E,
+    private opts: { finality?: 'finalized' } = {}
   ) {
     this.cursor = from;
   }
 
+  checkpoint(): string {
+    if (!this.opts.finality) return this.cursor.toString();
+    return JSON.stringify({ version: 1, policy: 'finalized', chainId: this.c.chainId,
+      address: this.address.toLowerCase(), event: this.eventName, from: this.from.toString(), next: this.cursor.toString(),
+      anchor: this.anchor ? { number: this.anchor.number.toString(), hash: this.anchor.hash } : null });
+  }
+
+  restore(cursor: string): void {
+    if (this.opts.finality) {
+      const c = finalizedCheckpointSchema.parse(JSON.parse(cursor));
+      if (c.chainId !== this.c.chainId || c.address !== this.address.toLowerCase() || c.event !== this.eventName || c.from !== this.from.toString()) {
+        throw new Error('Finalized checkpoint does not match this feed.');
+      }
+      this.cursor = BigInt(c.next); this.anchor = c.anchor ? { number: BigInt(c.anchor.number), hash: c.anchor.hash } : null;
+      this.times.clear(); return;
+    }
+    if (!/^(0|[1-9][0-9]*)$/.test(cursor)) throw new Error('Invalid block checkpoint.');
+    this.cursor = BigInt(cursor);
+    this.times.clear();
+  }
+
   async poll(): Promise<E[]> {
+    if (this.opts.finality) return this.pollFinalized();
     // Uncached: viem otherwise serves a block number up to 4 s old, and the
     // logs of the transactions just confirmed would fall outside the range.
-    const latest = await this.c.pub.getBlockNumber({ cacheTime: 0 });
+    const head = await this.c.pub.getBlockNumber({ cacheTime: 0 });
+    const latest = head < this.cursor + 1999n ? head : this.cursor + 1999n;
     if (latest < this.cursor) return [];
     const logs = await this.c.pub.getContractEvents({
       address: this.address,
@@ -264,13 +292,89 @@ class ContractEventFeed<E> implements LogFeed<E> {
       fromBlock: this.cursor,
       toBlock: latest,
     });
-    this.cursor = latest + 1n;
     const out: E[] = [];
     for (const l of logs) {
       const bn = l.blockNumber ?? latest;
       if (!this.times.has(bn)) this.times.set(bn, Number((await this.c.pub.getBlock({ blockNumber: bn })).timestamp));
       out.push(this.map((l as unknown as { args: Record<string, unknown> }).args, this.times.get(bn) ?? 0));
     }
+    // Commit only after every RPC lookup and decode has succeeded. Otherwise
+    // the next poll must retry this range rather than silently losing its logs.
+    this.cursor = latest + 1n;
+    this.times.clear();
+    return out;
+  }
+
+  async assertCanonical(): Promise<void> {
+    if (!this.opts.finality) return; // Instant mode is only for the scripted demo.
+    const head = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: 'finalized' }));
+    await this.checkAnchor(head.number);
+  }
+
+  private async checkAnchor(finalizedNumber: bigint): Promise<void> {
+    if (!this.anchor) return;
+    if (finalizedNumber < this.anchor.number) throw new Error('Finalized RPC is behind the committed checkpoint; retry another healthy endpoint.');
+    const block = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: this.anchor.number }));
+    if (block.number !== this.anchor.number) throw new Error('RPC returned the wrong checkpoint block.');
+    if (block.hash !== this.anchor.hash) throw new FinalityConflictError('A committed finalized block changed; operator reconciliation is required.');
+  }
+
+  private async pollFinalized(): Promise<E[]> {
+    const head = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: 'finalized' }));
+    await this.checkAnchor(head.number);
+    if (head.number < this.cursor) return [];
+    // Hash-link every header so a load-balanced RPC cannot mix log blocks
+    // from one fork with an endpoint from another. Bound this work to 64 blocks.
+    const end = head.number < this.cursor + 63n ? head.number : this.cursor + 63n;
+    const endpoint = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: end }));
+    if (endpoint.number !== end || (end === head.number && endpoint.hash !== head.hash)) throw new Error('RPC finalized endpoint is inconsistent.');
+    const headers = new Map<bigint, z.infer<typeof blockHeaderSchema>>();
+    let previousHash = this.anchor?.hash;
+    if (!previousHash && this.cursor > 0n) {
+      const parent = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: this.cursor - 1n }));
+      if (parent.number !== this.cursor - 1n) throw new Error('RPC returned the wrong range parent.');
+      previousHash = parent.hash;
+    }
+    for (let start = this.cursor; start <= end; start += 8n) {
+      const numbers = Array.from({ length: Number((end - start + 1n) < 8n ? end - start + 1n : 8n) }, (_, i) => start + BigInt(i));
+      const batch = await Promise.all(numbers.map(async (number) => {
+        const header = number === end ? endpoint : blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: number }));
+        if (header.number !== number) throw new Error('RPC returned the wrong range block.');
+        return header;
+      }));
+      for (const header of batch) {
+        if (previousHash && header.parentHash !== previousHash) throw new Error('RPC range headers are not one canonical chain.');
+        headers.set(header.number, header); previousHash = header.hash;
+      }
+    }
+    const logSchema = z.object({
+      address: z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((a) => a.toLowerCase()),
+      blockNumber: z.bigint().min(this.cursor).max(end), blockHash: blockHashSchema, transactionHash: blockHashSchema,
+      logIndex: z.number().int().nonnegative(), removed: z.literal(false), args: z.record(z.string(), z.unknown()),
+    });
+    const logs = z.array(logSchema).parse(await this.c.pub.getContractEvents({ address: this.address, abi: this.abi,
+      eventName: this.eventName, fromBlock: this.cursor, toBlock: end, strict: true }));
+    logs.sort((a, b) => a.blockNumber === b.blockNumber ? a.logIndex - b.logIndex : a.blockNumber < b.blockNumber ? -1 : 1);
+    const identities = new Set<string>(); const out: E[] = [];
+    for (const log of logs) {
+      const identity = `${log.blockHash}/${log.logIndex}`;
+      if (log.address !== this.address.toLowerCase() || identities.has(identity)) throw new Error('Unexpected contract or duplicate log identity.');
+      identities.add(identity);
+      const header = headers.get(log.blockNumber);
+      if (!header) throw new Error('Log has no validated range header.');
+      if (header.number !== log.blockNumber || header.hash !== log.blockHash) throw new Error('Log block hash does not match the canonical block.');
+      headers.set(log.blockNumber, header);
+      const mapped = this.map(log.args, Number(header.timestamp));
+      if (!mapped || typeof mapped !== 'object') throw new Error('Finalized feed requires an event object.');
+      out.push({ ...mapped, origin: { chainId: this.c.chainId, address: this.address.toLowerCase() as Hex,
+        blockNumber: log.blockNumber, blockHash: log.blockHash, transactionHash: log.transactionHash, logIndex: log.logIndex } });
+    }
+    const final = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: 'finalized' }));
+    if (final.number < end) throw new Error('Finalized RPC moved behind the queried range.');
+    await this.checkAnchor(final.number);
+    const checked = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: end }));
+    if (checked.number !== end || checked.hash !== endpoint.hash) throw new Error('Canonical endpoint changed while fetching logs.');
+    this.cursor = end + 1n; this.anchor = { number: end, hash: endpoint.hash };
     return out;
   }
 }
@@ -301,12 +405,12 @@ const BASELINE_TEMPLATE: Omit<RouteBaseline, 'computedAt'> = {
 export interface TestnetPayout {
   recipient: Hex;
   amount: bigint;
-  burned: bigint;
+  burned: bigint | null;
   score: number | null;
   verdict: string;
   reasons: string[];
   attestation: AttestationOutcome;
-  txs: { burn?: Hex; request: Hex; attest?: Hex; execute: Hex };
+  txs: { burn?: Hex; request: Hex; attest?: Hex; review: Hex; execute: Hex };
   executed: boolean;
   blockedBy?: string;
 }
@@ -329,6 +433,12 @@ export async function runTestnetDemo(
 ): Promise<TestnetStep[]> {
   const { TripwireGuardian: guardian, ProtectedVault: vault, MockSourceBridge: bridge, DrainProxy: drain } = d.contracts;
   const log = opts.log ?? (() => undefined);
+  // Old deployed vaults lack the execution gate. Fail before sending reset or payout transactions.
+  try {
+    await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'MAX_REVIEW_TTL' });
+  } catch {
+    throw new Error('This deployment has no release-review gate (or its RPC is unavailable). Deploy the current demo contracts before running it.');
+  }
 
   // Every run starts from a clean route. A tier set by an earlier run lasts
   // 24 hours, and the hour's outflow total carries over; the owner's resume
@@ -364,21 +474,22 @@ export async function runTestnetDemo(
     },
   };
 
+  const expectedDemoBurns = new Map<Hex, bigint>();
   const watcher = new Watcher({
     route: ROUTE_NAME,
     chain: 'ethereum',
     token: 'tdUSDC',
     decimals: 6,
     bridge: vault.address,
-    ingress: new ContractEventFeed<BurnEvent>(c, bridge.address, demo.MockSourceBridge.abi, 'Burned', from, (a, t) => ({
-      messageId: a.messageId as Hex,
-      amount: a.amount as bigint,
+    ingress: new ContractEventFeed<BurnEvent>(c, bridge.address, demo.MockSourceBridge.abi, 'Burned', from, (a, t) => burnEventSchema.parse({
+      messageId: a.messageId,
+      amount: a.amount,
       timestamp: t,
     })),
-    egress: new ContractEventFeed<ReleaseEvent>(c, vault.address, demo.ProtectedVault.abi, 'ReleaseRequested', from, (a, t) => ({
-      messageId: a.messageId as Hex,
-      recipient: a.to as Hex,
-      amount: a.amount as bigint,
+    egress: new ContractEventFeed<ReleaseEvent>(c, vault.address, demo.ProtectedVault.abi, 'ReleaseRequested', from, (a, t) => releaseEventSchema.parse({
+      messageId: a.messageId,
+      recipient: a.to,
+      amount: a.amount,
       timestamp: t,
     })),
     baseline: { ...BASELINE_TEMPLATE, computedAt: clock - 300 },
@@ -388,6 +499,14 @@ export async function runTestnetDemo(
     },
     contractFacts: opts.contractFacts,
     now: () => clock,
+    // The scripted source fixture, not an independent live-bridge proof.
+    verifySource: async (release, observed) => {
+      const expected = expectedDemoBurns.get(release.messageId);
+      if (expected === undefined) return { status: 'unavailable', reason: 'Message is outside this scripted demo.' };
+      if (expected === 0n) return { status: 'invalid', reason: 'Scripted unbacked release: no source transaction was created.' };
+      if (observed === null) return { status: 'pending', reason: 'RPC has not returned the confirmed demo source event yet.' };
+      return { status: 'verified', amount: observed };
+    },
   });
   const attestor = new Attestor(cfg.account, port, { now: () => clock });
 
@@ -399,6 +518,7 @@ export async function runTestnetDemo(
     const txs = new Map<Hex, { burn?: Hex; request: Hex }>();
     for (const p of step.payouts) {
       const messageId = keccak256(toHex(`tripwire-sepolia-${runId}-${++seq}`));
+      expectedDemoBurns.set(messageId, p.burned);
       let burn: Hex | undefined;
       if (p.burned > 0n) {
         burn = (await send(c, c.wallet.writeContract({ address: bridge.address, abi: demo.MockSourceBridge.abi, functionName: 'burn', args: [messageId, p.burned] }))).hash;
@@ -414,20 +534,38 @@ export async function runTestnetDemo(
     // 2. The watcher sees them, scores each before it executes; the attestor acts.
     // A load-balanced RPC can answer from a node a block behind the receipt,
     // so keep polling, up to 30 s, until the watcher has seen every release.
-    const observations: Awaited<ReturnType<Watcher['tick']>> = [];
-    for (let attempt = 0; observations.length < step.payouts.length && attempt < 10; attempt++) {
+    const seen = new Map<Hex, Awaited<ReturnType<Watcher['tick']>>[number]>();
+    for (let attempt = 0; seen.size < step.payouts.length && attempt < 10; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 3000));
       clock = Number((await c.pub.getBlock()).timestamp);
-      observations.push(...(await watcher.tick()));
+      for (const observation of await watcher.tick()) {
+        if (txs.has(observation.release.messageId) && observation.assessment.score !== null) seen.set(observation.release.messageId, observation);
+      }
     }
-    if (observations.length !== step.payouts.length) {
-      throw new Error(`The watcher saw ${observations.length} of ${step.payouts.length} releases after 30 s; the RPC is lagging. Rerun the demo.`);
+    if (seen.size !== step.payouts.length) {
+      throw new Error(`The watcher assessed ${seen.size} of ${step.payouts.length} releases after 30 s; pending releases remain gated. Check RPC/explorer availability.`);
     }
 
     const payouts: TestnetPayout[] = [];
-    for (const o of observations) {
+    for (const o of seen.values()) {
       clock = Number((await c.pub.getBlock()).timestamp);
       const attestation = await attestor.handle(ROUTE_ID, o.assessment);
+      if (attestation.action === 'rejected') throw new Error('Risk attestation failed; release remains pending.');
+      clock = Number((await c.pub.getBlock()).timestamp);
+      const releaseState = await c.pub.readContract({
+        address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'releases', args: [o.release.messageId],
+      }) as readonly [Hex, bigint, number, bigint, Hex, bigint, number];
+      const review: ReleaseReview = {
+        messageId: o.release.messageId, routeId: ROUTE_ID, token: d.contracts.DemoUSDC.address,
+        recipient: o.release.recipient, amount: o.release.amount, decision: releaseDecision(o), minimumTier: releaseMinimumTier(o),
+        validUntil: BigInt(clock + 300), nonce: releaseState[5] + 1n,
+      };
+      const signature = await signReleaseReview(cfg.account, vault.address, review, c.chainId);
+      const reviewed = await send(c, c.wallet.writeContract({
+        address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'reviewRelease',
+        args: [review.messageId, review.decision, review.minimumTier, review.validUntil, review.nonce, signature],
+      }));
+      if (!reviewed.ok) throw new Error(`Release review failed: ${txLink(reviewed.hash)}. Payout was not submitted.`);
 
       // 3. The vault pays out, through the guardian. A blocked payout is sent
       //    anyway, with a fixed gas limit, so the revert is on-chain for anyone to open.
@@ -450,6 +588,7 @@ export async function runTestnetDemo(
           ...(blockedBy ? { gas: 300_000n } : {}),
         })
       );
+      await watcher.acknowledge(o.release.messageId);
 
       const t = txs.get(o.release.messageId);
       payouts.push({
@@ -464,6 +603,7 @@ export async function runTestnetDemo(
           burn: t?.burn,
           request: t?.request ?? ('0x' as Hex),
           attest: attestation.action !== 'skipped' ? attestation.result.txHash : undefined,
+          review: reviewed.hash,
           execute: exec.hash,
         },
         executed: exec.ok,

@@ -89,6 +89,21 @@ export function proofPayoutMismatch(
   transfer: BridgeTransfer,
   config: ScorerConfig
 ): RiskSignal | null {
+  if (transfer.backing) {
+    const { burned, claimed, toleranceBps } = transfer.backing;
+    const gap = claimed > burned ? claimed - burned : burned - claimed;
+    const matches = burned > 0n && claimed > 0n && toleranceBps >= 0n && toleranceBps <= 10_000n &&
+      gap * 10_000n <= burned * toleranceBps;
+    return {
+      id: 'proof_payout_mismatch', score: matches ? 0 : 1, weight: 0.4,
+      deterministic: !matches,
+      reason: matches
+        ? 'Claimed payout matches the source amount in exact token base units.'
+        : burned <= 0n
+          ? 'Payout has no verified source-chain backing.'
+          : `Claimed payout ${claimed.toString()} base units does not match source backing ${burned.toString()} base units.`,
+    };
+  }
   const { provenBurnUsd, claimedPayoutUsd } = transfer;
   // Null is "this route exposes no proof to check" — nothing to say. Zero is
   // different: Tripwire looked for the source-chain burn and found none it
