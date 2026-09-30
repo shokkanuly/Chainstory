@@ -12,6 +12,7 @@ import { releaseDecision, releaseMinimumTier, signReleaseReview } from '../revie
 import { DurableSender, type TransactionPort } from '../sender.js';
 import { OperatorStore } from '../store.js';
 import { Watcher, type SourceEvidence } from '../watch.js';
+import { blockHeaderSchema, receiptFinality } from '../finality.js';
 import { ContractEventFeed, type Clients, type Deployment, type TestnetConfig } from './sepolia.js';
 import demo from './contracts.artifact.js';
 
@@ -35,14 +36,15 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
   }
   const store = new OperatorStore(stateFile, { route: d.route, chainId: c.chainId, sourceChainId: c.chainId,
     source: bridge.address, vault: vault.address, guardian: guardian.address, token: token.address,
-    sender: cfg.account.address, decimals: 6 });
+    sender: cfg.account.address, decimals: 6, finalityMode: 'finalized' });
   try {
     let clock = Number((await c.pub.getBlock()).timestamp);
     const transactionPort: TransactionPort = {
-      chainId: c.chainId, sender: cfg.account.address,
+      finalityMode: 'finalized', chainId: c.chainId, sender: cfg.account.address,
       prepare: async (request) => {
         const tx = await c.wallet.prepareTransactionRequest({ type: 'eip1559', account: cfg.account, to: request.to as Hex,
           data: request.data as Hex, value: BigInt(request.value) });
+        await watcher.assertCanonical();
         return c.wallet.signTransaction(tx);
       },
       broadcast: (raw) => c.pub.sendRawTransaction({ serializedTransaction: raw }),
@@ -51,6 +53,9 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
         catch (error) { if (error instanceof TransactionReceiptNotFoundError) return null; throw error; }
       },
       waitReceipt: (hash) => c.pub.waitForTransactionReceipt({ hash, timeout: 60_000 }),
+      finality: (receipt) => receiptFinality({ getBlock: (args) => c.pub.getBlock(args) }, receipt),
+      assertSafe: () => watcher.assertCanonical(),
+      onFinalityConflict: (error) => watcher.quarantineFinality(error),
     };
     const sender = new DurableSender(store, transactionPort);
     const guardianPort: GuardianPort = {
@@ -60,19 +65,22 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
       submitAttestation: async (a, signature) => {
         const result = await sender.send(`attestation/${a.nonce}`, { to: guardian.address,
           data: encodeFunctionData({ abi: guardianArtifact.abi, functionName: 'submitAttestation', args: [a.routeId, a.riskScore, a.validUntil, a.nonce, signature] }), value: '0' });
-        return { ok: result.status === 'confirmed', txHash: result.hash as Hex, gas: BigInt(result.gas ?? '0') };
+        return { ok: result.status === 'confirmed' || (result.status === 'included' && result.receiptStatus === 'success'),
+          txHash: result.hash as Hex, gas: BigInt(result.gas ?? '0') };
       },
     };
     const watcher = new Watcher({ route: d.route, chain: 'ethereum', token: 'tdUSDC', decimals: 6, bridge: vault.address, store,
       ingress: new ContractEventFeed(c, bridge.address, demo.MockSourceBridge.abi, 'Burned', from,
-        (a, t) => burnEventSchema.parse({ messageId: a.messageId, amount: a.amount, timestamp: t })),
+        (a, t) => burnEventSchema.parse({ messageId: a.messageId, amount: a.amount, timestamp: t }), { finality: 'finalized' }),
       egress: new ContractEventFeed(c, vault.address, demo.ProtectedVault.abi, 'ReleaseRequested', from,
-        (a, t) => releaseEventSchema.parse({ messageId: a.messageId, recipient: a.to, amount: a.amount, timestamp: t })),
+        (a, t) => releaseEventSchema.parse({ messageId: a.messageId, recipient: a.to, amount: a.amount, timestamp: t }), { finality: 'finalized' }),
       baseline: opts.baseline, verifySource: opts.verifySource, contractFacts: opts.contractFacts, now: () => clock,
       screening: { isFlagged: (a) => lookupFlaggedAddress(a) !== null,
         describe: (a) => lookupFlaggedAddress(a) ? `${FLAG_LIST_NAME}: ${lookupFlaggedAddress(a)?.name}` : undefined },
     });
-    const operator = new ReleaseOperator(watcher, sender, new Attestor(cfg.account, guardianPort, { now: () => clock }), {
+    const operator = new ReleaseOperator(watcher, sender, new Attestor(cfg.account, guardianPort, {
+      now: () => clock, beforeSign: () => watcher.assertCanonical(),
+    }), {
       read: async (messageId) => {
         const r = releaseTuple.parse(await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'releases', args: [messageId] }));
         return { recipient: r[0], amount: r[1], state: r[2], nonce: r[5] };
@@ -82,6 +90,7 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
         const review = { messageId: observation.release.messageId, routeId: d.routeId, token: token.address,
           recipient: observation.release.recipient, amount: observation.release.amount, decision: releaseDecision(observation),
           minimumTier: releaseMinimumTier(observation), validUntil: BigInt(now + 300), nonce };
+        await watcher.assertCanonical();
         const signature = await signReleaseReview(cfg.account, vault.address, review, c.chainId);
         return { to: vault.address, data: encodeFunctionData({ abi: demo.ProtectedVault.abi, functionName: 'reviewRelease',
           args: [review.messageId, review.decision, review.minimumTier, review.validUntil, review.nonce, signature] }), value: '0' };
@@ -91,6 +100,14 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
         catch { return false; } // Preserve the job for delayed/capped payouts or unavailable RPC.
       },
       execute: (messageId) => ({ to: vault.address, data: encodeFunctionData({ abi: demo.ProtectedVault.abi, functionName: 'executeRelease', args: [messageId] }), value: '0' }),
+      terminalFinalized: async (messageId, expected) => {
+        const head = blockHeaderSchema.parse(await c.pub.getBlock({ blockTag: 'finalized' }));
+        const r = releaseTuple.parse(await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi,
+          functionName: 'releases', args: [messageId], blockNumber: head.number }));
+        const checked = blockHeaderSchema.parse(await c.pub.getBlock({ blockNumber: head.number }));
+        if (checked.number !== head.number || checked.hash !== head.hash) throw new Error('Finalized terminal-state block changed while reading.');
+        return r[0].toLowerCase() === expected.recipient.toLowerCase() && r[1] === expected.amount && r[2] === expected.state;
+      },
     }, d.routeId);
     return { store, sender, watcher, tick: async () => {
       clock = Number((await c.pub.getBlock()).timestamp); return operator.tick();

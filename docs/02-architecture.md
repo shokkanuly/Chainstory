@@ -130,3 +130,11 @@ owns a deployment-bound state file; recovery reuses original signed transaction
 bytes and reconciles terminal vault states. HOLD/delay work remains queued.
 See the [operator runbook](plans/tripwire-operator.md) for scope, recovery and
 the outstanding finality/source-verification boundaries.
+
+
+ADR-016 adds hash-bound finalized RPC checkpoints and a signed/included/finalized
+transaction lifecycle. The operator checks anchors before recovery and publication;
+only finalized terminal vault state completes a job. An unfinalized receipt reorg
+reuses its original signed bytes, while a finalized-history conflict persists a
+quarantine. This is provider-trusting Ethereum/Sepolia policy, not a consensus
+light client or a substitute for independent bridge-message authentication.

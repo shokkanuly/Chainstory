@@ -17,6 +17,20 @@ const state: WatcherState = { ingressCursor: '100', egressCursor: '101', burns: 
 const snapshot = JSON.stringify(state, (_key, value: unknown) => typeof value === 'bigint' ? value.toString() : value);
 
 describe('operator process death', () => {
+  it('refuses a legacy v1 database without resetting or discarding its pending work', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tripwire-legacy-')); const path = join(dir, 'state.sqlite');
+    try {
+      const store = new OperatorStore(path, scope); store.saveWatcher(state); store.close();
+      const db = new DatabaseSync(path); const row = db.prepare('SELECT value FROM state WHERE key=?').get('metadata');
+      const metadata = JSON.parse(String(row?.value)); metadata.version = 1;
+      db.prepare('UPDATE state SET value=? WHERE key=?').run(JSON.stringify(metadata), 'metadata'); db.close();
+      expect(() => new OperatorStore(path, scope)).toThrow('schema version');
+      const preserved = new DatabaseSync(path);
+      try { expect(JSON.parse(String(preserved.prepare('SELECT value FROM state WHERE key=?').get('watcher')?.value)).pending).toHaveLength(1); }
+      finally { preserved.close(); }
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   for (const commit of [false, true]) it(`recovers ${commit ? 'committed' : 'uncommitted'} cursor + queue atomically after SIGKILL and releases the lease`, async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tripwire-kill-')); const path = join(dir, 'state.sqlite');
     const initial = new OperatorStore(path, scope); initial.close();

@@ -80,13 +80,19 @@ verification or continuous production operator is claimed here.
 | :--- | :--- | :--- |
 | Done locally | Durable event/cursor/pending state and signed transaction journal | Atomic snapshot + original-byte recovery, terminal receipt reconciliation and HOLD/delay retries; [runbook](tripwire-operator.md) |
 | P0 | Adapter for one selected bridge and one asset | Wrong chain/contract/token/recipient/amount and reused source messages are rejected; missing data is held |
-| P0 | Finality and reorg reconciliation | Reverted source evidence invalidates affected pending reviews; database state and cursors follow canonical block hashes |
+| Done for Ethereum/Sepolia RPC | Finalized observations, unfinalized receipt reorg recovery and durable quarantine | Hash-bound checkpoints/provenance; changed finalized history stops signing/recovery; real bridge consensus policy remains adapter work |
 | P1 | Continuous attestor with protection refresh | Persistent risk does not silently lose route protection at the 24-hour boundary; restart reconciles current on-chain state |
 | P1 | Guardian route isolation, rolling limits and per-request delay policy | Boundary bursts and cross-route callers are covered by adversarial tests; delayed requests have a documented retry/review policy |
 | P1 | Real route baselines and evidence versions | Reproducible historical scoring, cold-start/staleness policy and measured false holds/latency |
 | P1 | Separate owner/oracle roles and reliable transaction sender | Rotation, insufficient gas balance, nonce conflicts, dropped transactions and RPC outages are observable and recoverable |
 | P2 | Incident review dashboard | Operators see source evidence, data health, decision version, actual guardian state and confirmed review/payout receipts |
 | Pilot | Observe one real route before enforcing small limits | Honest traffic and attack/failure fixtures quantify detection, false holds and additional latency |
+
+Finality-aware operator behavior is documented in [the runbook](tripwire-operator.md)
+and ADR-016. Source/destination logs are finalized before ingestion; canonical
+inclusion keeps short-lived review transactions usable, while terminal release
+acknowledgement waits for finalized vault state. A finalized-history conflict
+quarantines the operator; it cannot recall existing on-chain authorizations.
 
 Operator persistence belongs outside the read-only browser app and existing
 stateless API proxies. Its design is recorded in ADR-015. Node

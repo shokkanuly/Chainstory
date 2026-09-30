@@ -5,6 +5,7 @@ import { scoreTransfer, DEFAULT_CONFIG, type ScreeningSource } from '../../src/t
 import type { BridgeTransfer, ChainId, ContractRiskSummary, RiskAssessment, RouteBaseline } from '../../src/tripwire/types.js';
 import { burnEventSchema, releaseEventSchema, type BurnEvent, type LogFeed, type ReleaseEvent } from './events.js';
 import type { OperatorStore, WatcherState } from './store.js';
+import { FinalityConflictError } from './finality.js';
 
 export interface WatcherConfig {
   route: string;
@@ -51,6 +52,9 @@ export class Watcher {
   private conflictingBurns = new Set<Hex>();
   private conflictingReleases = new Set<Hex>();
   private lock: Promise<unknown> = Promise.resolve();
+  private quarantine: string | null = null;
+
+  get quarantineReason(): string | null { return this.quarantine; }
 
   constructor(private cfg: WatcherConfig) {
     if (cfg.store) {
@@ -58,6 +62,9 @@ export class Watcher {
         throw new Error('Durable watcher requires checkpointable feeds.');
       }
       const scope = cfg.store.scope;
+      if (scope.finalityMode === 'finalized' && (!cfg.ingress.assertCanonical || !cfg.egress.assertCanonical)) {
+        throw new Error('Finalized watcher requires canonical anchor checks on both feeds.');
+      }
       if (scope.route !== cfg.route || scope.vault !== cfg.bridge.toLowerCase() || scope.decimals !== cfg.decimals) {
         throw new Error('Watcher deployment scope does not match its store.');
       }
@@ -72,9 +79,30 @@ export class Watcher {
     return run;
   }
 
+  assertCanonical(): Promise<void> {
+    const run = this.lock.then(async () => {
+      if (this.quarantine) throw new FinalityConflictError(`Operator is quarantined: ${this.quarantine}`);
+      try { await this.cfg.ingress.assertCanonical?.(); await this.cfg.egress.assertCanonical?.(); }
+      catch (error) { if (error instanceof FinalityConflictError) this.enterQuarantine(error); throw error; }
+    });
+    this.lock = run.catch(() => undefined); return run;
+  }
+
+  quarantineFinality(error: FinalityConflictError): Promise<void> {
+    const run = this.lock.then(() => this.enterQuarantine(error));
+    this.lock = run.catch(() => undefined); return run;
+  }
+
+  private enterQuarantine(error: FinalityConflictError): void {
+    this.quarantine = error.message.slice(0, 2048);
+    this.burns.clear(); this.conflictingBurns.clear(); this.recent = []; this.history.clear();
+    this.persist();
+  }
+
   /** Acknowledge only a confirmed execution or terminal rejection; HOLD/delay stay pending. */
   acknowledge(messageId: Hex): Promise<void> {
     const run = this.lock.then(() => {
+      if (this.quarantine) throw new FinalityConflictError('Cannot acknowledge work while the operator is quarantined.');
       const previous = this.snapshot();
       this.pending.delete(messageId);
       this.completed.add(messageId);
@@ -86,30 +114,37 @@ export class Watcher {
 
   private async poll(): Promise<Observation[]> {
     const before = this.snapshot();
-    try {
-      for (const raw of await this.cfg.ingress.poll()) {
-        const burn = burnEventSchema.parse(raw);
-        const previous = this.burns.get(burn.messageId);
-        if (previous !== undefined && previous.amount !== burn.amount) this.conflictingBurns.add(burn.messageId);
-        // One message has one source amount. Replayed notifications cannot multiply its backing.
-        this.burns.set(burn.messageId, burn);
+    if (!this.quarantine) {
+      try {
+        for (const raw of await this.cfg.ingress.poll()) {
+          const burn = burnEventSchema.parse(raw);
+          const previous = this.burns.get(burn.messageId);
+          if (previous !== undefined && previous.amount !== burn.amount) this.conflictingBurns.add(burn.messageId);
+          // One message has one source amount. Replayed notifications cannot multiply its backing.
+          this.burns.set(burn.messageId, burn);
+        }
+        for (const raw of await this.cfg.egress.poll()) {
+          const release = releaseEventSchema.parse(raw);
+          const previous = this.pending.get(release.messageId);
+          if (previous && (previous.amount !== release.amount || previous.recipient !== release.recipient)) this.conflictingReleases.add(release.messageId);
+          if (this.completed.has(release.messageId) || this.pending.has(release.messageId)) continue;
+          this.pending.set(release.messageId, release);
+        }
+        this.persist();
+      } catch (error) {
+        this.restore(before);
+        if (error instanceof FinalityConflictError) this.enterQuarantine(error); else throw error;
       }
-      for (const raw of await this.cfg.egress.poll()) {
-        const release = releaseEventSchema.parse(raw);
-        const previous = this.pending.get(release.messageId);
-        if (previous && (previous.amount !== release.amount || previous.recipient !== release.recipient)) this.conflictingReleases.add(release.messageId);
-        if (this.completed.has(release.messageId) || this.pending.has(release.messageId)) continue;
-        this.pending.set(release.messageId, release);
-      }
-      this.persist();
-    } catch (error) { this.restore(before); throw error; }
+    }
 
     const out: Observation[] = [];
     for (const release of this.pending.values()) {
       const observedBurn = this.burns.get(release.messageId)?.amount ?? null;
       let source: SourceEvidence;
       try {
-        source = sourceEvidenceSchema.parse(this.conflictingBurns.has(release.messageId) || this.conflictingReleases.has(release.messageId)
+        source = sourceEvidenceSchema.parse(this.quarantine
+          ? { status: 'unavailable', reason: `Finality quarantine: ${this.quarantine}`.slice(0, 1024) }
+          : this.conflictingBurns.has(release.messageId) || this.conflictingReleases.has(release.messageId)
           ? { status: 'unavailable', reason: 'Observed message fields conflict; independent reconciliation is required.' }
           : this.cfg.verifySource
             ? await this.cfg.verifySource(release, observedBurn)
@@ -132,7 +167,7 @@ export class Watcher {
       let lookupUnavailable = false;
       let targetContract: ContractRiskSummary | undefined;
       try {
-        targetContract = (await this.cfg.contractFacts?.(release.recipient)) ?? undefined;
+        targetContract = this.quarantine ? undefined : (await this.cfg.contractFacts?.(release.recipient)) ?? undefined;
       } catch {
         lookupUnavailable = true;
       }
@@ -149,7 +184,7 @@ export class Watcher {
             ? source.reason : 'Recipient lookup unavailable; retry required.',
         };
       }
-      if (!this.recent.some((t) => t.hash === transfer.hash)) this.remember(transfer, release);
+      if (!this.quarantine && !this.recent.some((t) => t.hash === transfer.hash)) this.remember(transfer, release);
       out.push({ release, burned, source, assessment });
     }
     this.persist();
@@ -162,10 +197,12 @@ export class Watcher {
       burns: [...this.burns.values()], pending: [...this.pending.values()], completed: [...this.completed],
       conflictingBurns: [...this.conflictingBurns], conflictingReleases: [...this.conflictingReleases],
       history: [...this.history.values()],
+      quarantine: this.quarantine ?? undefined,
     };
   }
 
   private restore(state: WatcherState): void {
+    this.quarantine = state.quarantine ?? null;
     this.cfg.ingress.restore?.(state.ingressCursor); this.cfg.egress.restore?.(state.egressCursor);
     this.burns = new Map(state.burns.map((b) => [b.messageId, b]));
     this.pending = new Map(state.pending.map((r) => [r.messageId, r]));

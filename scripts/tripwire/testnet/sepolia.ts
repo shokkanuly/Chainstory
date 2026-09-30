@@ -36,6 +36,8 @@ import { ATTACK_STEPS, DRAIN_CONTRACT, USDC } from '../attack.js';
 import { Attestor, type AttestationOutcome, type GuardianPort } from '../attest.js';
 import { burnEventSchema, releaseEventSchema, type BurnEvent, type LogFeed, type ReleaseEvent } from '../events.js';
 import { Watcher } from '../watch.js';
+import { z } from 'zod';
+import { blockHeaderSchema, blockHashSchema, finalizedCheckpointSchema, FinalityConflictError } from '../finality.js';
 import { releaseDecision, releaseMinimumTier, signReleaseReview, type ReleaseReview } from '../review.js';
 import demo from './contracts.artifact.js';
 
@@ -241,27 +243,43 @@ export function readDeployment(cfg: TestnetConfig): Deployment {
 export class ContractEventFeed<E> implements LogFeed<E> {
   private cursor: bigint;
   private times = new Map<bigint, number>();
+  private anchor: { number: bigint; hash: Hex } | null = null;
 
   constructor(
     private c: Clients,
     private address: Hex,
     private abi: Abi,
     private eventName: string,
-    from: bigint,
-    private map: (args: Record<string, unknown>, timestamp: number) => E
+    private from: bigint,
+    private map: (args: Record<string, unknown>, timestamp: number) => E,
+    private opts: { finality?: 'finalized' } = {}
   ) {
     this.cursor = from;
   }
 
-  checkpoint(): string { return this.cursor.toString(); }
+  checkpoint(): string {
+    if (!this.opts.finality) return this.cursor.toString();
+    return JSON.stringify({ version: 1, policy: 'finalized', chainId: this.c.chainId,
+      address: this.address.toLowerCase(), event: this.eventName, from: this.from.toString(), next: this.cursor.toString(),
+      anchor: this.anchor ? { number: this.anchor.number.toString(), hash: this.anchor.hash } : null });
+  }
 
   restore(cursor: string): void {
+    if (this.opts.finality) {
+      const c = finalizedCheckpointSchema.parse(JSON.parse(cursor));
+      if (c.chainId !== this.c.chainId || c.address !== this.address.toLowerCase() || c.event !== this.eventName || c.from !== this.from.toString()) {
+        throw new Error('Finalized checkpoint does not match this feed.');
+      }
+      this.cursor = BigInt(c.next); this.anchor = c.anchor ? { number: BigInt(c.anchor.number), hash: c.anchor.hash } : null;
+      this.times.clear(); return;
+    }
     if (!/^(0|[1-9][0-9]*)$/.test(cursor)) throw new Error('Invalid block checkpoint.');
     this.cursor = BigInt(cursor);
     this.times.clear();
   }
 
   async poll(): Promise<E[]> {
+    if (this.opts.finality) return this.pollFinalized();
     // Uncached: viem otherwise serves a block number up to 4 s old, and the
     // logs of the transactions just confirmed would fall outside the range.
     const head = await this.c.pub.getBlockNumber({ cacheTime: 0 });
@@ -284,6 +302,79 @@ export class ContractEventFeed<E> implements LogFeed<E> {
     // the next poll must retry this range rather than silently losing its logs.
     this.cursor = latest + 1n;
     this.times.clear();
+    return out;
+  }
+
+  async assertCanonical(): Promise<void> {
+    if (!this.opts.finality) return; // Instant mode is only for the scripted demo.
+    const head = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: 'finalized' }));
+    await this.checkAnchor(head.number);
+  }
+
+  private async checkAnchor(finalizedNumber: bigint): Promise<void> {
+    if (!this.anchor) return;
+    if (finalizedNumber < this.anchor.number) throw new Error('Finalized RPC is behind the committed checkpoint; retry another healthy endpoint.');
+    const block = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: this.anchor.number }));
+    if (block.number !== this.anchor.number) throw new Error('RPC returned the wrong checkpoint block.');
+    if (block.hash !== this.anchor.hash) throw new FinalityConflictError('A committed finalized block changed; operator reconciliation is required.');
+  }
+
+  private async pollFinalized(): Promise<E[]> {
+    const head = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: 'finalized' }));
+    await this.checkAnchor(head.number);
+    if (head.number < this.cursor) return [];
+    // Hash-link every header so a load-balanced RPC cannot mix log blocks
+    // from one fork with an endpoint from another. Bound this work to 64 blocks.
+    const end = head.number < this.cursor + 63n ? head.number : this.cursor + 63n;
+    const endpoint = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: end }));
+    if (endpoint.number !== end || (end === head.number && endpoint.hash !== head.hash)) throw new Error('RPC finalized endpoint is inconsistent.');
+    const headers = new Map<bigint, z.infer<typeof blockHeaderSchema>>();
+    let previousHash = this.anchor?.hash;
+    if (!previousHash && this.cursor > 0n) {
+      const parent = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: this.cursor - 1n }));
+      if (parent.number !== this.cursor - 1n) throw new Error('RPC returned the wrong range parent.');
+      previousHash = parent.hash;
+    }
+    for (let start = this.cursor; start <= end; start += 8n) {
+      const numbers = Array.from({ length: Number((end - start + 1n) < 8n ? end - start + 1n : 8n) }, (_, i) => start + BigInt(i));
+      const batch = await Promise.all(numbers.map(async (number) => {
+        const header = number === end ? endpoint : blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: number }));
+        if (header.number !== number) throw new Error('RPC returned the wrong range block.');
+        return header;
+      }));
+      for (const header of batch) {
+        if (previousHash && header.parentHash !== previousHash) throw new Error('RPC range headers are not one canonical chain.');
+        headers.set(header.number, header); previousHash = header.hash;
+      }
+    }
+    const logSchema = z.object({
+      address: z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((a) => a.toLowerCase()),
+      blockNumber: z.bigint().min(this.cursor).max(end), blockHash: blockHashSchema, transactionHash: blockHashSchema,
+      logIndex: z.number().int().nonnegative(), removed: z.literal(false), args: z.record(z.string(), z.unknown()),
+    });
+    const logs = z.array(logSchema).parse(await this.c.pub.getContractEvents({ address: this.address, abi: this.abi,
+      eventName: this.eventName, fromBlock: this.cursor, toBlock: end, strict: true }));
+    logs.sort((a, b) => a.blockNumber === b.blockNumber ? a.logIndex - b.logIndex : a.blockNumber < b.blockNumber ? -1 : 1);
+    const identities = new Set<string>(); const out: E[] = [];
+    for (const log of logs) {
+      const identity = `${log.blockHash}/${log.logIndex}`;
+      if (log.address !== this.address.toLowerCase() || identities.has(identity)) throw new Error('Unexpected contract or duplicate log identity.');
+      identities.add(identity);
+      const header = headers.get(log.blockNumber);
+      if (!header) throw new Error('Log has no validated range header.');
+      if (header.number !== log.blockNumber || header.hash !== log.blockHash) throw new Error('Log block hash does not match the canonical block.');
+      headers.set(log.blockNumber, header);
+      const mapped = this.map(log.args, Number(header.timestamp));
+      if (!mapped || typeof mapped !== 'object') throw new Error('Finalized feed requires an event object.');
+      out.push({ ...mapped, origin: { chainId: this.c.chainId, address: this.address.toLowerCase() as Hex,
+        blockNumber: log.blockNumber, blockHash: log.blockHash, transactionHash: log.transactionHash, logIndex: log.logIndex } });
+    }
+    const final = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: 'finalized' }));
+    if (final.number < end) throw new Error('Finalized RPC moved behind the queried range.');
+    await this.checkAnchor(final.number);
+    const checked = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: end }));
+    if (checked.number !== end || checked.hash !== endpoint.hash) throw new Error('Canonical endpoint changed while fetching logs.');
+    this.cursor = end + 1n; this.anchor = { number: end, hash: endpoint.hash };
     return out;
   }
 }
