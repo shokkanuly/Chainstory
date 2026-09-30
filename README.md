@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Solidity-0.8.37-363636?logo=solidity&logoColor=white" alt="Solidity" />
   <img src="https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/viem-2.56-FFC517" alt="viem" />
-  <img src="https://img.shields.io/badge/tests-303_passing-brightgreen" alt="303 tests passing" />
+  <img src="https://img.shields.io/badge/tests-345_passing-brightgreen" alt="345 tests passing" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
 </p>
 
@@ -43,6 +43,13 @@ Retold's contract checks to do it. The rest of this README is about Tripwire;
 Retold's full documentation is in [docs/chainstory.md](docs/chainstory.md).
 
 ## Tripwire
+
+**Release hardening (local, 2026-09-30):** the latest `ProtectedVault` requires a
+fresh signed review for each payout. Pending, unavailable and held requests cannot
+execute; invalid requests remain rejected after route protection expires. The local
+demo now runs the actual gated vault as well as the guardian. See the
+[hardening plan](docs/plans/tripwire-hardening.md) for the trust boundary and remaining
+work: durable state, an independent real-bridge adapter and finality/reorg handling.
 
 On 18 April 2026, $292M left Kelp DAO's bridge. Not over hours — in **a single
 release**. Verus lost $11.58M the same way in May, Syscoin ~$10M in June.
@@ -73,6 +80,11 @@ a breaker acts before execution or it does not act at all.
 **[Watch it happen →](https://chainstory-iota.vercel.app/tripwire?incident=kelp)**
 
 ## Live on Sepolia
+
+The addresses and results below record the **previous deployment**. Its vault has
+no per-release review gate. No redeployment has been performed for the hardening
+change; the current Sepolia demo scripts detect the old vault and stop before
+sending transactions. A fresh deployment is required to run the current loop.
 
 The same loop runs on a public testnet: a scripted attack, a watcher that scores
 each payout before it executes, a signed attestation, and the guardian's tier
@@ -183,9 +195,12 @@ against **no verifiable burn at all**.
 | Oracle and contract agree at every tier boundary (64/65, 84/85, 94/95) | 12 cross-layer tests |
 | Incident replays, end to end | 41 tests |
 | Watch → attest → guardian loop, tier asserted after each step | 6 tests |
+| Signed release gate: field/domain binding, replay/order, expiry, key rotation, terminal rejection, required protection | 23 tests |
+| Watcher retry, missing/conflicting source data, deduplication and acknowledgement | 11 tests |
+| RPC/decode cursor recovery and old-deployment refusal | 3 tests |
 | Check before you sign, incl. "nothing reachable from /check can sign" | 40 tests |
 | Gas: check an outflow · accept an attestation | 36.7k · 84.5k |
-| Total | **303 tests passing** |
+| Total | **345 tests passing** |
 
 The dashboard runs the exact contract bytecode the tests run, and a test fails
 if they ever differ.
@@ -197,7 +212,7 @@ git clone https://github.com/shokkanuly/Chainstory.git
 cd Chainstory
 npm install
 npm run dev                    # Retold at /app and /check, Tripwire at /tripwire
-npm test                       # 303 tests
+npm test                       # 345 tests
 npm run tripwire:demo:local    # the four-step attack, in a local EVM
 ```
 

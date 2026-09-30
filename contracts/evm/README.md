@@ -37,6 +37,30 @@ Each is enforced by the contract and broken deliberately by a test.
 
 ## Verification
 
+### Release-gated demo vault
+
+`TripwireDemo.sol` now adds an independent execution gate to `ProtectedVault`.
+Requests begin PENDING. An oracle-signed review can ALLOW, HOLD or terminally
+REJECT a request; only a fresh ALLOW can execute. EIP-712 binds the message,
+route, token, recipient, bigint amount, decision, required minimum guardian tier,
+expiry and monotonically increasing per-message nonce to this vault and chain.
+Older ALLOW reviews cannot overwrite newer HOLD reviews. A rotated oracle
+invalidates existing execution allowances. The required tier must still be active
+when execution runs, and SafeERC20 failures roll back the payout.
+
+The guardian's tighten-only properties below apply to **route attestations**.
+The release reviewer additionally permits already requested payouts. A production
+bridge must independently authenticate messages and source backing; a review is
+not that proof. The mock source still emits synthetic burns without burning tokens.
+
+The local demo executes these contracts in the EVM. The older Sepolia vault has
+no gate and must be redeployed before running the latest testnet scripts. The
+browser incident replay executes the guardian, not the gated vault.
+
+`test/releaseSafety.evm.test.ts` covers 23 execution/signature regressions.
+`npm run test:mutants` also breaks seven review properties deliberately, separately
+from the 14 guardian tier mutants. See [the active plan](../../docs/plans/tripwire-hardening.md).
+
 | Check | Result |
 | :--- | :--- |
 | Compiles, solc 0.8.37 | Clean — 0 warnings in our code (5 inside vendored OpenZeppelin) |

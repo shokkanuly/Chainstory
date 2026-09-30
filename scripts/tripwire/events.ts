@@ -8,6 +8,18 @@
 // it is eth_getLogs with a block cursor. The watcher cannot tell the two apart.
 
 import type { Hex } from 'viem';
+import { z } from 'zod';
+
+const messageIdSchema = z.string().regex(/^0x[0-9a-fA-F]{64}$/).transform((v) => v.toLowerCase() as Hex);
+const addressSchema = z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((v) => v.toLowerCase() as Hex);
+const timestampSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+
+export const burnEventSchema = z.object({
+  messageId: messageIdSchema, amount: z.bigint().positive(), timestamp: timestampSchema,
+});
+export const releaseEventSchema = z.object({
+  messageId: messageIdSchema, recipient: addressSchema, amount: z.bigint().positive(), timestamp: timestampSchema,
+});
 
 /** Source chain: tokens burned (or locked) to bridge out. */
 export interface BurnEvent {

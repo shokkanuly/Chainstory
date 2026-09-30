@@ -34,8 +34,9 @@ import type { ContractRiskSummary, RouteBaseline } from '../../../src/tripwire/t
 import { FLAG_LIST_NAME, lookupFlaggedAddress } from '../../../src/services/preventiveScamScanner.js';
 import { ATTACK_STEPS, DRAIN_CONTRACT, USDC } from '../attack.js';
 import { Attestor, type AttestationOutcome, type GuardianPort } from '../attest.js';
-import type { BurnEvent, LogFeed, ReleaseEvent } from '../events.js';
+import { burnEventSchema, releaseEventSchema, type BurnEvent, type LogFeed, type ReleaseEvent } from '../events.js';
 import { Watcher } from '../watch.js';
+import { releaseDecision, releaseMinimumTier, signReleaseReview, type ReleaseReview } from '../review.js';
 import demo from './contracts.artifact.js';
 
 export const ROOT = resolve(import.meta.dirname, '../../..');
@@ -237,7 +238,7 @@ export function readDeployment(cfg: TestnetConfig): Deployment {
 // --- the demo -------------------------------------------------------------------
 
 /** eth_getLogs with a block cursor: the testnet counterpart of MemoryFeed. */
-class ContractEventFeed<E> implements LogFeed<E> {
+export class ContractEventFeed<E> implements LogFeed<E> {
   private cursor: bigint;
   private times = new Map<bigint, number>();
 
@@ -264,13 +265,15 @@ class ContractEventFeed<E> implements LogFeed<E> {
       fromBlock: this.cursor,
       toBlock: latest,
     });
-    this.cursor = latest + 1n;
     const out: E[] = [];
     for (const l of logs) {
       const bn = l.blockNumber ?? latest;
       if (!this.times.has(bn)) this.times.set(bn, Number((await this.c.pub.getBlock({ blockNumber: bn })).timestamp));
       out.push(this.map((l as unknown as { args: Record<string, unknown> }).args, this.times.get(bn) ?? 0));
     }
+    // Commit only after every RPC lookup and decode has succeeded. Otherwise
+    // the next poll must retry this range rather than silently losing its logs.
+    this.cursor = latest + 1n;
     return out;
   }
 }
@@ -301,12 +304,12 @@ const BASELINE_TEMPLATE: Omit<RouteBaseline, 'computedAt'> = {
 export interface TestnetPayout {
   recipient: Hex;
   amount: bigint;
-  burned: bigint;
+  burned: bigint | null;
   score: number | null;
   verdict: string;
   reasons: string[];
   attestation: AttestationOutcome;
-  txs: { burn?: Hex; request: Hex; attest?: Hex; execute: Hex };
+  txs: { burn?: Hex; request: Hex; attest?: Hex; review: Hex; execute: Hex };
   executed: boolean;
   blockedBy?: string;
 }
@@ -329,6 +332,12 @@ export async function runTestnetDemo(
 ): Promise<TestnetStep[]> {
   const { TripwireGuardian: guardian, ProtectedVault: vault, MockSourceBridge: bridge, DrainProxy: drain } = d.contracts;
   const log = opts.log ?? (() => undefined);
+  // Old deployed vaults lack the execution gate. Fail before sending reset or payout transactions.
+  try {
+    await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'MAX_REVIEW_TTL' });
+  } catch {
+    throw new Error('This deployment has no release-review gate (or its RPC is unavailable). Deploy the current demo contracts before running it.');
+  }
 
   // Every run starts from a clean route. A tier set by an earlier run lasts
   // 24 hours, and the hour's outflow total carries over; the owner's resume
@@ -364,21 +373,22 @@ export async function runTestnetDemo(
     },
   };
 
+  const expectedDemoBurns = new Map<Hex, bigint>();
   const watcher = new Watcher({
     route: ROUTE_NAME,
     chain: 'ethereum',
     token: 'tdUSDC',
     decimals: 6,
     bridge: vault.address,
-    ingress: new ContractEventFeed<BurnEvent>(c, bridge.address, demo.MockSourceBridge.abi, 'Burned', from, (a, t) => ({
-      messageId: a.messageId as Hex,
-      amount: a.amount as bigint,
+    ingress: new ContractEventFeed<BurnEvent>(c, bridge.address, demo.MockSourceBridge.abi, 'Burned', from, (a, t) => burnEventSchema.parse({
+      messageId: a.messageId,
+      amount: a.amount,
       timestamp: t,
     })),
-    egress: new ContractEventFeed<ReleaseEvent>(c, vault.address, demo.ProtectedVault.abi, 'ReleaseRequested', from, (a, t) => ({
-      messageId: a.messageId as Hex,
-      recipient: a.to as Hex,
-      amount: a.amount as bigint,
+    egress: new ContractEventFeed<ReleaseEvent>(c, vault.address, demo.ProtectedVault.abi, 'ReleaseRequested', from, (a, t) => releaseEventSchema.parse({
+      messageId: a.messageId,
+      recipient: a.to,
+      amount: a.amount,
       timestamp: t,
     })),
     baseline: { ...BASELINE_TEMPLATE, computedAt: clock - 300 },
@@ -388,6 +398,14 @@ export async function runTestnetDemo(
     },
     contractFacts: opts.contractFacts,
     now: () => clock,
+    // The scripted source fixture, not an independent live-bridge proof.
+    verifySource: async (release, observed) => {
+      const expected = expectedDemoBurns.get(release.messageId);
+      if (expected === undefined) return { status: 'unavailable', reason: 'Message is outside this scripted demo.' };
+      if (expected === 0n) return { status: 'invalid', reason: 'Scripted unbacked release: no source transaction was created.' };
+      if (observed === null) return { status: 'pending', reason: 'RPC has not returned the confirmed demo source event yet.' };
+      return { status: 'verified', amount: observed };
+    },
   });
   const attestor = new Attestor(cfg.account, port, { now: () => clock });
 
@@ -399,6 +417,7 @@ export async function runTestnetDemo(
     const txs = new Map<Hex, { burn?: Hex; request: Hex }>();
     for (const p of step.payouts) {
       const messageId = keccak256(toHex(`tripwire-sepolia-${runId}-${++seq}`));
+      expectedDemoBurns.set(messageId, p.burned);
       let burn: Hex | undefined;
       if (p.burned > 0n) {
         burn = (await send(c, c.wallet.writeContract({ address: bridge.address, abi: demo.MockSourceBridge.abi, functionName: 'burn', args: [messageId, p.burned] }))).hash;
@@ -414,20 +433,38 @@ export async function runTestnetDemo(
     // 2. The watcher sees them, scores each before it executes; the attestor acts.
     // A load-balanced RPC can answer from a node a block behind the receipt,
     // so keep polling, up to 30 s, until the watcher has seen every release.
-    const observations: Awaited<ReturnType<Watcher['tick']>> = [];
-    for (let attempt = 0; observations.length < step.payouts.length && attempt < 10; attempt++) {
+    const seen = new Map<Hex, Awaited<ReturnType<Watcher['tick']>>[number]>();
+    for (let attempt = 0; seen.size < step.payouts.length && attempt < 10; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 3000));
       clock = Number((await c.pub.getBlock()).timestamp);
-      observations.push(...(await watcher.tick()));
+      for (const observation of await watcher.tick()) {
+        if (txs.has(observation.release.messageId) && observation.assessment.score !== null) seen.set(observation.release.messageId, observation);
+      }
     }
-    if (observations.length !== step.payouts.length) {
-      throw new Error(`The watcher saw ${observations.length} of ${step.payouts.length} releases after 30 s; the RPC is lagging. Rerun the demo.`);
+    if (seen.size !== step.payouts.length) {
+      throw new Error(`The watcher assessed ${seen.size} of ${step.payouts.length} releases after 30 s; pending releases remain gated. Check RPC/explorer availability.`);
     }
 
     const payouts: TestnetPayout[] = [];
-    for (const o of observations) {
+    for (const o of seen.values()) {
       clock = Number((await c.pub.getBlock()).timestamp);
       const attestation = await attestor.handle(ROUTE_ID, o.assessment);
+      if (attestation.action === 'rejected') throw new Error('Risk attestation failed; release remains pending.');
+      clock = Number((await c.pub.getBlock()).timestamp);
+      const releaseState = await c.pub.readContract({
+        address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'releases', args: [o.release.messageId],
+      }) as readonly [Hex, bigint, number, bigint, Hex, bigint, number];
+      const review: ReleaseReview = {
+        messageId: o.release.messageId, routeId: ROUTE_ID, token: d.contracts.DemoUSDC.address,
+        recipient: o.release.recipient, amount: o.release.amount, decision: releaseDecision(o), minimumTier: releaseMinimumTier(o),
+        validUntil: BigInt(clock + 300), nonce: releaseState[5] + 1n,
+      };
+      const signature = await signReleaseReview(cfg.account, vault.address, review, c.chainId);
+      const reviewed = await send(c, c.wallet.writeContract({
+        address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'reviewRelease',
+        args: [review.messageId, review.decision, review.minimumTier, review.validUntil, review.nonce, signature],
+      }));
+      if (!reviewed.ok) throw new Error(`Release review failed: ${txLink(reviewed.hash)}. Payout was not submitted.`);
 
       // 3. The vault pays out, through the guardian. A blocked payout is sent
       //    anyway, with a fixed gas limit, so the revert is on-chain for anyone to open.
@@ -450,6 +487,7 @@ export async function runTestnetDemo(
           ...(blockedBy ? { gas: 300_000n } : {}),
         })
       );
+      watcher.acknowledge(o.release.messageId);
 
       const t = txs.get(o.release.messageId);
       payouts.push({
@@ -464,6 +502,7 @@ export async function runTestnetDemo(
           burn: t?.burn,
           request: t?.request ?? ('0x' as Hex),
           attest: attestation.action !== 'skipped' ? attestation.result.txHash : undefined,
+          review: reviewed.hash,
           execute: exec.hash,
         },
         executed: exec.ok,

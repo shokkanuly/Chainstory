@@ -16,6 +16,8 @@ import { ATTACK_STEPS, DRAIN_CONTRACT, DRAIN_CONTRACT_FACTS, USDC, playStep } fr
 import { Attestor, type AttestationOutcome, type GuardianPort } from './attest.js';
 import { MemoryFeed, type BurnEvent, type ReleaseEvent } from './events.js';
 import { Watcher, type Observation } from './watch.js';
+import demo from './testnet/contracts.artifact.js';
+import { ReleaseDecision, releaseDecision, releaseMinimumTier, signReleaseReview, type ReleaseReview } from './review.js';
 
 export const ROUTE_NAME = 'sepolia:base-sepolia:USDC';
 export const ROUTE_ID = keccak256(toHex(ROUTE_NAME));
@@ -42,6 +44,7 @@ const BASELINE: RouteBaseline = {
 
 export interface PayoutResult extends Observation {
   attestation: AttestationOutcome;
+  review: CallResult;
   /** The vault paying the release out, after the attestor has acted. */
   outflow: CallResult;
 }
@@ -54,8 +57,11 @@ export interface StepResult {
 
 export async function runLocalLoop(onStep?: (step: StepResult) => void): Promise<StepResult[]> {
   const guardian = await GuardianVM.deploy(artifact, { start: START, oracle: actors.oracle.address });
+  const token = await guardian.deployContract(demo.DemoUSDC, [actors.owner.address]);
+  const vault = await guardian.deployContract(demo.ProtectedVault, [actors.owner.address, token.address, guardian.address, ROUTE_ID]);
   await guardian.send(actors.owner, 'configureRoute', [ROUTE_ID, CAP, WINDOW]);
-  await guardian.send(actors.owner, 'setProtected', [actors.bridge.address, true]);
+  await guardian.send(actors.owner, 'setProtected', [vault.address, true]);
+  await guardian.sendContract(token, actors.owner, 'mint', [vault.address, 20_000_000n * USDC]);
 
   const port: GuardianPort = {
     address: guardian.address,
@@ -74,7 +80,7 @@ export async function runLocalLoop(onStep?: (step: StepResult) => void): Promise
     chain: 'base',
     token: 'USDC',
     decimals: 6,
-    bridge: actors.bridge.address,
+    bridge: vault.address,
     ingress,
     egress,
     baseline: BASELINE,
@@ -84,6 +90,11 @@ export async function runLocalLoop(onStep?: (step: StepResult) => void): Promise
     },
     contractFacts: async (a) => (a.toLowerCase() === DRAIN_CONTRACT ? DRAIN_CONTRACT_FACTS : null),
     now,
+    // Only this closed synthetic fixture can establish absence immediately.
+    // A live bridge adapter must verify completeness and source-chain finality.
+    verifySource: async (_release, burned) => burned === null
+      ? { status: 'invalid', reason: 'The complete synthetic source fixture contains no burn for this message.' }
+      : { status: 'verified', amount: burned },
   });
   let nonce = 0n;
   const attestor = new Attestor(actors.oracle, port, { now, nextNonce: () => ++nonce });
@@ -91,13 +102,28 @@ export async function runLocalLoop(onStep?: (step: StepResult) => void): Promise
   const results: StepResult[] = [];
   for (const [i, step] of ATTACK_STEPS.entries()) {
     if (i > 0) guardian.warp(STEP_SECONDS);
-    playStep(step, now(), { ingress, egress });
+    for (const release of playStep(step, now(), { ingress, egress })) {
+      const requested = await guardian.sendContract(vault, actors.owner, 'requestRelease', [release.messageId, release.recipient, release.amount]);
+      if (!requested.ok) throw new Error(`Local release request failed: ${requested.error}`);
+    }
 
     const payouts: PayoutResult[] = [];
     for (const observation of await watcher.tick()) {
       const attestation = await attestor.handle(ROUTE_ID, observation.assessment);
-      const outflow = await guardian.send(actors.bridge, 'onTokenOutflow', [ROUTE_ID, observation.release.amount]);
-      payouts.push({ ...observation, attestation, outflow });
+      if (attestation.action === 'rejected') throw new Error('Guardian rejected the risk attestation; the release remains pending.');
+      const releaseReview: ReleaseReview = {
+        messageId: observation.release.messageId, routeId: ROUTE_ID, token: token.address,
+        recipient: observation.release.recipient, amount: observation.release.amount,
+        decision: releaseDecision(observation), minimumTier: releaseMinimumTier(observation), validUntil: guardian.now + 300n, nonce: ++nonce,
+      };
+      const signature = await signReleaseReview(actors.oracle, vault.address, releaseReview, LOCAL_CHAIN_ID);
+      const review = await guardian.sendContract(vault, actors.relayer, 'reviewRelease', [
+        releaseReview.messageId, releaseReview.decision, releaseReview.minimumTier, releaseReview.validUntil, releaseReview.nonce, signature,
+      ]);
+      if (!review.ok) throw new Error(`Local release review failed: ${review.error}`);
+      const outflow = await guardian.sendContract(vault, actors.relayer, 'executeRelease', [observation.release.messageId]);
+      watcher.acknowledge(observation.release.messageId);
+      payouts.push({ ...observation, attestation, review, outflow });
     }
     const result: StepResult = {
       title: step.title,
@@ -119,7 +145,7 @@ export function describeStep(step: StepResult, index: number): string[] {
   const lines = [`[${index}] ${step.title}`];
   for (const p of step.payouts) {
     const a = p.assessment;
-    const burn = p.burned === p.release.amount ? 'burn ✓' : p.burned === 0n ? 'NO BURN' : `burn ${usdc(p.burned)}`;
+    const burn = p.burned === null ? 'SOURCE UNKNOWN' : p.burned === p.release.amount ? 'burn ✓' : p.burned === 0n ? 'NO BURN' : `burn ${usdc(p.burned)}`;
     const attest =
       p.attestation.action === 'skipped'
         ? `no attestation (${p.attestation.reason})`
@@ -127,7 +153,8 @@ export function describeStep(step: StepResult, index: number): string[] {
           (p.attestation.result.gas ? `, gas ${p.attestation.result.gas.toLocaleString('en-US')}` : '');
     const paid = p.outflow.ok ? 'paid out' : `blocked: ${p.outflow.error}`;
     lines.push(`    ${usdc(p.release.amount)} → ${short(p.release.recipient)} · ${burn}`);
-    lines.push(`      score ${a.score === null ? '—' : a.score.toFixed(2)} ${a.verdict} · ${attest} · ${paid}`);
+    lines.push(`      score ${a.score === null ? '—' : a.score.toFixed(2)} ${a.verdict} · ${attest}`);
+    lines.push(`      signed release review: ${ReleaseDecision[releaseDecision(p)]} · ${p.review.ok ? 'accepted' : 'rejected'} · ${paid}`);
     const why = a.signals.filter((s) => s.score >= 0.9).map((s) => s.reason);
     for (const reason of why) lines.push(`      ↳ ${reason}`);
   }
