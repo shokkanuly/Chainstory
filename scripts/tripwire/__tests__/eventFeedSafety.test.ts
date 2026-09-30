@@ -3,6 +3,16 @@ import { parseAbi, type Hex } from 'viem';
 import { ContractEventFeed, runTestnetDemo, type Clients, type Deployment, type TestnetConfig } from '../testnet/sepolia.js';
 
 describe('event feed cursor', () => {
+  it('bounds catch-up queries and restores a saved block range without skipping ahead', async () => {
+    const getContractEvents = vi.fn().mockResolvedValue([]);
+    const clients = { pub: { getBlockNumber: async () => 100_000n, getContractEvents } } as unknown as Clients;
+    const feed = new ContractEventFeed(clients, `0x${'1'.repeat(40)}` as Hex, parseAbi(['event Burned(uint256 amount)']), 'Burned', 10n, (args) => args.amount);
+    await feed.poll(); expect(feed.checkpoint()).toBe('2010');
+    expect(getContractEvents).toHaveBeenCalledWith(expect.objectContaining({ fromBlock: 10n, toBlock: 2009n }));
+    feed.restore('10'); await feed.poll();
+    expect(getContractEvents).toHaveBeenLastCalledWith(expect.objectContaining({ fromBlock: 10n, toBlock: 2009n }));
+  });
+
   it('retries the same range when resolving a block fails after logs were fetched', async () => {
     const getBlock = vi.fn().mockRejectedValueOnce(new Error('RPC timeout')).mockResolvedValue({ timestamp: 100n });
     const getContractEvents = vi.fn().mockResolvedValue([{ blockNumber: 10n, args: { amount: 5n } }]);

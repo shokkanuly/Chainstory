@@ -42,7 +42,7 @@ describe('watcher failure recovery', () => {
     ingress.emit({ messageId: MESSAGE, amount: release.amount, timestamp: NOW });
     const [observation] = await watcher.tick();
     expect(observation?.assessment.verdict).toBe('clear');
-    watcher.acknowledge(MESSAGE);
+    await watcher.acknowledge(MESSAGE);
     expect(await watcher.tick()).toEqual([]);
   });
 
@@ -71,7 +71,7 @@ describe('watcher failure recovery', () => {
     egress.emit(release);
     expect((await watcher.tick())[0].assessment.verdict).toBe('clear');
     expect((await watcher.tick())[0].assessment.verdict).toBe('clear');
-    watcher.acknowledge(MESSAGE);
+    await watcher.acknowledge(MESSAGE);
     egress.emit(release);
     expect(await watcher.tick()).toEqual([]);
   });

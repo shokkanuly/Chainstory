@@ -41,6 +41,9 @@ export interface ReleaseEvent {
 export interface LogFeed<E> {
   /** Events emitted since the previous poll, oldest first. */
   poll(): Promise<E[]>;
+  /** Durable watchers commit these cursors with their ingested events. */
+  checkpoint?(): string;
+  restore?(cursor: string): void;
 }
 
 /** An in-memory log with a read cursor: the local stand-in for eth_getLogs. */
@@ -50,6 +53,15 @@ export class MemoryFeed<E> implements LogFeed<E> {
 
   emit(event: E): void {
     this.log.push(event);
+  }
+
+  checkpoint(): string { return this.cursor.toString(); }
+
+  restore(cursor: string): void {
+    if (!/^(0|[1-9][0-9]*)$/.test(cursor) || !Number.isSafeInteger(Number(cursor)) || Number(cursor) > this.log.length) {
+      throw new Error('Invalid memory feed checkpoint; replay the original log before restoring.');
+    }
+    this.cursor = Number(cursor);
   }
 
   async poll(): Promise<E[]> {

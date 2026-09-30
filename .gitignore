@@ -36,3 +36,11 @@ ml/.venv/
 
 # Tripwire operator key (throwaway testnet key, never real funds)
 .env.tripwire
+
+# Tripwire operator queue and signed transaction journal (ADR-015)
+.tripwire/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite.lease
+*.sqlite.lease-journal

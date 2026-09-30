@@ -3,7 +3,8 @@ import type { Hex } from 'viem';
 import { z } from 'zod';
 import { scoreTransfer, DEFAULT_CONFIG, type ScreeningSource } from '../../src/tripwire/riskScorer.js';
 import type { BridgeTransfer, ChainId, ContractRiskSummary, RiskAssessment, RouteBaseline } from '../../src/tripwire/types.js';
-import type { BurnEvent, LogFeed, ReleaseEvent } from './events.js';
+import { burnEventSchema, releaseEventSchema, type BurnEvent, type LogFeed, type ReleaseEvent } from './events.js';
+import type { OperatorStore, WatcherState } from './store.js';
 
 export interface WatcherConfig {
   route: string;
@@ -21,6 +22,8 @@ export interface WatcherConfig {
   verifySource?: (release: ReleaseEvent, observedBurn: bigint | null) => Promise<SourceEvidence>;
   /** Exact same-asset fee/rounding tolerance. Demo default mirrors the old 1% rule. */
   payoutToleranceBps?: bigint;
+  /** Operator-only durable state. Both feeds must support checkpoint/restore. */
+  store?: OperatorStore;
 }
 
 const sourceEvidenceSchema = z.discriminatedUnion('status', [
@@ -40,14 +43,28 @@ export interface Observation {
 }
 
 export class Watcher {
-  private burns = new Map<Hex, bigint>();
+  private burns = new Map<Hex, BurnEvent>();
   private recent: BridgeTransfer[] = [];
+  private history = new Map<Hex, ReleaseEvent>();
   private pending = new Map<Hex, ReleaseEvent>();
   private completed = new Set<Hex>();
   private conflictingBurns = new Set<Hex>();
+  private conflictingReleases = new Set<Hex>();
   private lock: Promise<unknown> = Promise.resolve();
 
-  constructor(private cfg: WatcherConfig) {}
+  constructor(private cfg: WatcherConfig) {
+    if (cfg.store) {
+      if (!cfg.ingress.checkpoint || !cfg.ingress.restore || !cfg.egress.checkpoint || !cfg.egress.restore) {
+        throw new Error('Durable watcher requires checkpointable feeds.');
+      }
+      const scope = cfg.store.scope;
+      if (scope.route !== cfg.route || scope.vault !== cfg.bridge.toLowerCase() || scope.decimals !== cfg.decimals) {
+        throw new Error('Watcher deployment scope does not match its store.');
+      }
+      const state = cfg.store.loadWatcher();
+      if (state) this.restore(state);
+    }
+  }
 
   tick(): Promise<Observation[]> {
     const run = this.lock.then(() => this.poll(), () => this.poll());
@@ -55,31 +72,45 @@ export class Watcher {
     return run;
   }
 
-  /** Acknowledge only after the operator records the review's confirmed on-chain outcome. */
-  acknowledge(messageId: Hex): void {
-    this.pending.delete(messageId);
-    this.completed.add(messageId);
+  /** Acknowledge only a confirmed execution or terminal rejection; HOLD/delay stay pending. */
+  acknowledge(messageId: Hex): Promise<void> {
+    const run = this.lock.then(() => {
+      const previous = this.snapshot();
+      this.pending.delete(messageId);
+      this.completed.add(messageId);
+      try { this.persist(); } catch (error) { this.restore(previous); throw error; }
+    });
+    this.lock = run.catch(() => undefined);
+    return run;
   }
 
   private async poll(): Promise<Observation[]> {
-    for (const burn of await this.cfg.ingress.poll()) {
-      const previous = this.burns.get(burn.messageId);
-      if (previous !== undefined && previous !== burn.amount) this.conflictingBurns.add(burn.messageId);
-      // One message has one source amount. Replayed notifications cannot multiply its backing.
-      this.burns.set(burn.messageId, burn.amount);
-    }
-    for (const release of await this.cfg.egress.poll()) {
-      if (this.completed.has(release.messageId) || this.pending.has(release.messageId)) continue;
-      this.pending.set(release.messageId, release);
-    }
+    const before = this.snapshot();
+    try {
+      for (const raw of await this.cfg.ingress.poll()) {
+        const burn = burnEventSchema.parse(raw);
+        const previous = this.burns.get(burn.messageId);
+        if (previous !== undefined && previous.amount !== burn.amount) this.conflictingBurns.add(burn.messageId);
+        // One message has one source amount. Replayed notifications cannot multiply its backing.
+        this.burns.set(burn.messageId, burn);
+      }
+      for (const raw of await this.cfg.egress.poll()) {
+        const release = releaseEventSchema.parse(raw);
+        const previous = this.pending.get(release.messageId);
+        if (previous && (previous.amount !== release.amount || previous.recipient !== release.recipient)) this.conflictingReleases.add(release.messageId);
+        if (this.completed.has(release.messageId) || this.pending.has(release.messageId)) continue;
+        this.pending.set(release.messageId, release);
+      }
+      this.persist();
+    } catch (error) { this.restore(before); throw error; }
 
     const out: Observation[] = [];
     for (const release of this.pending.values()) {
-      const observedBurn = this.burns.get(release.messageId) ?? null;
+      const observedBurn = this.burns.get(release.messageId)?.amount ?? null;
       let source: SourceEvidence;
       try {
-        source = sourceEvidenceSchema.parse(this.conflictingBurns.has(release.messageId)
-          ? { status: 'unavailable', reason: 'Observed source amounts conflict; independent reconciliation is required.' }
+        source = sourceEvidenceSchema.parse(this.conflictingBurns.has(release.messageId) || this.conflictingReleases.has(release.messageId)
+          ? { status: 'unavailable', reason: 'Observed message fields conflict; independent reconciliation is required.' }
           : this.cfg.verifySource
             ? await this.cfg.verifySource(release, observedBurn)
             : { status: 'pending', reason: 'Independent source verification is not configured; observed events alone are insufficient.' });
@@ -118,15 +149,42 @@ export class Watcher {
             ? source.reason : 'Recipient lookup unavailable; retry required.',
         };
       }
-      if (!this.recent.some((t) => t.hash === transfer.hash)) this.remember(transfer);
+      if (!this.recent.some((t) => t.hash === transfer.hash)) this.remember(transfer, release);
       out.push({ release, burned, source, assessment });
     }
+    this.persist();
     return out;
   }
 
-  private remember(transfer: BridgeTransfer) {
+  private snapshot(): WatcherState {
+    return {
+      ingressCursor: this.cfg.ingress.checkpoint?.() ?? '0', egressCursor: this.cfg.egress.checkpoint?.() ?? '0',
+      burns: [...this.burns.values()], pending: [...this.pending.values()], completed: [...this.completed],
+      conflictingBurns: [...this.conflictingBurns], conflictingReleases: [...this.conflictingReleases],
+      history: [...this.history.values()],
+    };
+  }
+
+  private restore(state: WatcherState): void {
+    this.cfg.ingress.restore?.(state.ingressCursor); this.cfg.egress.restore?.(state.egressCursor);
+    this.burns = new Map(state.burns.map((b) => [b.messageId, b]));
+    this.pending = new Map(state.pending.map((r) => [r.messageId, r]));
+    this.completed = new Set(state.completed as Hex[]);
+    this.conflictingBurns = new Set(state.conflictingBurns as Hex[]);
+    this.conflictingReleases = new Set(state.conflictingReleases as Hex[]);
+    this.history = new Map(state.history.map((r) => [r.messageId, r]));
+    this.recent = state.history.map((r) => ({ hash: r.messageId, chain: this.cfg.chain, route: this.cfg.route,
+      token: this.cfg.token, amountUsd: Number(r.amount) / 10 ** this.cfg.decimals, timestamp: r.timestamp,
+      from: this.cfg.bridge, to: r.recipient }));
+  }
+
+  private persist(): void { this.cfg.store?.saveWatcher(this.snapshot()); }
+
+  private remember(transfer: BridgeTransfer, release: ReleaseEvent) {
     this.recent.push(transfer);
+    this.history.set(release.messageId, release);
     const since = this.cfg.now() - DEFAULT_CONFIG.velocityWindowSeconds;
     this.recent = this.recent.filter((t) => t.timestamp >= since);
+    for (const [id, r] of this.history) if (r.timestamp < since) this.history.delete(id);
   }
 }

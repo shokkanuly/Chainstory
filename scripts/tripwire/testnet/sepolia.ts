@@ -253,10 +253,19 @@ export class ContractEventFeed<E> implements LogFeed<E> {
     this.cursor = from;
   }
 
+  checkpoint(): string { return this.cursor.toString(); }
+
+  restore(cursor: string): void {
+    if (!/^(0|[1-9][0-9]*)$/.test(cursor)) throw new Error('Invalid block checkpoint.');
+    this.cursor = BigInt(cursor);
+    this.times.clear();
+  }
+
   async poll(): Promise<E[]> {
     // Uncached: viem otherwise serves a block number up to 4 s old, and the
     // logs of the transactions just confirmed would fall outside the range.
-    const latest = await this.c.pub.getBlockNumber({ cacheTime: 0 });
+    const head = await this.c.pub.getBlockNumber({ cacheTime: 0 });
+    const latest = head < this.cursor + 1999n ? head : this.cursor + 1999n;
     if (latest < this.cursor) return [];
     const logs = await this.c.pub.getContractEvents({
       address: this.address,
@@ -274,6 +283,7 @@ export class ContractEventFeed<E> implements LogFeed<E> {
     // Commit only after every RPC lookup and decode has succeeded. Otherwise
     // the next poll must retry this range rather than silently losing its logs.
     this.cursor = latest + 1n;
+    this.times.clear();
     return out;
   }
 }
@@ -487,7 +497,7 @@ export async function runTestnetDemo(
           ...(blockedBy ? { gas: 300_000n } : {}),
         })
       );
-      watcher.acknowledge(o.release.messageId);
+      await watcher.acknowledge(o.release.messageId);
 
       const t = txs.get(o.release.messageId);
       payouts.push({

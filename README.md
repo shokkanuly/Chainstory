@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Solidity-0.8.37-363636?logo=solidity&logoColor=white" alt="Solidity" />
   <img src="https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/viem-2.56-FFC517" alt="viem" />
-  <img src="https://img.shields.io/badge/tests-345_passing-brightgreen" alt="345 tests passing" />
+  <img src="https://img.shields.io/badge/tests-379_passing-brightgreen" alt="379 tests passing" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
 </p>
 
@@ -49,7 +49,9 @@ fresh signed review for each payout. Pending, unavailable and held requests cann
 execute; invalid requests remain rejected after route protection expires. The local
 demo now runs the actual gated vault as well as the guardian. See the
 [hardening plan](docs/plans/tripwire-hardening.md) for the trust boundary and remaining
-work: durable state, an independent real-bridge adapter and finality/reorg handling.
+work: an independent real-bridge adapter and finality/reorg handling. The operator now
+has durable state, a signed transaction journal and HOLD/delay recovery; see its
+[runbook](docs/plans/tripwire-operator.md).
 
 On 18 April 2026, $292M left Kelp DAO's bridge. Not over hours — in **a single
 release**. Verus lost $11.58M the same way in May, Syscoin ~$10M in June.
@@ -197,10 +199,11 @@ against **no verifiable burn at all**.
 | Watch → attest → guardian loop, tier asserted after each step | 6 tests |
 | Signed release gate: field/domain binding, replay/order, expiry, key rotation, terminal rejection, required protection | 23 tests |
 | Watcher retry, missing/conflicting source data, deduplication and acknowledgement | 11 tests |
-| RPC/decode cursor recovery and old-deployment refusal | 3 tests |
+| RPC/decode cursor recovery, bounded catch-up and old-deployment refusal | 4 tests |
+| Durable state, SIGKILL, original-byte transaction recovery and HOLD/delay queue | 33 tests |
 | Check before you sign, incl. "nothing reachable from /check can sign" | 40 tests |
 | Gas: check an outflow · accept an attestation | 36.7k · 84.5k |
-| Total | **345 tests passing** |
+| Total | **379 tests passing** |
 
 The dashboard runs the exact contract bytecode the tests run, and a test fails
 if they ever differ.
@@ -212,7 +215,7 @@ git clone https://github.com/shokkanuly/Chainstory.git
 cd Chainstory
 npm install
 npm run dev                    # Retold at /app and /check, Tripwire at /tripwire
-npm test                       # 345 tests
+npm test                       # 379 tests
 npm run tripwire:demo:local    # the four-step attack, in a local EVM
 ```
 
