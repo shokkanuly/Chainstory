@@ -20,6 +20,17 @@ function fixture() {
   return { make, blocks, getBlock, getContractEvents, event, setFinalized: (n: bigint) => { finalized = n; } };
 }
 describe('finalized event ingestion', () => {
+  it('passes validated provenance to protocol mappers and advances over explicitly skipped unrelated messages', async () => {
+    const f = fixture();
+    const mapper = vi.fn().mockReturnValue(null);
+    const base = f.make(); const saved = JSON.parse(base.checkpoint());
+    const clients = { chainId: 11155111, pub: { getBlock: f.getBlock, getContractEvents: f.getContractEvents } } as unknown as Clients;
+    const feed = new ContractEventFeed(clients, address, parseAbi(['event Burned(bytes32 messageId, uint256 amount)']),
+      'Burned', 10n, mapper, { finality: 'finalized' });
+    expect(await feed.poll()).toEqual([]);
+    expect(mapper).toHaveBeenCalledWith(f.event().args, 1011, expect.objectContaining({ transactionHash: hash(200), logIndex: 0 }));
+    expect(JSON.parse(feed.checkpoint()).next).toBe('13'); expect(saved.next).toBe('10');
+  });
   it('rejects headers mixed from different forks even when their log hashes individually match', async () => {
     const f = fixture(); const feed = f.make(); const before = feed.checkpoint();
     const b = f.blocks.get(11n); if (b) f.blocks.set(11n, { ...b, parentHash: hash(999) });

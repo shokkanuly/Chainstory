@@ -123,7 +123,12 @@ bytes already broadcast or an on-chain ALLOW; those still depend on the signed T
 and guardian checks. An affected route needs operator investigation and, when
 necessary, an on-chain pause through the existing guardian/owner controls.
 
-The database now uses **schema v2** and binds `local`/`finalized` mode to its scope.
+ADR-016 introduced **schema v2**, binding `local`/`finalized` mode to its scope.
+ADR-017 advances the current database to **v3** for immutable source/settlement/nonce
+claims, adapter policy fingerprints and standalone source quarantine. Both v1 and
+v2 are refused with their pending work preserved; migration requires reconciliation.
+See the [CCTP escrow runbook](tripwire-cctp.md). The legacy demo runner still holds
+unverified source data; only the explicit CCTP factory configures the real adapter.
 V1 is rejected with its data intact. Before migrating a previously running operator:
 stop it, back up its database/sidecars, reconcile all old signed transactions and
 on-chain allowances, and define a canonical rescan point for the selected bridge.

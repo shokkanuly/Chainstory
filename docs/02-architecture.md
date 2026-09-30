@@ -138,3 +138,10 @@ only finalized terminal vault state completes a job. An unfinalized receipt reor
 reuses its original signed bytes, while a finalized-history conflict persists a
 quarantine. This is provider-trusting Ethereum/Sepolia policy, not a consensus
 light client or a substitute for independent bridge-message authentication.
+
+ADR-017 adds the CCTP v2 USDC post-mint source adapter. Pure EVM codecs/verified
+protocol facts live in `src/chains/evm/`; receipts, proof claims, signing guards and
+the read-only audit CLI remain in `scripts/tripwire/`. Durable source and settlement
+identities/nonce claims bind a finalized burn to the exact escrow payout. The
+operator factory is explicit; no CCTP signing/relaying enters the browser or proxies.
+See the [CCTP runbook](plans/tripwire-cctp.md) for policy and remaining trust boundaries.

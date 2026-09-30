@@ -34,7 +34,7 @@ import type { ContractRiskSummary, RouteBaseline } from '../../../src/tripwire/t
 import { FLAG_LIST_NAME, lookupFlaggedAddress } from '../../../src/services/preventiveScamScanner.js';
 import { ATTACK_STEPS, DRAIN_CONTRACT, USDC } from '../attack.js';
 import { Attestor, type AttestationOutcome, type GuardianPort } from '../attest.js';
-import { burnEventSchema, releaseEventSchema, type BurnEvent, type LogFeed, type ReleaseEvent } from '../events.js';
+import { burnEventSchema, releaseEventSchema, type BurnEvent, type LogFeed, type ReleaseEvent, type EventOrigin } from '../events.js';
 import { Watcher } from '../watch.js';
 import { z } from 'zod';
 import { blockHeaderSchema, blockHashSchema, finalizedCheckpointSchema, FinalityConflictError } from '../finality.js';
@@ -246,12 +246,12 @@ export class ContractEventFeed<E> implements LogFeed<E> {
   private anchor: { number: bigint; hash: Hex } | null = null;
 
   constructor(
-    private c: Clients,
+    private c: Pick<Clients, 'pub' | 'chainId'>,
     private address: Hex,
     private abi: Abi,
     private eventName: string,
     private from: bigint,
-    private map: (args: Record<string, unknown>, timestamp: number) => E,
+    private map: (args: Record<string, unknown>, timestamp: number, origin?: EventOrigin) => E | null,
     private opts: { finality?: 'finalized' } = {}
   ) {
     this.cursor = from;
@@ -296,7 +296,8 @@ export class ContractEventFeed<E> implements LogFeed<E> {
     for (const l of logs) {
       const bn = l.blockNumber ?? latest;
       if (!this.times.has(bn)) this.times.set(bn, Number((await this.c.pub.getBlock({ blockNumber: bn })).timestamp));
-      out.push(this.map((l as unknown as { args: Record<string, unknown> }).args, this.times.get(bn) ?? 0));
+      const mapped = this.map((l as unknown as { args: Record<string, unknown> }).args, this.times.get(bn) ?? 0);
+      if (mapped !== null) out.push(mapped);
     }
     // Commit only after every RPC lookup and decode has succeeded. Otherwise
     // the next poll must retry this range rather than silently losing its logs.
@@ -364,10 +365,12 @@ export class ContractEventFeed<E> implements LogFeed<E> {
       if (!header) throw new Error('Log has no validated range header.');
       if (header.number !== log.blockNumber || header.hash !== log.blockHash) throw new Error('Log block hash does not match the canonical block.');
       headers.set(log.blockNumber, header);
-      const mapped = this.map(log.args, Number(header.timestamp));
+      const origin = { chainId: this.c.chainId, address: this.address.toLowerCase() as Hex,
+        blockNumber: log.blockNumber, blockHash: log.blockHash, transactionHash: log.transactionHash, logIndex: log.logIndex };
+      const mapped = this.map(log.args, Number(header.timestamp), origin);
+      if (mapped === null) continue; // Unrelated/unsupported protocol messages cannot stall this route.
       if (!mapped || typeof mapped !== 'object') throw new Error('Finalized feed requires an event object.');
-      out.push({ ...mapped, origin: { chainId: this.c.chainId, address: this.address.toLowerCase() as Hex,
-        blockNumber: log.blockNumber, blockHash: log.blockHash, transactionHash: log.transactionHash, logIndex: log.logIndex } });
+      out.push({ ...mapped, origin });
     }
     const final = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: 'finalized' }));
     if (final.number < end) throw new Error('Finalized RPC moved behind the queried range.');

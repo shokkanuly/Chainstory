@@ -6,6 +6,13 @@ import type { BridgeTransfer, ChainId, ContractRiskSummary, RiskAssessment, Rout
 import { burnEventSchema, releaseEventSchema, type BurnEvent, type LogFeed, type ReleaseEvent } from './events.js';
 import type { OperatorStore, WatcherState } from './store.js';
 import { FinalityConflictError } from './finality.js';
+import type { sourceVerifierScopeSchema } from './sourceProof.js';
+
+export interface SourceAdapter {
+  scope: z.infer<typeof sourceVerifierScopeSchema>;
+  verify(release: ReleaseEvent): Promise<SourceEvidence>;
+  assertCanonical(): Promise<void>;
+}
 
 export interface WatcherConfig {
   route: string;
@@ -21,6 +28,8 @@ export interface WatcherConfig {
   now: () => number;
   /** An adapter must establish finality and completeness before declaring missing backing invalid. */
   verifySource?: (release: ReleaseEvent, observedBurn: bigint | null) => Promise<SourceEvidence>;
+  /** Authenticated source adapters also guard previously accepted proof anchors. */
+  sourceAdapter?: SourceAdapter;
   /** Exact same-asset fee/rounding tolerance. Demo default mirrors the old 1% rule. */
   payoutToleranceBps?: bigint;
   /** Operator-only durable state. Both feeds must support checkpoint/restore. */
@@ -57,11 +66,16 @@ export class Watcher {
   get quarantineReason(): string | null { return this.quarantine; }
 
   constructor(private cfg: WatcherConfig) {
+    if (cfg.sourceAdapter && cfg.verifySource) throw new Error('Configure one source verifier.');
+    if (cfg.sourceAdapter && !cfg.store) throw new Error('Authenticated source adapter requires a durable store.');
     if (cfg.store) {
       if (!cfg.ingress.checkpoint || !cfg.ingress.restore || !cfg.egress.checkpoint || !cfg.egress.restore) {
         throw new Error('Durable watcher requires checkpointable feeds.');
       }
       const scope = cfg.store.scope;
+      if (JSON.stringify(scope.sourceVerifier) !== JSON.stringify(cfg.sourceAdapter?.scope)) {
+        throw new Error('Source adapter does not match the durable deployment scope.');
+      }
       if (scope.finalityMode === 'finalized' && (!cfg.ingress.assertCanonical || !cfg.egress.assertCanonical)) {
         throw new Error('Finalized watcher requires canonical anchor checks on both feeds.');
       }
@@ -70,6 +84,7 @@ export class Watcher {
       }
       const state = cfg.store.loadWatcher();
       if (state) this.restore(state);
+      this.quarantine = cfg.store.sourceQuarantine() ?? this.quarantine;
     }
   }
 
@@ -82,7 +97,7 @@ export class Watcher {
   assertCanonical(): Promise<void> {
     const run = this.lock.then(async () => {
       if (this.quarantine) throw new FinalityConflictError(`Operator is quarantined: ${this.quarantine}`);
-      try { await this.cfg.ingress.assertCanonical?.(); await this.cfg.egress.assertCanonical?.(); }
+      try { await this.cfg.ingress.assertCanonical?.(); await this.cfg.egress.assertCanonical?.(); await this.cfg.sourceAdapter?.assertCanonical(); }
       catch (error) { if (error instanceof FinalityConflictError) this.enterQuarantine(error); throw error; }
     });
     this.lock = run.catch(() => undefined); return run;
@@ -116,6 +131,7 @@ export class Watcher {
     const before = this.snapshot();
     if (!this.quarantine) {
       try {
+        await this.cfg.sourceAdapter?.assertCanonical();
         for (const raw of await this.cfg.ingress.poll()) {
           const burn = burnEventSchema.parse(raw);
           const previous = this.burns.get(burn.messageId);
@@ -146,10 +162,12 @@ export class Watcher {
           ? { status: 'unavailable', reason: `Finality quarantine: ${this.quarantine}`.slice(0, 1024) }
           : this.conflictingBurns.has(release.messageId) || this.conflictingReleases.has(release.messageId)
           ? { status: 'unavailable', reason: 'Observed message fields conflict; independent reconciliation is required.' }
+          : this.cfg.sourceAdapter ? await this.cfg.sourceAdapter.verify(release)
           : this.cfg.verifySource
             ? await this.cfg.verifySource(release, observedBurn)
             : { status: 'pending', reason: 'Independent source verification is not configured; observed events alone are insufficient.' });
-      } catch {
+      } catch (error) {
+        if (error instanceof FinalityConflictError) this.enterQuarantine(error);
         source = { status: 'unavailable', reason: 'Source verification is unavailable; retry required.' };
       }
       const burned = source.status === 'verified' ? source.amount : source.status === 'invalid' ? 0n : null;
@@ -188,7 +206,10 @@ export class Watcher {
       out.push({ release, burned, source, assessment });
     }
     this.persist();
-    return out;
+    return this.quarantine ? out.map((observation) => ({ ...observation, burned: null,
+      source: { status: 'unavailable' as const, reason: `Finality quarantine: ${this.quarantine}`.slice(0, 1024) },
+      assessment: { ...observation.assessment, verdict: 'indeterminate' as const, score: null, degradedReason: 'Finality quarantine; reconcile the operator.' },
+    })) : out;
   }
 
   private snapshot(): WatcherState {
