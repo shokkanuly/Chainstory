@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Solidity-0.8.37-363636?logo=solidity&logoColor=white" alt="Solidity" />
   <img src="https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/viem-2.56-FFC517" alt="viem" />
-  <img src="https://img.shields.io/badge/tests-609_passing-brightgreen" alt="609 tests passing" />
+  <img src="https://img.shields.io/badge/tests-665_passing-brightgreen" alt="665 tests passing" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
 </p>
 
@@ -43,6 +43,26 @@ Retold's contract checks to do it. The rest of this README is about Tripwire;
 Retold's full documentation is in [docs/chainstory.md](docs/chainstory.md).
 
 ## Tripwire
+
+**A pre-execution settlement firewall.** Cross-chain systems can authenticate a
+message and still allow an economically invalid outcome. Tripwire sits in front
+of destination settlement and asks one question before money is minted or
+released: *can an independent system prove the source event actually happened?*
+
+```
+source burn / lock  →  bridge message  →  TRIPWIRE: verify source + invariants + policy  →  ALLOW / THROTTLE / DELAY / FREEZE  →  settle
+```
+
+| Build focus | In the code |
+| :--- | :--- |
+| Pre-execution hook | The vault pays only after a fresh, payout-bound ALLOW and a guardian check; the CCTP escrow creates requests only from an authenticated mint |
+| Deterministic invariants, proof first | `settlementVerdict`: a failed source/backing proof rejects and freezes; risk signals can only hold |
+| Independent verification | Finalized reads, reorg quarantine, and source proofs read through independent RPC providers that must agree |
+| Programmable policy | Per-route rolling caps and request delay on-chain; tighten-only size limit and hold line off-chain |
+| Safe, scoped enforcement | Per-route tiers that escalate only and expire in 24 h; the oracle can never move funds |
+| Trust model | A k-of-n `TripwireQuorum` replaces the single oracle key |
+
+Build map, status and open work: [docs/plans/tripwire-settlement-firewall.md](docs/plans/tripwire-settlement-firewall.md).
 
 **Release hardening (local, 2026-09-30):** the latest `ProtectedVault` requires a
 fresh signed review for each payout. Pending, unavailable and held requests cannot

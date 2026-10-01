@@ -21,6 +21,9 @@ remain historical context.
 | Authenticated CCTP mint → immutable pending escrow release | Implemented locally; ADR-018; self-owned escrow, exact net mint, atomic rollback and authenticated operator policy; external review/deployment pending |
 | Continuous refresh of justified route protection | Implemented locally; ADR-019; chain-bound expiry/clock/oracle reconciliation, renewed pending assessments and existing durable outbox; live operation pending |
 | Route-scoped guardian reporters, conservative rolling cap and per-request DELAY | Implemented locally; ADR-020; [policy/rollout](plans/tripwire-route-policy.md); fresh policy-v2 deployment and external review pending |
+| Threshold attestation: k-of-n `TripwireQuorum` as the guardian/vault oracle | Implemented locally; ADR-021; policy v3; [build map](plans/tripwire-settlement-firewall.md); networked members and deployment pending |
+| Independent multi-RPC verification of source proofs | Implemented locally; ADR-022; quorum agreement, dissent holds, finalized conflict quarantines; light-client finality pending |
+| Proof-first settlement verdict and tighten-only route policy | Implemented locally; ADR-023; named proof/safety checks, per-route size limit and hold line |
 | Live deployment of the release-gated vault | Not deployed; old Sepolia vault is incompatible with current demo scripts |
 
 Tripwire and Check before you sign, planned in [plans/tripwire-hackathon.md](plans/tripwire-hackathon.md) (each stage's result is recorded there).

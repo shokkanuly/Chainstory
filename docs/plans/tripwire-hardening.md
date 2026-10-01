@@ -88,6 +88,7 @@ contract/identity/policy change; historical generic vaults retain their older tr
 | Done for Ethereum/Sepolia RPC | Finalized observations, unfinalized receipt reorg recovery and durable quarantine | Hash-bound checkpoints/provenance; changed finalized history stops signing/recovery; real bridge consensus policy remains adapter work |
 | Done locally; live operation pending | Continuous attestor with protection refresh | Fresh persistent pending risk refreshes the matching tier in the final hour before 24-hour expiry; restart re-reads chain state, unavailable data holds; ADR-019 |
 | Done locally; review/deployment pending | Guardian route isolation, rolling limits and per-request delay policy | Scoped reporters, conservative rolling budget and sticky request delay; boundary/cross-route/retry regressions; [policy and rollout](tripwire-route-policy.md), ADR-020 |
+| Done locally; deployment pending | Threshold attestation, independent RPC verification and proof-first verdict | ADR-021–023; [settlement firewall build map](tripwire-settlement-firewall.md) |
 | P1 | Real route baselines and evidence versions | Reproducible historical scoring, cold-start/staleness policy and measured false holds/latency |
 | P1 | Separate owner/oracle roles and reliable transaction sender | Rotation, insufficient gas balance, nonce conflicts, dropped transactions and RPC outages are observable and recoverable |
 | P2 | Incident review dashboard | Operators see source evidence, data health, decision version, actual guardian state and confirmed review/payout receipts |
