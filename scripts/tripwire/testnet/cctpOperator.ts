@@ -8,6 +8,7 @@ import { createRpcOperator, type RpcDestination } from './operator.js';
 import { ContractEventFeed, type Clients, type TestnetConfig } from './sepolia.js';
 import { assertCctpEscrowBindings } from './cctpBindings.js';
 import { blockHeaderSchema } from '../finality.js';
+import { rpcQuorum } from '../rpcQuorum.js';
 
 export const cctpRpc = (client: CctpRpc): CctpRpc => ({
   getChainId: () => client.getChainId(), getBlock: (args) => client.getBlock(args),
@@ -17,11 +18,28 @@ export const cctpRpc = (client: CctpRpc): CctpRpc => ({
   },
 });
 
+/** Extra independent endpoints from a comma-separated env value (ADR-022). */
+export function verifierUrls(value: string | undefined): string[] {
+  return (value ?? '').split(',').map((url) => url.trim()).filter(Boolean);
+}
+
+/**
+ * The primary client alone, or a quorum over it and independently operated
+ * verifier endpoints. Default quorum: every configured provider must answer and agree.
+ */
+export function independentCctpRpc(primary: CctpRpc, verifiers: CctpRpc[] = [], quorum?: number): CctpRpc {
+  if (verifiers.length === 0) return cctpRpc(primary);
+  const providers = [primary, ...verifiers].map(cctpRpc);
+  return rpcQuorum(providers, { quorum: quorum ?? providers.length });
+}
+
 /** Authenticated escrow only. Never submits burns or receives/mints. */
 export async function createCctpRpcOperator(cfg: TestnetConfig, destination: Clients, deployment: RpcDestination,
   source: PublicClient<Transport, Chain>, sourceStartBlock: bigint, stateFile: string,
   locate: (messageId: Hex) => Promise<unknown | null>, opts: {
     baseline: RouteBaseline | null; contractFacts?: (address: Hex) => Promise<ContractRiskSummary | null>;
+    /** Independent verifier RPCs for source proofs; without them one provider is trusted. */
+    verifiers?: { source?: CctpRpc[]; destination?: CctpRpc[]; quorum?: number };
   }) {
   if (deployment.route !== route.id || deployment.routeId !== keccak256(stringToHex(route.id)) ||
     deployment.chainId !== route.destination.chainId || deployment.token.toLowerCase() !== route.destination.usdc ||
@@ -34,9 +52,12 @@ export async function createCctpRpcOperator(cfg: TestnetConfig, destination: Cli
   const checked = blockHeaderSchema.parse(await destination.pub.getBlock({ blockNumber: head.number }));
   if (checked.hash !== head.hash || checked.number !== head.number) throw new Error('Finalized CCTP deployment block changed.');
   const scope = cctpVerifierScope(deployment.vault, 'authenticated-escrow');
-  return createRpcOperator(cfg, destination, deployment, stateFile, { ...opts, source: {
+  const { verifiers, ...operatorOpts } = opts;
+  const sourceProofs = independentCctpRpc(source, verifiers?.source, verifiers?.quorum);
+  const destinationProofs = independentCctpRpc(destination.pub, verifiers?.destination, verifiers?.quorum);
+  return createRpcOperator(cfg, destination, deployment, stateFile, { ...operatorOpts, source: {
     chainId: route.source.chainId, address: route.source.transmitter, scope,
-    create: (store) => ({ adapter: new CctpSourceAdapter(store, deployment.vault, cctpRpc(source), cctpRpc(destination.pub), locate, 'authenticated-escrow'),
+    create: (store) => ({ adapter: new CctpSourceAdapter(store, deployment.vault, sourceProofs, destinationProofs, locate, 'authenticated-escrow'),
       ingress: new ContractEventFeed({ pub: source, chainId: route.source.chainId }, route.source.transmitter, cctpTransmitterAbi,
         'MessageSent', sourceStartBlock, (args, timestamp, origin) => {
           if (!origin) throw new Error('CCTP source discovery requires finalized provenance.');

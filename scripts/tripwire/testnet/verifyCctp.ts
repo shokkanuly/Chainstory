@@ -9,7 +9,7 @@ import { CCTP_BASE_SEPOLIA_TO_SEPOLIA as route, cctpEscrowAbi } from '../../../s
 import { CctpSourceAdapter, cctpProofLocatorSchema, cctpVerifierScope } from '../cctp.js';
 import { blockHashSchema, blockHeaderSchema, FinalityConflictError } from '../finality.js';
 import { OperatorStore } from '../store.js';
-import { cctpRpc } from './cctpOperator.js';
+import { independentCctpRpc, verifierUrls } from './cctpOperator.js';
 import demo from './contracts.artifact.js';
 import { assertCctpEscrowBindings } from './cctpBindings.js';
 
@@ -29,6 +29,12 @@ async function main() {
     const transport = (url: string) => http(url, { retryCount: 3, timeout: 30_000, fetchOptions: { signal: abort.signal } });
     const source = createPublicClient({ chain: baseSepolia, transport: transport(process.env.BASE_SEPOLIA_RPC_URL ?? baseSepolia.rpcUrls.default.http[0]) });
     const destination = createPublicClient({ chain: sepolia, transport: transport(process.env.SEPOLIA_RPC_URL ?? sepolia.rpcUrls.default.http[0]) });
+    // ADR-022: proofs are read through every independent verifier endpoint configured.
+    const quorum = process.env.TRIPWIRE_RPC_QUORUM ? Number(process.env.TRIPWIRE_RPC_QUORUM) : undefined;
+    const sourceProofs = independentCctpRpc(source, verifierUrls(process.env.BASE_SEPOLIA_VERIFIER_RPC_URLS)
+      .map((url) => createPublicClient({ chain: baseSepolia, transport: transport(url) })), quorum);
+    const destinationProofs = independentCctpRpc(destination, verifierUrls(process.env.SEPOLIA_VERIFIER_RPC_URLS)
+      .map((url) => createPublicClient({ chain: sepolia, transport: transport(url) })), quorum);
     if (await source.getChainId() !== route.source.chainId || await destination.getChainId() !== route.destination.chainId) throw new Error('RPC chain identity does not match the CCTP route.');
     const head = blockHeaderSchema.parse(await destination.getBlock({ blockTag: 'finalized' }));
     const policy = manifest.version === 2 ? 'authenticated-escrow' : 'legacy-post-mint';
@@ -45,7 +51,7 @@ async function main() {
       source: route.source.transmitter, vault: manifest.vault, guardian: manifest.guardian, token: route.destination.usdc,
       sender: manifest.operator, decimals: route.decimals, finalityMode: 'finalized', sourceVerifier: cctpVerifierScope(manifest.vault, policy) });
     if (store.loadWatcher()?.quarantine || store.sourceQuarantine()) throw new Error('This operator is quarantined; reconcile it before auditing new proof claims.');
-    const adapter = new CctpSourceAdapter(store, manifest.vault, cctpRpc(source), cctpRpc(destination),
+    const adapter = new CctpSourceAdapter(store, manifest.vault, sourceProofs, destinationProofs,
       async (id) => manifest.requests.find((request) => request.messageId === id)?.proof ?? null, policy);
     const tuple = z.tuple([cctpAddressSchema, z.bigint().positive(), z.number().int().min(0).max(4), z.bigint(), cctpAddressSchema, z.bigint(), z.number()]);
     const results = [];
