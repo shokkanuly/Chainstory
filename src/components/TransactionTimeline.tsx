@@ -1,5 +1,6 @@
 // src/components/TransactionTimeline.tsx — Premium Transaction Explorer
 import { useState } from 'react';
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import type { ClassifiedTransaction, TaxCategory } from '../types';
 import {
   CATEGORY_ICON,
@@ -11,6 +12,7 @@ import {
 } from './icons';
 import TransactionCard from './TransactionCard';
 import ExportButton from './ExportButton';
+import { useReducedMotion } from '../lib/motion';
 
 interface Props {
   transactions: ClassifiedTransaction[];
@@ -31,6 +33,7 @@ const FILTERS: { label: string; value: FilterValue; icon: PhosphorIcon }[] = [
 export default function TransactionTimeline({ transactions, walletAddress, isCapped }: Props) {
   const [activeFilter, setActiveFilter] = useState<FilterValue>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const reduce = useReducedMotion();
 
   const filtered = transactions.filter(tx => {
     const matchesFilter = activeFilter === 'all' || tx.category === activeFilter;
@@ -68,20 +71,31 @@ export default function TransactionTimeline({ transactions, walletAddress, isCap
 
       {/* Filters + Search */}
       <div className="timeline-controls">
-        <div className="filter-tabs">
-          {FILTERS.map(f => (
-            <button
-              key={f.value}
-              id={`filter-${f.value}`}
-              className={`filter-tab ${activeFilter === f.value ? 'active' : ''}`}
-              onClick={() => setActiveFilter(f.value)}
-            >
-              <span className="filter-tab-icon"><InlineIcon icon={f.icon} size={13} /></span>
-              {f.label}
-              <span className="filter-tab-count">{counts[f.value] || 0}</span>
-            </button>
-          ))}
-        </div>
+        <LayoutGroup id="timeline-filters">
+          <div className="filter-tabs">
+            {FILTERS.map(f => (
+              <button
+                key={f.value}
+                id={`filter-${f.value}`}
+                className={`filter-tab ${activeFilter === f.value ? 'active' : ''}`}
+                aria-pressed={activeFilter === f.value}
+                onClick={() => setActiveFilter(f.value)}
+              >
+                {/* One pill that slides to the chosen filter, so you see where you moved from. */}
+                {activeFilter === f.value && (
+                  <motion.span
+                    layoutId="filter-pill"
+                    className="filter-tab-pill"
+                    transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 460, damping: 34 }}
+                  />
+                )}
+                <span className="filter-tab-icon"><InlineIcon icon={f.icon} size={13} /></span>
+                <span>{f.label}</span>
+                <span className="filter-tab-count">{counts[f.value] || 0}</span>
+              </button>
+            ))}
+          </div>
+        </LayoutGroup>
 
         <div className="timeline-search">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -116,9 +130,13 @@ export default function TransactionTimeline({ transactions, walletAddress, isCap
             <p className="text-sm text-muted-foreground">No transactions match your filter.</p>
           </div>
         ) : (
-          filtered.map((tx, i) => (
-            <TransactionCard key={tx.hash} tx={tx} index={i} />
-          ))
+          // Filtering reflows the feed: rows that leave shrink away and the
+          // rest glide into their new places.
+          <AnimatePresence mode="popLayout">
+            {filtered.map((tx, i) => (
+              <TransactionCard key={tx.hash} tx={tx} index={i} />
+            ))}
+          </AnimatePresence>
         )}
       </div>
 

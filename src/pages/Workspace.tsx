@@ -8,7 +8,12 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import Navbar from '@/components/Navbar';
+import PageAurora from '@/components/motion/PageAurora';
+import RevealText from '@/components/motion/RevealText';
+import ChainScanner from '@/components/motion/ChainScanner';
+import { spring, useReducedMotion, useRise } from '@/lib/motion';
 import Footer from '@/components/Footer';
 import NetworkTicker from '@/components/NetworkTicker';
 
@@ -287,6 +292,9 @@ export default function Workspace() {
   };
 
   const isLoading = appState === 'fetching' || appState === 'classifying';
+  const reduce = useReducedMotion();
+  const intro = useRise(0.3);
+  const classifiedPct = Math.round((classifiedCount / (rawTransactions.length || 1)) * 100);
 
   // A wallet handed over from the landing page loads immediately.
   useEffect(() => {
@@ -297,39 +305,40 @@ export default function Workspace() {
   }, [searchParams]);
 
   return (
-    <div className="min-h-[100dvh] bg-background text-foreground">
+    <div className="relative isolate min-h-[100dvh] text-foreground">
+      {/* The platform's header light; the working surface below is plain canvas. */}
+      <PageAurora />
       <Navbar />
       <main className="pt-20">
-      <section id="app-workspace" className="relative py-16 border-t border-border/50">
-        {/* Subtle background wash */}
-        <div className="absolute inset-0 bg-gradient-to-b from-card/30 via-transparent to-transparent pointer-events-none" />
-
+      <section id="app-workspace" className="relative py-16">
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
           {/* Section Header */}
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-5">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary/40 px-3.5 py-1 text-[11px] font-semibold text-muted-foreground mb-4 uppercase tracking-wider">
+              <div className="inline-flex items-center gap-2 rounded-full border border-border bg-[color-mix(in_srgb,var(--b-canvas)_60%,transparent)] px-3.5 py-1 font-mono text-[12px] font-medium text-muted-foreground mb-4 uppercase tracking-[0.08em] backdrop-blur-sm">
                 Block Explorer
               </div>
-              <h2 className="text-2xl sm:text-3xl font-bold tracking-[-0.03em] leading-tight">
-                Multi-Chain <span className="text-gradient-chain">Tax Engine</span>
-              </h2>
-              <p className="text-muted-foreground text-sm mt-1.5 max-w-lg">
+              <RevealText
+                as="h1"
+                className="font-display text-[clamp(2.2rem,5vw,3.6rem)] font-semibold leading-[1] tracking-[-0.045em]"
+                parts={[{ text: 'Multi-Chain' }, { text: 'Tax Engine', color: 'var(--b-purple)' }]}
+              />
+              <motion.p className="text-muted-foreground text-[15px] leading-relaxed mt-3 max-w-lg" {...intro}>
                 Enter EVM addresses or ENS domains for local AI classification &amp; Form 8949 cost basis reports.
-              </p>
+              </motion.p>
             </div>
 
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowRiskModal(true)}
-                className="inline-flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 transition-all duration-200 shrink-0"
+                className="inline-flex items-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--b-purple)_40%,transparent)] bg-[color-mix(in_srgb,var(--b-purple)_10%,transparent)] px-4 py-2.5 text-[13px] font-semibold text-[var(--b-purple)] hover:bg-[color-mix(in_srgb,var(--b-purple)_18%,transparent)] transition-all duration-200 shrink-0"
               >
                 <InlineIcon icon={MagnifyingGlassIcon} size={14} /> Pre-Scan Risk &amp; Permissions
               </button>
 
               <button
                 onClick={handleTestB2BSimulate}
-                className="inline-flex items-center gap-2 rounded-xl border border-signal-red/25 bg-signal-red/8 px-4 py-2.5 text-xs font-semibold text-signal-red hover:bg-signal-red/15 transition-all duration-200 shrink-0"
+                className="inline-flex items-center gap-2 rounded-xl border border-signal-red/25 bg-signal-red/8 px-4 py-2.5 text-[13px] font-semibold text-signal-red hover:bg-signal-red/15 transition-all duration-200 shrink-0"
               >
                 <InlineIcon icon={ShieldCheckIcon} size={14} /> Test B2B Pre-Sign API
               </button>
@@ -356,11 +365,11 @@ export default function Workspace() {
 
           {/* Data provenance banner — demo data must never look like chain data */}
           {dataSource === 'demo' && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 p-4 text-amber-300 text-sm flex items-start gap-3">
-              <InlineIcon icon={WarningIcon} size={15} style={{ marginTop: 1 }} />
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 p-4 text-[var(--b-warn)] text-[15px] flex items-start gap-3">
+              <InlineIcon icon={WarningIcon} size={15} style={{ marginTop: 3 }} />
               <div>
                 <div className="font-semibold">Showing demo data — not real chain history.</div>
-                <div className="text-amber-300/75 text-xs mt-1">
+                <div className="text-foreground/80 text-[13px] leading-relaxed mt-1">
                   {demoReason ?? 'The explorer request could not be completed.'}
                   {' '}Figures below, including the tax report, are synthetic. Add a
                   {' '}<code className="font-mono">ETHERSCAN_API_KEY</code> to analyse a real wallet.
@@ -377,37 +386,32 @@ export default function Workspace() {
             </div>
           )}
 
-          {/* Progress Banner */}
+          {/* Progress: the real count, on a bar that springs as stories land. */}
           {appState === 'classifying' && (
-            <div className="rounded-xl border border-chain/25 bg-chain/8 p-4 text-chain text-sm flex items-center justify-between font-medium animate-pulse">
-              <div className="flex items-center gap-3">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-chain opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-chain" />
+            <div className="b-card p-4 sm:p-5" role="status" aria-live="polite">
+              <div className="flex items-center justify-between gap-3 text-[15px] font-medium">
+                <span className="flex items-center gap-3">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: 'var(--b-purple)' }} />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ background: 'var(--b-purple)' }} />
+                  </span>
+                  Classifying on-chain transactions: {classifiedCount} / {rawTransactions.length}
                 </span>
-                <span>Classifying on-chain transactions: {classifiedCount} / {rawTransactions.length}</span>
+                <span className="font-mono text-[13px]" style={{ color: 'var(--b-cyan)' }}>{classifiedPct}%</span>
               </div>
-              <div className="text-xs bg-chain/15 px-3 py-1 rounded-full font-mono">
-                {Math.round((classifiedCount / (rawTransactions.length || 1)) * 100)}%
+              <div className="fx-progress mt-3" aria-hidden>
+                <motion.div
+                  className="fx-progress-bar"
+                  initial={false}
+                  animate={{ scaleX: classifiedPct / 100 }}
+                  transition={reduce ? { duration: 0 } : spring}
+                />
               </div>
             </div>
           )}
 
-          {/* Skeleton Loading State */}
-          {appState === 'fetching' && (
-            <div className="space-y-6 animate-pulse">
-              {/* Wallet Intelligence Skeleton */}
-              <div className="h-32 bg-slate-800/40 border border-slate-800 rounded-2xl p-6" />
-              {/* Metrics Skeleton */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[1, 2, 3, 4].map(i => (
-                  <div key={i} className="h-24 bg-slate-800/40 border border-slate-800 rounded-xl" />
-                ))}
-              </div>
-              {/* Timeline Skeleton */}
-              <div className="h-64 bg-slate-800/40 border border-slate-800 rounded-2xl" />
-            </div>
-          )}
+          {/* Loading: blocks passing under a scanning beam, not a blinking skeleton. */}
+          {appState === 'fetching' && <ChainScanner status="Reading transaction history from the explorer…" />}
 
           {/* Dashboard & Timeline */}
           {appState !== 'fetching' && appState !== 'error' && (

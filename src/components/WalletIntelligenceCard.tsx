@@ -29,8 +29,11 @@ export default function WalletIntelligenceCard({ transactions, walletAddress }: 
   if (transactions.length === 0) return null;
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 backdrop-blur-md p-5 shadow-xl space-y-4 mb-6">
-      
+    // The one card with a light travelling its border: the wallet's identity,
+    // and the first thing a search produces.
+    <div className="fx-orbit fx-spot rounded-2xl border border-slate-800 bg-slate-900/60 backdrop-blur-md p-5 shadow-xl space-y-4 mb-6">
+      <span className="fx-orbit-ring" aria-hidden />
+
       {/* Top Header Row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
         <div className="flex items-center gap-3">
