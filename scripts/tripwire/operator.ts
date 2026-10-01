@@ -2,7 +2,7 @@
 import type { Hex } from 'viem';
 import { z } from 'zod';
 import type { Attestor } from './attest.js';
-import { ReleaseDecision, releaseDecision } from './review.js';
+import { ReleaseDecision, settlementVerdict } from './settlement.js';
 import type { DurableSender } from './sender.js';
 import type { TransactionRequest } from './store.js';
 import type { Observation, Watcher } from './watch.js';
@@ -22,7 +22,11 @@ export interface ReleasePort {
   /** Real RPC ports must confirm terminal state at a hash-checked finalized block. */
   terminalFinalized(messageId: Hex, state: ReleaseStatus): Promise<boolean>;
 }
-export interface OperatorResult { messageId: Hex; action: 'held' | 'delayed' | 'rejected' | 'executed' | 'retry' }
+export interface OperatorResult {
+  messageId: Hex; action: 'held' | 'delayed' | 'rejected' | 'executed' | 'retry';
+  /** The settlement check that decided a hold or rejection (ADR-023). */
+  reason?: string;
+}
 
 export class ReleaseOperator {
   private lock: Promise<unknown> = Promise.resolve();
@@ -47,13 +51,14 @@ export class ReleaseOperator {
         await this.watcher.acknowledge(messageId);
         results.push({ messageId, action: state.state === ReleaseState.EXECUTED ? 'executed' : 'rejected' }); continue;
       }
-      const decision = releaseDecision(observation);
+      const verdict = settlementVerdict(observation);
+      const decision = verdict.decision;
       const protection = await this.attestor.handle(this.routeId, observation.assessment);
       if (protection.action === 'rejected' || protection.action === 'unavailable') { results.push({ messageId, action: 'retry' }); continue; }
       // Pending/held vault states already block execution. Preserve the job
       // without signing the same HOLD repeatedly while data is missing.
       if (decision === ReleaseDecision.HOLD && state.state !== ReleaseState.VERIFIED) {
-        results.push({ messageId, action: 'held' }); continue;
+        results.push({ messageId, action: 'held', reason: verdict.reason }); continue;
       }
       // Keep reevaluating risk/protection, but do not spend a review nonce/gas
       // every tick during an already established per-request hold. At maturity
@@ -73,9 +78,9 @@ export class ReleaseOperator {
       state = await this.read(observation);
       if (state.state === ReleaseState.REJECTED) {
         if (!(await this.finalized(messageId, state))) { results.push({ messageId, action: 'retry' }); continue; }
-        await this.watcher.acknowledge(messageId); results.push({ messageId, action: 'rejected' }); continue;
+        await this.watcher.acknowledge(messageId); results.push({ messageId, action: 'rejected', reason: verdict.reason }); continue;
       }
-      if (decision !== ReleaseDecision.ALLOW) { results.push({ messageId, action: 'held' }); continue; }
+      if (decision !== ReleaseDecision.ALLOW) { results.push({ messageId, action: 'held', reason: verdict.reason }); continue; }
       if (!(await this.port.canExecute(messageId))) { results.push({ messageId, action: 'delayed' }); continue; }
       // A new review nonce identifies a consciously retried execution after a
       // recorded revert. Crashes replay the original raw tx through recover().

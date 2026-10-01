@@ -3,8 +3,9 @@
 import type { Hex, LocalAccount } from 'viem';
 import type { Observation } from './watch.js';
 import { getTierForScore, ResponseTier } from '../../src/tripwire/onChain.js';
+import { ReleaseDecision, settlementVerdict } from './settlement.js';
 
-export enum ReleaseDecision { ALLOW = 0, HOLD = 1, REJECT = 2 }
+export { ReleaseDecision };
 
 export interface ReleaseReview {
   messageId: Hex;
@@ -33,14 +34,9 @@ export const RELEASE_REVIEW_TYPES = {
   ],
 } as const;
 
+/** Proof-first decision for one release; see settlement.ts (ADR-023). */
 export function releaseDecision(observation: Observation): ReleaseDecision {
-  const { assessment, source } = observation;
-  if (source.status === 'invalid' || assessment.signals.some((s) =>
-    s.id === 'proof_payout_mismatch' && s.deterministic && s.score > 0)) return ReleaseDecision.REJECT;
-  if (source.status !== 'verified' || assessment.verdict === 'indeterminate' || assessment.score === null ||
-    !Number.isFinite(assessment.score) || assessment.score < 0 || !assessment.health.baselineFresh ||
-    !assessment.health.priceAvailable || !assessment.health.screeningAvailable || assessment.score >= 0.95) return ReleaseDecision.HOLD;
-  return ReleaseDecision.ALLOW;
+  return settlementVerdict(observation).decision;
 }
 
 export function signReleaseReview(signer: LocalAccount, vault: Hex, review: ReleaseReview, chainId: number): Promise<Hex> {

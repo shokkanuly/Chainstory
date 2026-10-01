@@ -7,6 +7,7 @@ import { burnEventSchema, releaseEventSchema, type BurnEvent, type LogFeed, type
 import type { OperatorStore, WatcherState } from './store.js';
 import { FinalityConflictError } from './finality.js';
 import type { sourceVerifierScopeSchema } from './sourceProof.js';
+import { routePolicySchema, type RoutePolicy } from './settlement.js';
 
 export interface SourceAdapter {
   scope: z.infer<typeof sourceVerifierScopeSchema>;
@@ -34,6 +35,8 @@ export interface WatcherConfig {
   payoutToleranceBps?: bigint;
   /** Operator-only durable state. Both feeds must support checkpoint/restore. */
   store?: OperatorStore;
+  /** Per-route limits that can only add holds (ADR-023). Attached to every observation. */
+  policy?: RoutePolicy;
 }
 
 const sourceEvidenceSchema = z.discriminatedUnion('status', [
@@ -50,6 +53,8 @@ export interface Observation {
   burned: bigint | null;
   source: SourceEvidence;
   assessment: RiskAssessment;
+  /** The route's limits, so every decision and signed review reads the same policy. */
+  policy?: RoutePolicy;
 }
 
 export class Watcher {
@@ -67,6 +72,7 @@ export class Watcher {
 
   constructor(private cfg: WatcherConfig) {
     if (cfg.sourceAdapter && cfg.verifySource) throw new Error('Configure one source verifier.');
+    if (cfg.policy) cfg.policy = routePolicySchema.parse(cfg.policy);
     if (cfg.sourceAdapter && !cfg.store) throw new Error('Authenticated source adapter requires a durable store.');
     if (cfg.store) {
       if (!cfg.ingress.checkpoint || !cfg.ingress.restore || !cfg.egress.checkpoint || !cfg.egress.restore) {
@@ -203,7 +209,7 @@ export class Watcher {
         };
       }
       if (!this.quarantine && !this.recent.some((t) => t.hash === transfer.hash)) this.remember(transfer, release);
-      out.push({ release, burned, source, assessment });
+      out.push({ release, burned, source, assessment, ...(this.cfg.policy ? { policy: this.cfg.policy } : {}) });
     }
     this.persist();
     return this.quarantine ? out.map((observation) => ({ ...observation, burned: null,
