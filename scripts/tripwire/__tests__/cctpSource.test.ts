@@ -23,7 +23,7 @@ function open(path?: string) {
 }
 function setup(f = fixture()) {
   const { store, path } = open(); const locate = vi.fn(async () => f.locator);
-  const adapter = new CctpSourceAdapter(store, vault, f.source.port, f.destination.port, locate);
+  const adapter = new CctpSourceAdapter(store, vault, f.source.port, f.destination.port, locate, 'legacy-post-mint');
   return { ...f, store, path, adapter, locate };
 }
 
@@ -119,7 +119,7 @@ describe('CCTP v2 USDC source authentication', () => {
     expect((await f.adapter.verify(f.release)).status).toBe('verified'); f.store.close();
     const restored = open(f.path).store;
     const locator = vi.fn(async () => null);
-    const adapter = new CctpSourceAdapter(restored, vault, f.source.port, f.destination.port, locator);
+    const adapter = new CctpSourceAdapter(restored, vault, f.source.port, f.destination.port, locator, 'legacy-post-mint');
     expect((await adapter.verify(f.release)).status).toBe('verified'); expect(locator).not.toHaveBeenCalled();
     expect((await adapter.verify({ ...f.release, amount: 1n })).status).toBe('invalid'); expect(restored.sourceProofs()).toHaveLength(1);
   });
@@ -129,7 +129,7 @@ describe('CCTP v2 USDC source authentication', () => {
     second.sourceReceipt.transactionHash = hash; for (const log of second.sourceReceipt.logs) log.transactionHash = hash;
     second.locator.sourceTransactionHash = hash;
     second.release.messageId = cctpReleaseId(route.source.chainId, route.source.transmitter, hash, 3);
-    const adapter = new CctpSourceAdapter(open(f.path).store, vault, second.source.port, second.destination.port, async () => second.locator);
+    const adapter = new CctpSourceAdapter(open(f.path).store, vault, second.source.port, second.destination.port, async () => second.locator, 'legacy-post-mint');
     expect((await adapter.verify(second.release)).status).toBe('invalid');
   });
   it('rejects a reused Circle nonce even with distinct source and destination transaction identities', async () => {
@@ -139,7 +139,7 @@ describe('CCTP v2 USDC source authentication', () => {
     second.destinationReceipt.transactionHash = destHash; for (const log of second.destinationReceipt.logs) log.transactionHash = destHash;
     second.locator.sourceTransactionHash = hash; second.locator.destinationTransactionHash = destHash;
     second.release.messageId = cctpReleaseId(route.source.chainId, route.source.transmitter, hash, 3);
-    const adapter = new CctpSourceAdapter(f.store, vault, second.source.port, second.destination.port, async () => second.locator);
+    const adapter = new CctpSourceAdapter(f.store, vault, second.source.port, second.destination.port, async () => second.locator, 'legacy-post-mint');
     expect((await adapter.verify(second.release)).status).toBe('invalid'); expect(f.store.sourceProofs()).toHaveLength(1);
   });
   it('holds a receipt that changes during collection and never commits backing from that fork', async () => {
@@ -194,12 +194,12 @@ describe('CCTP v2 USDC source authentication', () => {
     await expect(f.adapter.assertCanonical()).rejects.toBeInstanceOf(FinalityConflictError);
     expect(f.store.loadWatcher()).toBeNull(); f.store.close();
     const restored = open(f.path).store; f.source.setHash(f.sourceReceipt.blockHash);
-    const adapter = new CctpSourceAdapter(restored, vault, f.source.port, f.destination.port, f.locate);
+    const adapter = new CctpSourceAdapter(restored, vault, f.source.port, f.destination.port, f.locate, 'legacy-post-mint');
     await expect(adapter.verify(f.release)).rejects.toThrow('source quarantine');
   });
   it('refuses a scope change, adapter downgrade and corrupt proof journal', async () => {
     const f = setup(); await f.adapter.verify(f.release);
-    expect(() => new CctpSourceAdapter(f.store, sender, f.source.port, f.destination.port, f.locate)).toThrow('scope');
+    expect(() => new CctpSourceAdapter(f.store, sender, f.source.port, f.destination.port, f.locate, 'legacy-post-mint')).toThrow('scope');
     expect(() => new Watcher({ route: scope.route, chain: 'ethereum', token: 'USDC', decimals: 6, bridge: vault,
       ingress: new MemoryFeed<BurnEvent>(), egress: new MemoryFeed<ReleaseEvent>(), baseline: null,
       screening: { isFlagged: () => false, describe: () => undefined }, now: () => 0, store: f.store })).toThrow('Source adapter');

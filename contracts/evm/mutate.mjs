@@ -13,6 +13,8 @@ const SOL = 'contracts/evm/src/TripwireGuardian.sol', ART = 'src/tripwire/guardi
 const sol = readFileSync(SOL, 'utf8'), art = readFileSync(ART, 'utf8');
 const VAULT = 'contracts/evm/src/TripwireDemo.sol', DEMO_ART = 'scripts/tripwire/testnet/contracts.artifact.ts';
 const vault = readFileSync(VAULT, 'utf8'), demoArt = readFileSync(DEMO_ART, 'utf8');
+const ESCROW = 'contracts/evm/src/CctpEscrow.sol', CCTP_ART = 'scripts/tripwire/testnet/cctpEscrow.artifact.ts';
+const escrow = readFileSync(ESCROW, 'utf8'), cctpArt = readFileSync(CCTP_ART, 'utf8');
 const M = [
  ['DELAY cap: DELAY gets the full cap', 'tier == Tier.THROTTLE || tier == Tier.DELAY ? uint256(cap) / 2', 'tier == Tier.THROTTLE ? uint256(cap) / 2'],
  ['DELAY hold: never holds', 'tier == Tier.DELAY && block.timestamp < r.delayUntil && amount > r.cap / 10', 'false && tier == Tier.DELAY'],
@@ -38,6 +40,16 @@ const REVIEW_MUTANTS = [
  ['review protection: no risk tier required', 'if (guardian.currentTier(routeId) < r.minimumTier) revert RequiredProtectionMissing(routeId, r.minimumTier);', ''],
  ['review execution: a release can pay twice', 'r.state = ReleaseState.EXECUTED;', ''],
 ];
+const CCTP_MUTANTS = [
+ ['CCTP ownership: owner may invent credits', 'ProtectedVault(address(this), token_, guardian_, routeId_)', 'ProtectedVault(msg.sender, token_, guardian_, routeId_)'],
+ ['CCTP source: wrong messenger accepted', '_address(message, 44) != sourceMessenger ||', ''],
+ ['CCTP caller: unrestricted receives accepted', '_address(message, 108) != address(this) ||', ''],
+ ['CCTP finality: fast receive accepted', 'uint32(bytes4(message[144:148])) != 2000 ||', ''],
+ ['CCTP hook: unknown beneficiary format accepted', 'bytes32(message[376:408]) != BENEFICIARY_HOOK', 'false'],
+ ['CCTP fee: max fee ignored', 'fee > maxFee ||', ''],
+ ['CCTP receive: false success accepted', 'if (!transmitter.receiveMessage(message, attestation)) revert CctpReceiveFailed();', 'transmitter.receiveMessage(message, attestation);'],
+ ['CCTP mint: pooled funds count as a fresh deposit', 'if (afterMint < beforeMint || afterMint - beforeMint != net) revert CctpMintMismatch();', ''],
+];
 const results = [];
 try {
   for (const [name, from, to] of M) {
@@ -57,9 +69,19 @@ try {
     try { execSync('npx vitest run contracts/evm/test/releaseSafety.evm.test.ts', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
     results.push([name, caught ? 'caught' : 'SURVIVED']);
   }
+  writeFileSync(VAULT, vault);
+  for (const [name, from, to] of CCTP_MUTANTS) {
+    if (!escrow.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
+    writeFileSync(ESCROW, escrow.replace(from, to));
+    execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
+    let caught;
+    try { execSync('npx vitest run contracts/evm/test/cctpEscrow.evm.test.ts', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
+    results.push([name, caught ? 'caught' : 'SURVIVED']);
+  }
 } finally {
   writeFileSync(SOL, sol); writeFileSync(ART, art);
   writeFileSync(VAULT, vault); writeFileSync(DEMO_ART, demoArt);
+  writeFileSync(ESCROW, escrow); writeFileSync(CCTP_ART, cctpArt);
 }
 for (const r of results) console.log(r[1].padEnd(18), r[0]);
 const bad = results.filter((r) => r[1] !== 'caught').length;

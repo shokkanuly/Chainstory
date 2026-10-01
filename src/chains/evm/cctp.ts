@@ -1,5 +1,5 @@
 // Pure CCTP v2 codec. Unknown formats fail closed at the operator boundary.
-import { concatHex, encodeAbiParameters, hexToBigInt, keccak256, padHex, stringToHex, type Hex } from 'viem';
+import { concatHex, encodeAbiParameters, hexToBigInt, keccak256, padHex, stringToHex, toHex, type Hex } from 'viem';
 import { z } from 'zod';
 
 export const cctpAddressSchema = z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((v) => v.toLowerCase() as Hex);
@@ -50,4 +50,26 @@ export function cctpReleaseId(chainId: number, transmitter: string, transactionH
   return keccak256(encodeAbiParameters([
     { type: 'bytes32' }, { type: 'uint256' }, { type: 'address' }, { type: 'bytes32' }, { type: 'uint256' },
   ], [keccak256(stringToHex('Tripwire/CCTP/v2/source/v1')), BigInt(chainId), cctpAddressSchema.parse(transmitter), transactionHash, BigInt(logIndex)]));
+}
+
+// Destination escrow identity: available on-chain in the attested message.
+// Source tx/log uniqueness is still enforced independently by the operator.
+export function cctpEscrowReleaseId(chainId: number, vault: string, sourceDomain: number, nonce: Hex): Hex {
+  z.number().int().positive().max(Number.MAX_SAFE_INTEGER).parse(chainId);
+  z.number().int().nonnegative().max(0xffffffff).parse(sourceDomain);
+  z.string().regex(/^0x[0-9a-fA-F]{64}$/).parse(nonce);
+  return keccak256(encodeAbiParameters([
+    { type: 'bytes32' }, { type: 'uint256' }, { type: 'address' }, { type: 'uint32' }, { type: 'bytes32' },
+  ], [keccak256(stringToHex('Tripwire/CCTP/v2/escrow/v1')), BigInt(chainId), cctpAddressSchema.parse(vault), sourceDomain, nonce]));
+}
+
+export function cctpAttestedMessage(sourceMessage: Hex, nonce: Hex, finality: number, receivedBody: Hex): Hex {
+  const source = decodeCctpMessage(sourceMessage);
+  z.string().regex(/^0x[0-9a-fA-F]{64}$/).parse(nonce);
+  z.number().int().nonnegative().max(0xffffffff).parse(finality);
+  decodeCctpBurnBody(receivedBody);
+  // Keep version/domains and sender/recipient/caller/minimum finality;
+  // replace exactly the attester-assigned nonce, executed finality and body.
+  return concatHex([field(source.raw, 0, 12), nonce, field(source.raw, 44, 100),
+    toHex(finality, { size: 4 }), receivedBody]);
 }

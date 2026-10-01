@@ -59,7 +59,9 @@ RPC observations, receipt reorg recovery and durable quarantine
 ([runbook](plans/tripwire-operator.md)).
 The fourth adds a [CCTP v2 USDC post-mint escrow adapter](plans/tripwire-cctp.md),
 durable source/settlement/nonce claims and a read-only receipt audit command.
-The live transfer pilot and authenticated on-chain request boundary remain pending.
+The fifth adds self-owned `CctpEscrow`: an authenticated Circle mint and immutable
+PENDING request are atomic; the operator verifies both in the settlement receipt.
+External review, fresh deployment and the live transfer pilot remain pending.
 See [the plan](plans/tripwire-hardening.md)
 for implemented behavior, remaining P0 work and the old Sepolia deployment boundary.
 The wallet/Solana phase table below describes the earlier project work.

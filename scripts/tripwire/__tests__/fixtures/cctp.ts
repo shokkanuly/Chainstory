@@ -17,7 +17,7 @@ export const destinationTx = `0x${'bb'.repeat(32)}` as Hex;
 export const nonce = `0x${'cc'.repeat(32)}` as Hex;
 export const scope: OperatorScope = { route: route.id, sourceChainId: route.source.chainId, chainId: route.destination.chainId,
   source: route.source.transmitter, vault, guardian: actors.oracle.address, token: route.destination.usdc, sender,
-  decimals: 6, finalityMode: 'finalized', sourceVerifier: cctpVerifierScope(vault) };
+  decimals: 6, finalityMode: 'finalized', sourceVerifier: cctpVerifierScope(vault, 'legacy-post-mint') };
 
 const word = (v: Hex) => padHex(v, { size: 32 });
 const u32 = (v: number) => toHex(v, { size: 4 });
@@ -66,7 +66,7 @@ export function fixture(amount = 1_000_001n, fee = 100n) {
   };
   const release: ReleaseEvent = { messageId: cctpReleaseId(route.source.chainId, route.source.transmitter, sourceTx, 3),
     recipient: beneficiary, amount: amount - fee, timestamp: 1_780_000_000 };
-  return { message, body, receivedBody, release, sourceReceipt, destinationReceipt, source: rpc(true), destination: rpc(false),
+  return { message, body, receivedBody, release, sourceReceipt, destinationReceipt, log, source: rpc(true), destination: rpc(false),
     locator: { sourceTransactionHash: sourceTx, sourceLogIndex: 3, destinationTransactionHash: destinationTx } as CctpProofLocator,
     replaceMessage: (raw: Hex) => { sourceReceipt.logs[0] = log(cctpTransmitterAbi, 'MessageSent', { message: raw }, 3, route.source.transmitter, true); },
     replaceDeposit: (args: Partial<typeof depositArgs>) => { sourceReceipt.logs[1] = log(cctpMessengerAbi, 'DepositForBurn', { ...depositArgs, ...args }, 4, route.source.messenger, true); },

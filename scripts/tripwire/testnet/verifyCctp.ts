@@ -5,15 +5,16 @@ import { createPublicClient, http, keccak256, stringToHex } from 'viem';
 import { baseSepolia, sepolia } from 'viem/chains';
 import { z } from 'zod';
 import { cctpAddressSchema } from '../../../src/chains/evm/cctp.js';
-import { CCTP_BASE_SEPOLIA_TO_SEPOLIA as route } from '../../../src/chains/evm/registry/cctp.js';
+import { CCTP_BASE_SEPOLIA_TO_SEPOLIA as route, cctpEscrowAbi } from '../../../src/chains/evm/registry/cctp.js';
 import { CctpSourceAdapter, cctpProofLocatorSchema, cctpVerifierScope } from '../cctp.js';
 import { blockHashSchema, blockHeaderSchema, FinalityConflictError } from '../finality.js';
 import { OperatorStore } from '../store.js';
 import { cctpRpc } from './cctpOperator.js';
 import demo from './contracts.artifact.js';
+import { assertCctpEscrowBindings } from './cctpBindings.js';
 
 export const cctpManifestSchema = z.object({
-  version: z.literal(1), vault: cctpAddressSchema, guardian: cctpAddressSchema, operator: cctpAddressSchema,
+  version: z.union([z.literal(1), z.literal(2)]), vault: cctpAddressSchema, guardian: cctpAddressSchema, operator: cctpAddressSchema,
   requests: z.array(z.object({ messageId: blockHashSchema, proof: cctpProofLocatorSchema }).strict()).min(1).max(100),
 }).strict().refine((m) => new Set(m.requests.map((r) => r.messageId)).size === m.requests.length, 'Duplicate request IDs.');
 
@@ -30,6 +31,10 @@ async function main() {
     const destination = createPublicClient({ chain: sepolia, transport: transport(process.env.SEPOLIA_RPC_URL ?? sepolia.rpcUrls.default.http[0]) });
     if (await source.getChainId() !== route.source.chainId || await destination.getChainId() !== route.destination.chainId) throw new Error('RPC chain identity does not match the CCTP route.');
     const head = blockHeaderSchema.parse(await destination.getBlock({ blockTag: 'finalized' }));
+    const policy = manifest.version === 2 ? 'authenticated-escrow' : 'legacy-post-mint';
+    if (manifest.version === 2) await assertCctpEscrowBindings(manifest.vault, (name) => destination.readContract({
+      address: manifest.vault, abi: cctpEscrowAbi, functionName: name, blockNumber: head.number,
+    }));
     await destination.readContract({ address: manifest.vault, abi: demo.ProtectedVault.abi, functionName: 'MAX_REVIEW_TTL', blockNumber: head.number });
     for (const [name, expected] of [['token', route.destination.usdc], ['guardian', manifest.guardian], ['routeId', keccak256(stringToHex(route.id))]] as const) {
       const actual = await destination.readContract({ address: manifest.vault, abi: demo.ProtectedVault.abi, functionName: name, blockNumber: head.number });
@@ -38,10 +43,10 @@ async function main() {
     const path = resolve(process.argv[3] ?? `.tripwire/cctp-${manifest.vault}.sqlite`);
     store = new OperatorStore(path, { route: route.id, sourceChainId: route.source.chainId, chainId: route.destination.chainId,
       source: route.source.transmitter, vault: manifest.vault, guardian: manifest.guardian, token: route.destination.usdc,
-      sender: manifest.operator, decimals: route.decimals, finalityMode: 'finalized', sourceVerifier: cctpVerifierScope(manifest.vault) });
+      sender: manifest.operator, decimals: route.decimals, finalityMode: 'finalized', sourceVerifier: cctpVerifierScope(manifest.vault, policy) });
     if (store.loadWatcher()?.quarantine || store.sourceQuarantine()) throw new Error('This operator is quarantined; reconcile it before auditing new proof claims.');
     const adapter = new CctpSourceAdapter(store, manifest.vault, cctpRpc(source), cctpRpc(destination),
-      async (id) => manifest.requests.find((request) => request.messageId === id)?.proof ?? null);
+      async (id) => manifest.requests.find((request) => request.messageId === id)?.proof ?? null, policy);
     const tuple = z.tuple([cctpAddressSchema, z.bigint().positive(), z.number().int().min(0).max(4), z.bigint(), cctpAddressSchema, z.bigint(), z.number()]);
     const results = [];
     for (const request of manifest.requests) {
@@ -56,7 +61,7 @@ async function main() {
       results.push({ messageId: request.messageId, evidence });
     }
     await adapter.assertCanonical();
-    console.log(JSON.stringify({ results }, (_k, value: unknown) => typeof value === 'bigint' ? value.toString() : value));
+    console.log(JSON.stringify({ policy, results }, (_k, value: unknown) => typeof value === 'bigint' ? value.toString() : value));
   } finally {
     store?.close(); process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop);
   }
