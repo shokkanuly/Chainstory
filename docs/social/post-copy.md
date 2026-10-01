@@ -1,3 +1,7 @@
+> **Superseded.** This is the first launch copy, kept for reference. Its link
+> (retold-nu.vercel.app) no longer works. Use [launch-posts.md](launch-posts.md)
+> and the posters in [posters/](posters/).
+
 # Launch copy — X and Threads
 
 App: **https://retold-nu.vercel.app** — this is the link that should go in

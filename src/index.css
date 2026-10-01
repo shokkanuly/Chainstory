@@ -1,15 +1,18 @@
 @import "tailwindcss";
-@import "@fontsource/space-grotesk/400.css";
+/* Geist for reading, Geist Mono for figures and hashes, Space Grotesk only for
+   display headlines, where its character shows and legibility is not at stake. */
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 @import "@fontsource/space-grotesk/500.css";
 @import "@fontsource/space-grotesk/600.css";
 @import "@fontsource/space-grotesk/700.css";
-@import "@fontsource/dm-mono/400.css";
-@import "@fontsource/dm-mono/500.css";
 @import "./styles/brand.css";
+@import "./styles/motion.css";
 
 @theme {
-  --font-sans: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: 'DM Mono', ui-monospace, 'SF Mono', monospace;
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', monospace;
+  --font-display: 'Space Grotesk', 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
 
   --color-background: var(--b-canvas);
   --color-foreground: var(--b-text);
@@ -101,8 +104,7 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-feature-settings: "cv11", "ss01";
-    letter-spacing: -0.011em;
+    text-rendering: optimizeLegibility;
   }
 
   ::selection {
@@ -156,6 +158,12 @@
     background: color-mix(in srgb, var(--b-canvas) 72%, transparent);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
+  }
+  /* The scrolled navbar: near-opaque, so the page never reads through it. */
+  .nav-solid {
+    background: color-mix(in srgb, var(--b-canvas) 94%, transparent);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
   }
   .glass-strong {
     background: color-mix(in srgb, var(--b-canvas) 90%, transparent);
