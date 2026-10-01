@@ -1,0 +1,481 @@
+/* src/styles/motion.css
+ *
+ * The motion layer: the silk field's colours, and the CSS half of the effects
+ * in components/motion/. Everything here is transform, opacity or paint;
+ * nothing animates layout. brand.css's reduced-motion rule stops all of it.
+ */
+
+/* ---- The silk field (ShaderField) ------------------------------------- */
+
+/* Light: pastel and thin, so dark text keeps its contrast. */
+:root {
+  --fx-mode: light;
+  --fx-blue: #7c9cff;
+  --fx-violet: #b69cff;
+  --fx-pink: #f5a3cf;
+  --fx-peach: #ffc9a8;
+  --fx-intensity: 0.9;
+}
+
+/* Dark: deep and luminous. */
+:root[data-theme='dark'] {
+  --fx-mode: dark;
+  --fx-blue: #3b5bff;
+  --fx-violet: #8b3dff;
+  --fx-pink: #e0439a;
+  --fx-peach: #f08a6b;
+  --fx-intensity: 1;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --fx-mode: dark;
+    --fx-blue: #3b5bff;
+    --fx-violet: #8b3dff;
+    --fx-pink: #e0439a;
+    --fx-peach: #f08a6b;
+    --fx-intensity: 1;
+  }
+}
+
+.fx-field {
+  overflow: hidden;
+  /* Shown until the shader's first frame, and kept if WebGL is unavailable. */
+  background:
+    radial-gradient(60% 45% at 78% 30%, color-mix(in srgb, var(--fx-violet) 38%, transparent), transparent 70%),
+    radial-gradient(50% 40% at 18% 72%, color-mix(in srgb, var(--fx-pink) 26%, transparent), transparent 70%),
+    radial-gradient(45% 35% at 40% 18%, color-mix(in srgb, var(--fx-blue) 30%, transparent), transparent 70%),
+    var(--b-canvas);
+}
+.fx-field-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 900ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.fx-field[data-fx-ready] .fx-field-canvas {
+  opacity: 1;
+}
+
+/* The landing hero: the field fills it and dissolves into the canvas below. */
+.fx-hero-field {
+  mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
+}
+
+/* Keeps the hero copy readable over the light: the canvas colour, pooled
+ * behind the text column, thinning toward the right where the card sits. */
+.fx-hero-veil {
+  background:
+    radial-gradient(ellipse 62% 75% at 22% 55%, color-mix(in srgb, var(--b-canvas) 66%, transparent), transparent 72%),
+    linear-gradient(to right, color-mix(in srgb, var(--b-canvas) 35%, transparent), transparent 55%);
+}
+
+/* The platform's header band. */
+.fx-aurora {
+  mask-image: linear-gradient(to bottom, #000 0%, #000 30%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 30%, transparent 100%);
+}
+.fx-aurora-veil {
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--b-canvas) 35%, transparent), color-mix(in srgb, var(--b-canvas) 55%, transparent));
+}
+
+/* ---- DecodeText -------------------------------------------------------- */
+
+.dc-w {
+  white-space: nowrap;
+}
+.dc-c {
+  position: relative;
+}
+/* The real character keeps its place; a hex glyph is painted over it. */
+.dc-c[data-g] {
+  -webkit-text-fill-color: transparent;
+}
+.dc-c[data-g]::after {
+  content: attr(data-g);
+  position: absolute;
+  inset: 0;
+  /* Mono and a size down, so each hex digit fits the letter it stands in for. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--b-mono);
+  font-size: 0.74em;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1;
+  /* Set --dc-glyph on any ancestor to tint the hex. */
+  color: var(--dc-glyph, var(--b-purple));
+  -webkit-text-fill-color: var(--dc-glyph, var(--b-purple));
+  opacity: 0.85;
+}
+.dc-hit {
+  animation: dc-hit 620ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes dc-hit {
+  from {
+    text-shadow: 0 0 0.6em var(--dc-glyph, var(--b-purple));
+  }
+  to {
+    text-shadow: 0 0 0 transparent;
+  }
+}
+
+/* ---- RevealText -------------------------------------------------------- */
+
+.rv-w {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+  /* Room for descenders inside the mask, given back so line height holds. */
+  padding-bottom: 0.14em;
+  margin-bottom: -0.14em;
+}
+.rv-i {
+  display: inline-block;
+  transform-origin: 0% 100%;
+  will-change: transform;
+}
+
+/* ---- Spotlight (SpotlightTracker) --------------------------------------- */
+
+/* A soft light that follows the pointer across a surface, and catches its
+ * border where the pointer is nearest. Set --spot to tint it. Every platform
+ * card (.b-card) gets it too, so the whole working surface answers the hand. */
+.fx-spot,
+.b-card {
+  position: relative;
+  isolation: isolate;
+}
+.fx-spot::before,
+.fx-spot::after,
+.b-card::before,
+.b-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.fx-spot::before,
+.b-card::before {
+  z-index: -1;
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), color-mix(in srgb, var(--spot, var(--b-purple)) 13%, transparent), transparent 60%);
+}
+.fx-spot::after,
+.b-card::after {
+  padding: 1px;
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), color-mix(in srgb, var(--spot, var(--b-purple)) 75%, transparent), transparent 70%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+.fx-spot[data-spot]::before,
+.fx-spot[data-spot]::after,
+.b-card[data-spot]::before,
+.b-card[data-spot]::after {
+  opacity: 1;
+}
+
+/* ---- Orbit: a light that travels around a card's border ----------------- */
+
+@property --fx-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.fx-orbit {
+  position: relative;
+  isolation: isolate;
+}
+.fx-orbit > .fx-orbit-ring {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--fx-angle),
+    transparent 0deg,
+    color-mix(in srgb, var(--b-purple) 90%, transparent) 40deg,
+    color-mix(in srgb, var(--b-cyan) 80%, transparent) 80deg,
+    transparent 130deg,
+    transparent 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: fx-orbit 7s linear infinite;
+}
+@keyframes fx-orbit {
+  to {
+    --fx-angle: 360deg;
+  }
+}
+
+/* ---- Scan: one sweep of light across a row as it arrives ---------------- */
+
+.fx-scan {
+  position: relative;
+  overflow: hidden;
+}
+.fx-scan::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, var(--scan, var(--b-purple)) 16%, transparent) 46%,
+    color-mix(in srgb, var(--scan, var(--b-purple)) 34%, transparent) 50%,
+    transparent 56%
+  );
+  transform: translateX(-110%);
+}
+.fx-scan[data-scan='on']::after {
+  animation: fx-scan 1100ms cubic-bezier(0.45, 0, 0.2, 1) forwards;
+}
+@keyframes fx-scan {
+  to {
+    transform: translateX(110%);
+  }
+}
+
+/* ---- Chain scanner (loading) ------------------------------------------- */
+
+.fx-chain {
+  position: relative;
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+}
+.fx-chain-track {
+  display: flex;
+  gap: 14px;
+  width: max-content;
+  animation: fx-chain 9s linear infinite;
+}
+@keyframes fx-chain {
+  to {
+    transform: translateX(-50%);
+  }
+}
+.fx-block {
+  position: relative;
+  width: 104px;
+  height: 64px;
+  flex-shrink: 0;
+  border: 1px solid var(--b-line-strong);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--b-raised) 85%, transparent);
+  font-family: var(--b-mono);
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--b-text-muted);
+  padding: 9px 10px;
+  overflow: hidden;
+}
+.fx-block::before {
+  /* the link to the previous block */
+  content: '';
+  position: absolute;
+  left: -15px;
+  top: 50%;
+  width: 14px;
+  height: 1px;
+  background: var(--b-line-strong);
+}
+.fx-beam {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: linear-gradient(to bottom, transparent, var(--b-purple), var(--b-cyan), transparent);
+  box-shadow: 0 0 24px 6px color-mix(in srgb, var(--b-purple) 45%, transparent);
+}
+.fx-beam::after {
+  /* The lens: whatever passes under the beam is lit and tinted as it is read. */
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 150px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--b-purple) 26%, transparent), transparent 70%);
+  backdrop-filter: brightness(1.7) saturate(1.6) hue-rotate(-12deg);
+  -webkit-backdrop-filter: brightness(1.7) saturate(1.6) hue-rotate(-12deg);
+  mask-image: linear-gradient(to right, transparent, #000 35%, #000 65%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 35%, #000 65%, transparent);
+}
+
+/* A skeleton with a travelling sheen instead of a blink. */
+.fx-skel {
+  background:
+    linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--b-text) 6%, transparent) 50%, transparent 80%) 0 0 / 200% 100%,
+    color-mix(in srgb, var(--b-raised) 80%, transparent);
+  border: 1px solid var(--b-line);
+  animation: fx-skel 1.6s linear infinite;
+}
+@keyframes fx-skel {
+  from {
+    background-position: 150% 0, 0 0;
+  }
+  to {
+    background-position: -50% 0, 0 0;
+  }
+}
+
+/* ---- Progress ------------------------------------------------------------ */
+
+.fx-progress {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--b-text) 8%, transparent);
+  overflow: hidden;
+}
+.fx-progress-bar {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--b-purple), var(--b-cyan));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--b-purple) 60%, transparent);
+  transform-origin: 0 50%;
+}
+.fx-progress-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: fx-sheen 1.3s linear infinite;
+}
+@keyframes fx-sheen {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
+}
+
+/* ---- Radar (Check before you sign, while reading) ------------------------ */
+
+.fx-radar {
+  position: relative;
+  width: 168px;
+  height: 168px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, transparent 0 32%, color-mix(in srgb, var(--b-line-strong) 90%, transparent) 32.5% 33%, transparent 33.5%),
+    radial-gradient(circle, transparent 0 65%, color-mix(in srgb, var(--b-line-strong) 90%, transparent) 65.5% 66%, transparent 66.5%),
+    radial-gradient(circle, color-mix(in srgb, var(--b-purple) 10%, transparent), transparent 70%);
+  border: 1px solid var(--b-line-strong);
+}
+.fx-radar-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 280deg, color-mix(in srgb, var(--b-purple) 55%, transparent) 355deg, var(--b-cyan) 360deg);
+  animation: fx-spin 1.8s linear infinite;
+}
+.fx-radar-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--b-cyan);
+  box-shadow: 0 0 12px var(--b-cyan);
+  animation: fx-blip 1.8s ease-out infinite;
+}
+@keyframes fx-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes fx-blip {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  12% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  60% {
+    opacity: 0.25;
+    transform: scale(1);
+  }
+}
+
+/* ---- Stamp: a verdict landing, with a ring that carries outward ---------- */
+
+.fx-stamp {
+  position: relative;
+}
+.fx-stamp::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  border: 2px solid var(--stamp, var(--b-purple));
+  pointer-events: none;
+  animation: fx-ring 900ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+}
+@keyframes fx-ring {
+  from {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.9, 2.6);
+  }
+}
+
+/* ---- Scroll cue --------------------------------------------------------- */
+
+.fx-cue {
+  position: relative;
+  width: 1px;
+  height: 44px;
+  margin: 0 auto;
+  background: linear-gradient(to bottom, transparent, var(--b-line-strong));
+  overflow: hidden;
+}
+.fx-cue::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 1px;
+  height: 14px;
+  background: var(--b-purple);
+  box-shadow: 0 0 8px var(--b-purple);
+  animation: fx-cue 1.9s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+@keyframes fx-cue {
+  from {
+    transform: translateY(-14px);
+  }
+  to {
+    transform: translateY(44px);
+  }
+}
+
+/* ---- Closing horizon: the one gradient below the hero ------------------- */
+
+.fx-horizon {
+  background:
+    radial-gradient(70% 90% at 50% 115%, color-mix(in srgb, var(--fx-violet) 34%, transparent), transparent 70%),
+    radial-gradient(40% 60% at 28% 110%, color-mix(in srgb, var(--fx-pink) 20%, transparent), transparent 70%),
+    radial-gradient(40% 60% at 74% 112%, color-mix(in srgb, var(--fx-blue) 22%, transparent), transparent 70%);
+}

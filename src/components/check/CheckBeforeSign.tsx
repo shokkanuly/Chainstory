@@ -23,7 +23,10 @@ import {
   type Icon,
 } from '@phosphor-icons/react';
 import { parseEther } from 'viem';
+import { motion } from 'framer-motion';
 import '../tripwire/tripwire.css';
+import DecodeText from '../motion/DecodeText';
+import { EASE, useReducedMotion } from '../../lib/motion';
 import type { ChainId } from '../../types';
 import { CHAIN_CONFIGS } from '../../services/chains';
 import { isAddressShaped } from '../../services/contractIntel';
@@ -49,6 +52,8 @@ const LEVEL: Record<PreSignReason['level'], { label: string; color: string; icon
 type Source = { kind: 'live'; chain: ChainId } | { kind: 'scenario'; label: string };
 
 interface Outcome {
+  /** Each check is a new verdict, and lands as one. */
+  id: number;
   result: PreSignResult;
   source: Source;
   wording: string | null;
@@ -83,7 +88,7 @@ export default function CheckBeforeSign() {
       return;
     }
     if (id !== latest.current) return;
-    setOutcome({ result, source, wording: null });
+    setOutcome({ id, result, source, wording: null });
     setBusy(false);
 
     const wording = await phraseCheckVerdict(result.badge, result.reasons.map((r) => r.id));
@@ -122,7 +127,13 @@ export default function CheckBeforeSign() {
     <div className="mx-auto max-w-6xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
       <header>
         <p className="b-eyebrow">Retold · check before you sign</p>
-        <h1 className="mt-2 text-3xl font-bold tracking-[-0.03em] sm:text-4xl">Know what you are about to sign.</h1>
+        <DecodeText
+          as="h1"
+          text="Know what you are about to sign."
+          duration={900}
+          delay={120}
+          className="mt-2 block font-display text-[clamp(2rem,4.4vw,3.2rem)] font-semibold leading-[1.02] tracking-[-0.04em]"
+        />
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
           Paste a pending transaction’s target and data, the way your wallet shows them. Retold reads the calldata,
           looks up the contracts involved on the block explorer, and tells you what signing does, with a green, yellow
@@ -231,7 +242,7 @@ export default function CheckBeforeSign() {
         </section>
 
         <section className="min-w-0" aria-live="polite" aria-busy={busy}>
-          {outcome ? <ResultCard outcome={outcome} /> : <EmptyState busy={busy} />}
+          {busy ? <EmptyState busy selector={data.trim().slice(0, 10)} /> : outcome ? <ResultCard key={outcome.id} outcome={outcome} /> : <EmptyState busy={false} />}
         </section>
       </div>
     </div>
@@ -263,18 +274,32 @@ function BadgeDot({ badge }: { badge: Badge }) {
   );
 }
 
-function EmptyState({ busy }: { busy: boolean }) {
+function EmptyState({ busy, selector }: { busy: boolean; selector?: string }) {
   return (
-    <div className="b-card flex min-h-[18rem] flex-col items-center justify-center gap-2 p-6 text-center">
+    <div className="b-card flex min-h-[22rem] flex-col items-center justify-center gap-4 p-6 text-center">
+      {/* A radar: sweeping while the calldata and contracts are read, still while idle. */}
+      <div className="fx-radar" style={busy ? undefined : { opacity: 0.55 }} aria-hidden>
+        {busy && (
+          <>
+            <div className="fx-radar-sweep" />
+            <span className="fx-radar-dot" style={{ top: '26%', left: '64%' }} />
+            <span className="fx-radar-dot" style={{ top: '62%', left: '28%', animationDelay: '0.9s' }} />
+          </>
+        )}
+      </div>
       {busy ? (
         <>
-          <CircleNotchIcon size={22} weight="bold" className="animate-spin text-muted-foreground" aria-hidden />
-          <p className="text-sm text-muted-foreground">Reading the calldata and asking the explorer about the contracts…</p>
+          <p className="text-[15px] text-muted-foreground">Reading the calldata and asking the explorer about the contracts…</p>
+          {selector && selector.length >= 10 && (
+            <p className="font-mono text-[13px]">
+              selector <span style={{ color: 'var(--b-cyan)' }}>{selector}</span>
+            </p>
+          )}
         </>
       ) : (
         <>
           <p className="font-semibold">Nothing checked yet</p>
-          <p className="max-w-sm text-sm text-muted-foreground">
+          <p className="max-w-sm text-[15px] text-muted-foreground">
             Paste a transaction on the left, or try one of the demo scenarios to see a green and a red result.
           </p>
         </>
@@ -288,19 +313,39 @@ function EmptyState({ busy }: { busy: boolean }) {
 function ResultCard({ outcome }: { outcome: Outcome }) {
   const { result, source, wording } = outcome;
   const b = BADGE[result.badge];
+  const reduce = useReducedMotion();
 
   return (
-    <article className="b-card overflow-hidden" style={{ borderColor: b.color }}>
-      <div className="h-1.5" style={{ background: b.color }} aria-hidden />
+    // The verdict lands: the card settles into focus, its colour bar wipes
+    // across, the badge stamps down with a ring that carries outward, and the
+    // reasons follow in order.
+    <motion.article
+      className="b-card overflow-hidden"
+      style={{ borderColor: b.color, ['--spot' as string]: b.color }}
+      initial={reduce ? false : { opacity: 0, y: 18, scale: 0.98, filter: 'blur(8px)' }}
+      animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+      transition={{ duration: 0.55, ease: EASE }}
+    >
+      <motion.div
+        className="h-1.5 origin-left"
+        style={{ background: b.color }}
+        initial={reduce ? false : { scaleX: 0 }}
+        animate={{ scaleX: 1 }}
+        transition={{ duration: 0.7, ease: [0.65, 0, 0.35, 1], delay: 0.1 }}
+        aria-hidden
+      />
       <div className="space-y-5 p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-semibold"
-            style={{ borderColor: `color-mix(in oklab, ${b.color} 55%, transparent)` }}
+          <motion.span
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-semibold ${reduce ? '' : 'fx-stamp'}`}
+            style={{ borderColor: `color-mix(in oklab, ${b.color} 55%, transparent)`, ['--stamp' as string]: b.color }}
+            initial={reduce ? false : { scale: 1.45, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 20, delay: 0.25 }}
           >
             <b.icon size={16} weight="fill" color={b.color} aria-hidden />
             {b.label} · {b.verdict}
-          </span>
+          </motion.span>
           <span className="text-xs text-muted-foreground">
             {source.kind === 'scenario'
               ? 'Demo scenario · synthetic contract facts'
@@ -310,7 +355,7 @@ function ResultCard({ outcome }: { outcome: Outcome }) {
 
         <div>
           <p className="b-eyebrow">{result.headline}</p>
-          <h2 className="mt-1 text-xl font-semibold leading-snug break-words">{result.story}</h2>
+          <DecodeText as="h2" text={result.story} delay={380} duration={800} className="mt-1 block text-xl font-semibold leading-snug break-words" />
         </div>
 
         {wording && (
@@ -329,7 +374,7 @@ function ResultCard({ outcome }: { outcome: Outcome }) {
           <h3 className="text-sm font-semibold">Why</h3>
           <ul className="mt-2 space-y-2">
             {result.reasons.map((r, i) => (
-              <ReasonRow key={`${r.id}-${i}`} reason={r} />
+              <ReasonRow key={`${r.id}-${i}`} reason={r} index={i} />
             ))}
           </ul>
         </div>
@@ -338,14 +383,21 @@ function ResultCard({ outcome }: { outcome: Outcome }) {
 
         <p className="border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">{result.disclaimer}</p>
       </div>
-    </article>
+    </motion.article>
   );
 }
 
-function ReasonRow({ reason }: { reason: PreSignReason }) {
+function ReasonRow({ reason, index }: { reason: PreSignReason; index: number }) {
   const l = LEVEL[reason.level];
+  const reduce = useReducedMotion();
   return (
-    <li className="rounded-xl border border-border p-3">
+    <motion.li
+      className="rounded-xl border border-border p-3"
+      style={{ borderLeft: `3px solid ${l.color}` }}
+      initial={reduce ? false : { opacity: 0, x: -14 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.45, ease: EASE, delay: 0.45 + Math.min(index, 6) * 0.08 }}
+    >
       <div className="flex items-start gap-2">
         <l.icon size={16} weight="fill" color={l.color} className="mt-0.5 shrink-0" aria-hidden />
         <div className="min-w-0">
@@ -366,7 +418,7 @@ function ReasonRow({ reason }: { reason: PreSignReason }) {
           )}
         </div>
       </div>
-    </li>
+    </motion.li>
   );
 }
 

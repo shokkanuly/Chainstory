@@ -67,25 +67,12 @@
   overflow: hidden;
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.stat-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--accent-blue), transparent);
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
 .stat-card:hover {
-  border-color: rgba(59, 130, 246, 0.3);
+  border-color: var(--border-default);
   transform: translateY(-2px);
   box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.4);
 }
-.stat-card:hover::before {
-  opacity: 1;
-}
+/* The hover light is the shared spotlight (motion.css .fx-spot). */
 
 .stat-card-label {
   font-size: 11px;
@@ -205,6 +192,7 @@
 }
 
 .filter-tab {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -212,11 +200,15 @@
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-  font-size: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+}
+.filter-tab > :not(.filter-tab-pill) {
+  position: relative;
+  z-index: 1;
 }
 .filter-tab:hover {
   border-color: var(--border-default);
@@ -224,10 +216,17 @@
   background: rgba(30, 41, 59, 0.8);
 }
 .filter-tab.active {
-  border-color: var(--accent-blue);
-  background: rgba(59, 130, 246, 0.12);
-  color: var(--accent-blue);
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.1);
+  border-color: transparent;
+  color: var(--text-primary);
+}
+/* The sliding selection (TransactionTimeline). */
+.filter-tab-pill {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 1px solid var(--b-purple);
+  background: color-mix(in srgb, var(--b-purple) 16%, transparent);
+  box-shadow: 0 0 22px -6px var(--b-purple);
 }
 .filter-tab-count {
   background: rgba(0, 0, 0, 0.3);
@@ -315,8 +314,10 @@
 }
 
 /* ===== TRANSACTION CARD ===== */
+/* Entrance is framer-motion's (TransactionCard); the radius lets the scan
+ * of light (motion.css .fx-scan) clip to the card. */
 .tx-card {
-  animation: fade-in-up 0.3s ease both;
+  border-radius: var(--radius-lg);
 }
 
 .tx-card-inner {
@@ -331,7 +332,7 @@
   transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 .tx-card-inner:hover {
-  border-color: rgba(59, 130, 246, 0.25);
+  border-color: var(--border-default);
   transform: translateY(-1px);
   box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.3);
 }
