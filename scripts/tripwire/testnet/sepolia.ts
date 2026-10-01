@@ -553,7 +553,7 @@ export async function runTestnetDemo(
     for (const o of seen.values()) {
       clock = Number((await c.pub.getBlock()).timestamp);
       const attestation = await attestor.handle(ROUTE_ID, o.assessment);
-      if (attestation.action === 'rejected') throw new Error('Risk attestation failed; release remains pending.');
+      if (attestation.action === 'rejected' || attestation.action === 'unavailable') throw new Error('Risk attestation failed or unavailable; release remains pending.');
       clock = Number((await c.pub.getBlock()).timestamp);
       const releaseState = await c.pub.readContract({
         address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'releases', args: [o.release.messageId],
@@ -605,7 +605,7 @@ export async function runTestnetDemo(
         txs: {
           burn: t?.burn,
           request: t?.request ?? ('0x' as Hex),
-          attest: attestation.action !== 'skipped' ? attestation.result.txHash : undefined,
+          attest: attestation.action === 'submitted' ? attestation.result.txHash : undefined,
           review: reviewed.hash,
           execute: exec.hash,
         },

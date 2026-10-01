@@ -48,7 +48,7 @@ export class ReleaseOperator {
       }
       const decision = releaseDecision(observation);
       const protection = await this.attestor.handle(this.routeId, observation.assessment);
-      if (protection.action === 'rejected') { results.push({ messageId, action: 'retry' }); continue; }
+      if (protection.action === 'rejected' || protection.action === 'unavailable') { results.push({ messageId, action: 'retry' }); continue; }
       // Pending/held vault states already block execution. Preserve the job
       // without signing the same HOLD repeatedly while data is missing.
       if (decision === ReleaseDecision.HOLD && state.state !== ReleaseState.VERIFIED) {
