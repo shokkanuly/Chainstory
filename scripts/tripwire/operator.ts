@@ -18,6 +18,8 @@ export interface ReleasePort {
   review(observation: Observation, nonce: bigint): Promise<TransactionRequest>;
   canExecute(messageId: Hex): Promise<boolean>;
   execute(messageId: Hex): TransactionRequest;
+  /** Real RPC ports must confirm terminal state at a hash-checked finalized block. */
+  terminalFinalized(messageId: Hex, state: ReleaseStatus): Promise<boolean>;
 }
 export interface OperatorResult { messageId: Hex; action: 'held' | 'delayed' | 'rejected' | 'executed' | 'retry' }
 
@@ -31,13 +33,16 @@ export class ReleaseOperator {
   }
 
   private async poll(): Promise<OperatorResult[]> {
-    // Settle the original signed bytes before allocating any new tx nonce.
+    // Check source/destination anchors BEFORE recovering signed work.
+    const observations = await this.watcher.tick();
+    if (this.watcher.quarantineReason) return observations.map((o) => ({ messageId: o.release.messageId, action: 'held' }));
     await this.sender.recover();
     const results: OperatorResult[] = [];
-    for (const observation of await this.watcher.tick()) {
+    for (const observation of observations) {
       const { messageId } = observation.release;
       let state = await this.read(observation);
       if (state.state === ReleaseState.EXECUTED || state.state === ReleaseState.REJECTED) {
+        if (!(await this.finalized(messageId, state))) { results.push({ messageId, action: 'retry' }); continue; }
         await this.watcher.acknowledge(messageId);
         results.push({ messageId, action: state.state === ReleaseState.EXECUTED ? 'executed' : 'rejected' }); continue;
       }
@@ -51,10 +56,15 @@ export class ReleaseOperator {
       }
       // Re-read the per-message nonce after route protection settles.
       state = await this.read(observation);
-      const review = await this.sender.send(`review/${messageId}/${state.nonce + 1n}`, await this.port.review(observation, state.nonce + 1n));
-      if (review.status !== 'confirmed') { results.push({ messageId, action: 'retry' }); continue; }
+      const attempt = this.sender.nextAttemptId(`review/${messageId}/${state.nonce + 1n}`);
+      if (!attempt) { results.push({ messageId, action: 'retry' }); continue; }
+      const review = await this.sender.send(attempt, await this.port.review(observation, state.nonce + 1n));
+      if (review.status !== 'confirmed' && !(review.status === 'included' && review.receiptStatus === 'success')) {
+        results.push({ messageId, action: 'retry' }); continue;
+      }
       state = await this.read(observation);
       if (state.state === ReleaseState.REJECTED) {
+        if (!(await this.finalized(messageId, state))) { results.push({ messageId, action: 'retry' }); continue; }
         await this.watcher.acknowledge(messageId); results.push({ messageId, action: 'rejected' }); continue;
       }
       if (decision !== ReleaseDecision.ALLOW) { results.push({ messageId, action: 'held' }); continue; }
@@ -63,11 +73,16 @@ export class ReleaseOperator {
       // recorded revert. Crashes replay the original raw tx through recover().
       const execution = await this.sender.send(`execute/${messageId}/${state.nonce}`, this.port.execute(messageId));
       state = await this.read(observation);
-      if (execution.status === 'confirmed' && state.state === ReleaseState.EXECUTED) {
+      if (execution.status === 'confirmed' && state.state === ReleaseState.EXECUTED && await this.finalized(messageId, state)) {
         await this.watcher.acknowledge(messageId); results.push({ messageId, action: 'executed' });
       } else results.push({ messageId, action: 'retry' });
     }
     return results;
+  }
+
+  private async finalized(messageId: Hex, state: ReleaseStatus): Promise<boolean> {
+    await this.watcher.assertCanonical();
+    return this.port.terminalFinalized(messageId, state);
   }
 
   private async read(observation: Observation): Promise<ReleaseStatus> {

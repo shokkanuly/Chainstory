@@ -16,7 +16,8 @@ remain historical context.
 | :--- | :--- |
 | Signed per-release execution gate, retryable source/recipient observations and event cursor recovery | Implemented locally; see hardening plan for validation and trust boundaries |
 | Durable operator state, signed transaction journal and HOLD/delay recovery | Implemented locally; [operator runbook](plans/tripwire-operator.md); no live deployment |
-| Independent bridge adapter and finality/reorg handling | Next; not yet implemented |
+| Ethereum/Sepolia finalized observations, receipt reorg recovery and durable quarantine | Implemented locally; ADR-016; no live deployment |
+| Independent real bridge adapter and its source consensus/finality policy | Next; not yet implemented |
 | Live deployment of the release-gated vault | Not deployed; old Sepolia vault is incompatible with current demo scripts |
 
 Tripwire and Check before you sign, planned in [plans/tripwire-hackathon.md](plans/tripwire-hackathon.md) (each stage's result is recorded there).

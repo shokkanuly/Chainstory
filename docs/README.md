@@ -54,7 +54,9 @@ They connect at three points, in this priority order:
 
 **Active work: Tripwire hardening.** The first milestone adds a signed per-release
 execution gate and retryable observations. The second adds durable operator state,
-signed transaction recovery and HOLD/delay retries ([runbook](plans/tripwire-operator.md)).
+signed transaction recovery and HOLD/delay retries. The third adds finalized
+RPC observations, receipt reorg recovery and durable quarantine
+([runbook](plans/tripwire-operator.md)).
 See [the plan](plans/tripwire-hardening.md)
 for implemented behavior, remaining P0 work and the old Sepolia deployment boundary.
 The wallet/Solana phase table below describes the earlier project work.

@@ -9,16 +9,25 @@
 
 import type { Hex } from 'viem';
 import { z } from 'zod';
+import { blockHashSchema } from './finality.js';
 
 const messageIdSchema = z.string().regex(/^0x[0-9a-fA-F]{64}$/).transform((v) => v.toLowerCase() as Hex);
 const addressSchema = z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((v) => v.toLowerCase() as Hex);
 const timestampSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+export const eventOriginSchema = z.object({
+  chainId: z.number().int().positive(), address: addressSchema,
+  blockNumber: z.bigint().nonnegative(), blockHash: blockHashSchema,
+  transactionHash: blockHashSchema, logIndex: z.number().int().nonnegative(),
+});
+export type EventOrigin = z.infer<typeof eventOriginSchema>;
 
 export const burnEventSchema = z.object({
   messageId: messageIdSchema, amount: z.bigint().positive(), timestamp: timestampSchema,
+  origin: eventOriginSchema.optional(),
 });
 export const releaseEventSchema = z.object({
   messageId: messageIdSchema, recipient: addressSchema, amount: z.bigint().positive(), timestamp: timestampSchema,
+  origin: eventOriginSchema.optional(),
 });
 
 /** Source chain: tokens burned (or locked) to bridge out. */
@@ -27,6 +36,7 @@ export interface BurnEvent {
   /** Token base units. */
   amount: bigint;
   timestamp: number;
+  origin?: EventOrigin;
 }
 
 /** Destination chain: a release the bridge is about to pay out — scored before it executes. */
@@ -36,6 +46,7 @@ export interface ReleaseEvent {
   /** Token base units. */
   amount: bigint;
   timestamp: number;
+  origin?: EventOrigin;
 }
 
 export interface LogFeed<E> {
@@ -44,6 +55,8 @@ export interface LogFeed<E> {
   /** Durable watchers commit these cursors with their ingested events. */
   checkpoint?(): string;
   restore?(cursor: string): void;
+  /** Revalidate the persisted canonical anchor immediately before signing/sending. */
+  assertCanonical?(): Promise<void>;
 }
 
 /** An in-memory log with a read cursor: the local stand-in for eth_getLogs. */

@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Solidity-0.8.37-363636?logo=solidity&logoColor=white" alt="Solidity" />
   <img src="https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/viem-2.56-FFC517" alt="viem" />
-  <img src="https://img.shields.io/badge/tests-379_passing-brightgreen" alt="379 tests passing" />
+  <img src="https://img.shields.io/badge/tests-414_passing-brightgreen" alt="414 tests passing" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
 </p>
 
@@ -49,8 +49,9 @@ fresh signed review for each payout. Pending, unavailable and held requests cann
 execute; invalid requests remain rejected after route protection expires. The local
 demo now runs the actual gated vault as well as the guardian. See the
 [hardening plan](docs/plans/tripwire-hardening.md) for the trust boundary and remaining
-work: an independent real-bridge adapter and finality/reorg handling. The operator now
-has durable state, a signed transaction journal and HOLD/delay recovery; see its
+work: an independent real-bridge/source consensus adapter. The operator now
+has durable state, a signed transaction journal, HOLD/delay recovery, finalized RPC
+observations and reorg handling; see its
 [runbook](docs/plans/tripwire-operator.md).
 
 On 18 April 2026, $292M left Kelp DAO's bridge. Not over hours — in **a single
@@ -200,10 +201,11 @@ against **no verifiable burn at all**.
 | Signed release gate: field/domain binding, replay/order, expiry, key rotation, terminal rejection, required protection | 23 tests |
 | Watcher retry, missing/conflicting source data, deduplication and acknowledgement | 11 tests |
 | RPC/decode cursor recovery, bounded catch-up and old-deployment refusal | 4 tests |
-| Durable state, SIGKILL, original-byte transaction recovery and HOLD/delay queue | 33 tests |
+| Durable state, SIGKILL, transaction inclusion/finality recovery and HOLD/delay queue | 48 tests |
+| Finalized log/provenance, canonical headers/checkpoints, receipt finality and signing guard | 20 tests |
 | Check before you sign, incl. "nothing reachable from /check can sign" | 40 tests |
 | Gas: check an outflow · accept an attestation | 36.7k · 84.5k |
-| Total | **379 tests passing** |
+| Total | **414 tests passing** |
 
 The dashboard runs the exact contract bytecode the tests run, and a test fails
 if they ever differ.
@@ -215,7 +217,7 @@ git clone https://github.com/shokkanuly/Chainstory.git
 cd Chainstory
 npm install
 npm run dev                    # Retold at /app and /check, Tripwire at /tripwire
-npm test                       # 379 tests
+npm test                       # 414 tests
 npm run tripwire:demo:local    # the four-step attack, in a local EVM
 ```
 

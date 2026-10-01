@@ -26,7 +26,7 @@ function fixture(extra: Partial<WatcherConfig> = {}) {
   let state: ReleaseStatus = { recipient: release.recipient, amount: release.amount, state: ReleaseState.PENDING, nonce: 0n };
   let nonce = 0;
   const request = (data: Hex): TransactionRequest => ({ to: scope.vault, data, value: '0' });
-  const txPort: TransactionPort = { chainId: 31337, sender: actors.owner.address,
+  const txPort: TransactionPort = { finalityMode: 'local', chainId: 31337, sender: actors.owner.address,
     prepare: (r) => actors.owner.signTransaction({ chainId: 31337, type: 'eip1559', nonce: nonce++, gas: 100_000n,
       maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, to: r.to as Hex, data: r.data as Hex, value: BigInt(r.value) }),
     broadcast: async (raw) => {
@@ -38,7 +38,7 @@ function fixture(extra: Partial<WatcherConfig> = {}) {
   const canExecute = vi.fn().mockResolvedValue(true);
   const releasePort: ReleasePort = { read: async () => state,
     review: async (o) => request(toHex(releaseDecision(o), { size: 1 })),
-    execute: () => request('0xff'), canExecute };
+    execute: () => request('0xff'), canExecute, terminalFinalized: async () => true };
   const cfg = (s: OperatorStore): WatcherConfig => ({ route: scope.route, chain: 'base', token: 'USDC', decimals: 6,
     bridge: scope.vault, store: s, ingress, egress, now: () => release.timestamp,
     baseline: { route: scope.route, computedAt: release.timestamp, windowHours: 24, sampleSize: 100, medianTransferUsd: 10_000, p95TransferUsd: 100_000, rollingTvlUsd: 40_000_000 },
@@ -47,11 +47,37 @@ function fixture(extra: Partial<WatcherConfig> = {}) {
   const protectionSubmit = vi.fn().mockResolvedValue({ ok: true });
   const make = (s: OperatorStore) => new ReleaseOperator(new Watcher(cfg(s)), new DurableSender(s, txPort),
     new Attestor(actors.oracle, { address: scope.guardian, chainId: 31337, currentTier: async () => 0, submitAttestation: protectionSubmit }, { now: () => release.timestamp }), releasePort, keccak256(toHex(scope.route)));
-  return { store, open, make, operator: make(store), release, txPort, canExecute, protectionSubmit,
+  return { store, open, make, operator: make(store), releasePort, release, txPort, canExecute, protectionSubmit,
     setState: (s: Partial<ReleaseStatus>) => { state = { ...state, ...s }; } };
 }
 
 describe('durable release queue', () => {
+  it('waits for finalized terminal state before acknowledging an external execution', async () => {
+    const f = fixture(); f.setState({ state: ReleaseState.EXECUTED });
+    f.releasePort.terminalFinalized = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    expect((await f.operator.tick())[0].action).toBe('retry'); expect(f.store.loadWatcher()?.pending).toHaveLength(1);
+    expect((await f.operator.tick())[0].action).toBe('executed'); expect(f.store.loadWatcher()?.pending).toEqual([]);
+  });
+  it('does not replay signed work or touch the vault after a source finality conflict', async () => {
+    const f = fixture();
+    vi.spyOn(f.releasePort, 'read').mockImplementation(() => { throw new Error('must not read or act'); });
+    // A restored quarantine must stop before sender recovery or any vault action.
+    const state = { ingressCursor: '0', egressCursor: '0', burns: [], pending: [f.release], completed: [], conflictingBurns: [], conflictingReleases: [], history: [], quarantine: 'Finalized source block changed' };
+    f.store.saveWatcher(state);
+    const request = { to: f.release.recipient, data: '0x00', value: '0' };
+    const raw = await f.txPort.prepare(request); f.store.saveTransaction({ id: 'review/pending', request, raw, hash: keccak256(raw), status: 'signed' });
+    const broadcast = vi.spyOn(f.txPort, 'broadcast');
+    expect((await f.make(f.store).tick())[0].action).toBe('held'); expect(f.store.transactions()[0].status).toBe('signed');
+    expect(broadcast).not.toHaveBeenCalled();
+  });
+  it('can consciously retry a finalized reverted review instead of caching its failure forever', async () => {
+    const f = fixture(); f.txPort.waitReceipt = vi.fn().mockResolvedValueOnce({ status: 'reverted', blockNumber: 100n, gasUsed: 50_000n })
+      .mockResolvedValue({ status: 'success', blockNumber: 101n, gasUsed: 50_000n });
+    expect((await f.operator.tick())[0].action).toBe('retry'); f.setState({ state: ReleaseState.PENDING, nonce: 0n });
+    expect((await f.operator.tick())[0].action).toBe('executed');
+    expect(f.store.transactions().filter((t) => t.id.startsWith('review/'))).toHaveLength(2);
+  });
+
   it('escalates route protection for a high-risk held request even when the vault is already pending', async () => {
     const f = fixture({ screening: { isFlagged: () => true, describe: () => 'Recorded flagged recipient' } });
     expect((await f.operator.tick())[0].action).toBe('held');

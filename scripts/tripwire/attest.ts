@@ -43,6 +43,8 @@ export interface AttestorOptions {
   ttlSeconds?: number;
   /** Defaults to 64 random bits, so a restarted attestor cannot reuse a nonce. */
   nextNonce?: () => bigint;
+  /** Real-chain operators revalidate canonical source/destination anchors before signing. */
+  beforeSign?: () => Promise<void>;
 }
 
 function randomNonce(): bigint {
@@ -67,6 +69,7 @@ export class Attestor {
     const active = Number(await this.guardian.currentTier(routeId)) as ResponseTier;
     if (tier <= active) return { action: 'skipped', reason: `the route is already at ${ResponseTier[active]}` };
 
+    await this.opts.beforeSign?.();
     const attestation: Attestation = {
       routeId,
       riskScore: toOnChainScore(assessment.score),

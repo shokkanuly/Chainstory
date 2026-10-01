@@ -18,7 +18,9 @@ const stopLoop = () => { stop = true; abort.abort(); };
 process.once('SIGINT', stopLoop); process.once('SIGTERM', stopLoop);
 try {
   do {
-    console.log(JSON.stringify(await operator.tick()));
+    const results = await operator.tick();
+    console.log(JSON.stringify({ results, quarantine: operator.watcher.quarantineReason }));
+    if (operator.watcher.quarantineReason) throw new Error('Finality quarantine persisted. Stop and reconcile the route; restarting cannot clear it.');
     if (!process.argv.includes('--watch') || stop) break;
     await new Promise<void>((done) => {
       const finish = () => { clearTimeout(timer); abort.signal.removeEventListener('abort', finish); done(); };
