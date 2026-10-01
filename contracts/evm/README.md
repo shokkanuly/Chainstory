@@ -81,6 +81,28 @@ node contracts/evm/compile.mjs   # rebuild the artifact after changing the .sol
 npm test
 ```
 
+## Authenticated CCTP escrow
+
+`CctpEscrow.sol` inherits the tested review/guardian gate and owns itself. The
+only path to a new PENDING request calls Circle's MessageTransmitter in the same
+transaction, requires an exact net USDC balance increase, and takes the immutable
+beneficiary from the authenticated hook. The source burn must restrict
+`destinationCaller` to the escrow, so a direct relay cannot strand a mint without
+a request. Source/destination route fields, known versions, standard finality,
+canonical EVM addresses, fee/expiration, payload hash and nonce are bound.
+Execution still needs a fresh Tripwire review and the guardian's approval.
+
+The separate operator artifact has a 9,422-byte runtime, below EIP-170. It is not
+imported by the browser and does not contain the test attester harness. Tests cover
+42 EVM regressions plus artifact consistency; eight added mutation cases verify
+the new guards. `npm run test:mutants` runs 29 cases in total and restores all
+source/artifact files after completion. Circle quorum verification remains the
+real Circle contract's responsibility; our one-signer local harness is a fixture.
+No public deployment or live transfer is claimed. Rejected credits stay locked;
+there is no administrator withdrawal/refund escape hatch. See the
+[CCTP runbook](../../docs/plans/tripwire-cctp.md) and ADR-018 for deployment and
+legacy-policy migration constraints.
+
 ## The boundary bug this suite now guards
 
 The oracle trips at `score >= 0.75`, and deterministic signals — proof of a

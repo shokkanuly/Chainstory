@@ -74,13 +74,17 @@ Both demos still use synthetic source evidence. MockSourceBridge emits an event
 and does not actually burn tokens. A separate [CCTP v2 USDC escrow adapter](tripwire-cctp.md)
 now authenticates source burn and destination mint receipts on two testnets. Its
 fixtures are synthetic; no recorded live transfer or production deployment is claimed.
+Its new `CctpEscrow` creates immutable PENDING requests only from an authenticated
+Circle mint in the same transaction. The escrow owns itself; the review oracle
+cannot create credits or redirect their amount/beneficiary. ADR-018 records the
+contract/identity/policy change; historical generic vaults retain their older trust boundary.
 
 ## Remaining milestones, in dependency order
 
 | Priority | Work | Acceptance condition |
 | :--- | :--- | :--- |
 | Done locally | Durable event/cursor/pending state and signed transaction journal | Atomic snapshot + original-byte recovery, terminal receipt reconciliation and HOLD/delay retries; [runbook](tripwire-operator.md) |
-| Done locally; pilot pending | CCTP v2 Standard USDC, Base Sepolia → Ethereum Sepolia post-mint escrow adapter | Wrong chain/contract/token/recipient/amount and reused source/settlement/nonce claims are rejected; missing data is held; on-chain authenticated request boundary remains production work |
+| Done locally; pilot pending | CCTP v2 Standard USDC, Base Sepolia → Ethereum Sepolia authenticated escrow | Wrong chain/contract/token/recipient/amount and reused claims reject; missing data holds; only an atomic authenticated net mint creates a pending request; external review/deployment still pending |
 | Done for Ethereum/Sepolia RPC | Finalized observations, unfinalized receipt reorg recovery and durable quarantine | Hash-bound checkpoints/provenance; changed finalized history stops signing/recovery; real bridge consensus policy remains adapter work |
 | P1 | Continuous attestor with protection refresh | Persistent risk does not silently lose route protection at the 24-hour boundary; restart reconciles current on-chain state |
 | P1 | Guardian route isolation, rolling limits and per-request delay policy | Boundary bursts and cross-route callers are covered by adversarial tests; delayed requests have a documented retry/review policy |

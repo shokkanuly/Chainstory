@@ -23,3 +23,17 @@ export const cctpMessengerAbi = parseAbi([
   'event DepositForBurn(address indexed burnToken, uint256 amount, address indexed depositor, bytes32 mintRecipient, uint32 destinationDomain, bytes32 destinationTokenMessenger, bytes32 destinationCaller, uint256 maxFee, uint32 indexed minFinalityThreshold, bytes hookData)',
   'event MintAndWithdraw(address indexed mintRecipient, uint256 amount, address indexed mintToken, uint256 feeCollected)',
 ]);
+
+// Our adapter's ABI; protocol fields above remain sourced from Circle.
+export const cctpEscrowAbi = parseAbi([
+  'event ReleaseRequested(bytes32 indexed messageId, address indexed to, uint256 amount)',
+  'event CctpEscrowFunded(bytes32 indexed messageId, bytes32 indexed nonce, bytes32 messageHash, uint256 amount)',
+  'function CCTP_ESCROW_VERSION() view returns (uint256)',
+  'function owner() view returns (address)',
+  'function transmitter() view returns (address)',
+  'function destinationMessenger() view returns (address)',
+  'function destinationDomain() view returns (uint32)',
+  'function sourceDomain() view returns (uint32)',
+  'function sourceMessenger() view returns (address)',
+  'function sourceToken() view returns (address)',
+]);
