@@ -57,6 +57,9 @@ execution gate and retryable observations. The second adds durable operator stat
 signed transaction recovery and HOLD/delay retries. The third adds finalized
 RPC observations, receipt reorg recovery and durable quarantine
 ([runbook](plans/tripwire-operator.md)).
+The fourth adds a [CCTP v2 USDC post-mint escrow adapter](plans/tripwire-cctp.md),
+durable source/settlement/nonce claims and a read-only receipt audit command.
+The live transfer pilot and authenticated on-chain request boundary remain pending.
 See [the plan](plans/tripwire-hardening.md)
 for implemented behavior, remaining P0 work and the old Sepolia deployment boundary.
 The wallet/Solana phase table below describes the earlier project work.

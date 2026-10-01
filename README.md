@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Solidity-0.8.37-363636?logo=solidity&logoColor=white" alt="Solidity" />
   <img src="https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/viem-2.56-FFC517" alt="viem" />
-  <img src="https://img.shields.io/badge/tests-414_passing-brightgreen" alt="414 tests passing" />
+  <img src="https://img.shields.io/badge/tests-461_passing-brightgreen" alt="461 tests passing" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
 </p>
 
@@ -49,10 +49,14 @@ fresh signed review for each payout. Pending, unavailable and held requests cann
 execute; invalid requests remain rejected after route protection expires. The local
 demo now runs the actual gated vault as well as the guardian. See the
 [hardening plan](docs/plans/tripwire-hardening.md) for the trust boundary and remaining
-work: an independent real-bridge/source consensus adapter. The operator now
+work. The operator now
 has durable state, a signed transaction journal, HOLD/delay recovery, finalized RPC
 observations and reorg handling; see its
 [runbook](docs/plans/tripwire-operator.md).
+The [CCTP v2 USDC adapter](docs/plans/tripwire-cctp.md) verifies finalized burns and
+minted escrow backing on Base Sepolia → Ethereum Sepolia, with durable replay claims
+and a read-only audit command. Its fixtures are synthetic; the live pilot and an
+authenticated on-chain request boundary remain pending.
 
 On 18 April 2026, $292M left Kelp DAO's bridge. Not over hours — in **a single
 release**. Verus lost $11.58M the same way in May, Syscoin ~$10M in June.
@@ -201,11 +205,12 @@ against **no verifiable burn at all**.
 | Signed release gate: field/domain binding, replay/order, expiry, key rotation, terminal rejection, required protection | 23 tests |
 | Watcher retry, missing/conflicting source data, deduplication and acknowledgement | 11 tests |
 | RPC/decode cursor recovery, bounded catch-up and old-deployment refusal | 4 tests |
-| Durable state, SIGKILL, transaction inclusion/finality recovery and HOLD/delay queue | 48 tests |
-| Finalized log/provenance, canonical headers/checkpoints, receipt finality and signing guard | 20 tests |
+| Durable state, SIGKILL, transaction inclusion/finality recovery and HOLD/delay queue | 49 tests |
+| Finalized log/provenance, canonical headers/checkpoints, receipt finality and signing guard | 21 tests |
+| CCTP v2 USDC: exact escrow backing, identity/fee binding, replay, durable claims and quarantine | 45 tests |
 | Check before you sign, incl. "nothing reachable from /check can sign" | 40 tests |
 | Gas: check an outflow · accept an attestation | 36.7k · 84.5k |
-| Total | **414 tests passing** |
+| Total | **461 tests passing** |
 
 The dashboard runs the exact contract bytecode the tests run, and a test fails
 if they ever differ.
@@ -217,7 +222,7 @@ git clone https://github.com/shokkanuly/Chainstory.git
 cd Chainstory
 npm install
 npm run dev                    # Retold at /app and /check, Tripwire at /tripwire
-npm test                       # 414 tests
+npm test                       # 461 tests
 npm run tripwire:demo:local    # the four-step attack, in a local EVM
 ```
 
@@ -248,7 +253,7 @@ to build live route baselines is next.
 | Retold | Wallet stories, draft Form 8949, approvals, contract risk, Check before you sign, opt-in AI wording | Solana analysis in the app (adapters exist, not wired in) |
 | Tripwire oracle | Five rules, graduated tiers, `indeterminate` when blind | Baselines from live history; a trained model |
 | Guardian | THROTTLE / DELAY / FREEZE, escalate-only, 24 h expiry, on Sepolia | Mainnet; a Solana (Anchor) guardian |
-| Operations | Watcher and single-signer attestor, local and on Sepolia | 2-of-3 threshold signing; a relayer / mempool hook |
+| Operations | Durable watcher/transaction journal, finalized RPC guards, CCTP v2 USDC escrow adapter tested locally | Live CCTP pilot; authenticated request boundary; 2-of-3 signing; relayer |
 | Further ideas | — | zkML proofs of the score (EZKL), a sentinel network, bounties for reporters |
 
 ## Sources

@@ -71,15 +71,16 @@ incident replay still demonstrates the guardian's route restrictions; it does
 not run the new per-release vault gate.
 
 Both demos still use synthetic source evidence. MockSourceBridge emits an event
-and does not actually burn tokens. No real bridge adapter, two-network finality
-verification or continuous production operator is claimed here.
+and does not actually burn tokens. A separate [CCTP v2 USDC escrow adapter](tripwire-cctp.md)
+now authenticates source burn and destination mint receipts on two testnets. Its
+fixtures are synthetic; no recorded live transfer or production deployment is claimed.
 
 ## Remaining milestones, in dependency order
 
 | Priority | Work | Acceptance condition |
 | :--- | :--- | :--- |
 | Done locally | Durable event/cursor/pending state and signed transaction journal | Atomic snapshot + original-byte recovery, terminal receipt reconciliation and HOLD/delay retries; [runbook](tripwire-operator.md) |
-| P0 | Adapter for one selected bridge and one asset | Wrong chain/contract/token/recipient/amount and reused source messages are rejected; missing data is held |
+| Done locally; pilot pending | CCTP v2 Standard USDC, Base Sepolia → Ethereum Sepolia post-mint escrow adapter | Wrong chain/contract/token/recipient/amount and reused source/settlement/nonce claims are rejected; missing data is held; on-chain authenticated request boundary remains production work |
 | Done for Ethereum/Sepolia RPC | Finalized observations, unfinalized receipt reorg recovery and durable quarantine | Hash-bound checkpoints/provenance; changed finalized history stops signing/recovery; real bridge consensus policy remains adapter work |
 | P1 | Continuous attestor with protection refresh | Persistent risk does not silently lose route protection at the 24-hour boundary; restart reconciles current on-chain state |
 | P1 | Guardian route isolation, rolling limits and per-request delay policy | Boundary bursts and cross-route callers are covered by adversarial tests; delayed requests have a documented retry/review policy |
@@ -97,4 +98,5 @@ quarantines the operator; it cannot recall existing on-chain authorizations.
 Operator persistence belongs outside the read-only browser app and existing
 stateless API proxies. Its design is recorded in ADR-015. Node
 built-in SQLite adds no npm dependency. The standalone operator is implemented
-locally; its source proof and baseline adapters remain deliberately unconfigured.
+locally. The legacy demo runner still has no independent source/baseline configured;
+the CCTP operator factory requires its explicit escrow deployment and source locators.
