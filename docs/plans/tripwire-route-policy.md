@@ -30,8 +30,8 @@ an older outflow may remain counted for at most `ceil(windowSeconds / 16) - 1`
 additional seconds. For a one-hour window this is at most 224 seconds. It is not
 an exact timestamp queue or a weighted estimate that can undercount a boundary
 burst. The ring has bounded storage and every check reads at most 17 buckets,
-regardless of the number of transfers. A slot's 17-bucket reuse interval exceeds
-the window plus a bucket width, so no live bucket is overwritten.
+regardless of the number of transfers. Even the latest spend in a reused slot
+is older than one full window, so no live bucket is overwritten.
 
 THROTTLE and DELAY still halve the cap. Their escalation may put existing usage
 above the new cap; new spending then waits for usage to age out. `resume`, cap
