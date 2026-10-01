@@ -15,7 +15,7 @@ async function deployReleaseFixture() {
   const token = await vm.deployContract(demo.DemoUSDC, [actors.owner.address]);
   const vault = await vm.deployContract(demo.ProtectedVault, [actors.owner.address, token.address, vm.address, ROUTE]);
   expect((await vm.send(actors.owner, 'configureRoute', [ROUTE, 2_000_000n * 10n ** 6n, 3600n])).ok).toBe(true);
-  expect((await vm.send(actors.owner, 'setProtected', [vault.address, true])).ok).toBe(true);
+  expect((await vm.send(actors.owner, 'setProtected', [vault.address, ROUTE, true])).ok).toBe(true);
   expect((await vm.sendContract(token, actors.owner, 'mint', [vault.address, AMOUNT * 10n])).ok).toBe(true);
   expect((await vm.sendContract(vault, actors.owner, 'requestRelease', [MESSAGE, actors.bridge.address, AMOUNT])).ok).toBe(true);
   return { vm, token, vault };
@@ -55,12 +55,12 @@ describe('release execution gate', () => {
     const f = await deployReleaseFixture();
     const review = reviewFor(f);
     const digest = hashTypedData({
-      domain: { name: 'TripwireProtectedVault', version: '1', chainId: LOCAL_CHAIN_ID, verifyingContract: f.vault.address },
+      domain: { name: 'TripwireProtectedVault', version: '2', chainId: LOCAL_CHAIN_ID, verifyingContract: f.vault.address },
       types: RELEASE_REVIEW_TYPES, primaryType: 'ReleaseReview', message: review,
     });
     expect(await f.vm.readContract(f.vault, 'hashReleaseReview', [MESSAGE, review.decision, review.minimumTier, review.validUntil, review.nonce])).toBe(digest);
     // A view must not corrupt the nonce of the subsequent signed owner transaction.
-    expect((await f.vm.send(actors.owner, 'setProtected', [actors.bridge.address, true])).ok).toBe(true);
+    expect((await f.vm.send(actors.owner, 'setProtected', [actors.bridge.address, ROUTE, true])).ok).toBe(true);
   });
 
   it.each([
@@ -94,6 +94,15 @@ describe('release execution gate', () => {
     const f = await deployReleaseFixture();
     expect((await submit(f)).ok).toBe(true);
     expect((await submit(f)).error).toBe('ReviewNonceAlreadyUsed');
+  });
+  it('rejects a review signed under the historical version-one policy', async () => {
+    const f = await deployReleaseFixture(); const review = reviewFor(f);
+    const signature = await actors.oracle.signTypedData({
+      domain: { name: 'TripwireProtectedVault', version: '1', chainId: LOCAL_CHAIN_ID, verifyingContract: f.vault.address },
+      types: RELEASE_REVIEW_TYPES, primaryType: 'ReleaseReview', message: review,
+    });
+    expect((await submit(f, review, signature)).error).toBe('InvalidReviewer');
+    expect((await f.vm.sendContract(f.vault, actors.attacker, 'executeRelease', [MESSAGE])).error).toBe('ReleaseNotReviewed');
   });
 
   it('rejects an older ALLOW signature arriving after a newer HOLD', async () => {

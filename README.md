@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Solidity-0.8.37-363636?logo=solidity&logoColor=white" alt="Solidity" />
   <img src="https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/viem-2.56-FFC517" alt="viem" />
-  <img src="https://img.shields.io/badge/tests-567_passing-brightgreen" alt="567 tests passing" />
+  <img src="https://img.shields.io/badge/tests-609_passing-brightgreen" alt="609 tests passing" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
 </p>
 
@@ -53,7 +53,9 @@ work. The operator now
 has durable state, a signed transaction journal, HOLD/delay recovery, finalized RPC
 observations, reorg handling and continuous protection refresh while fresh pending
 risk persists; see its
-[runbook](docs/plans/tripwire-operator.md).
+[runbook](docs/plans/tripwire-operator.md). Route-scoped reporters, conservative
+rolling caps and per-request DELAY are implemented locally in immutable policy v2;
+[limits and fresh-deployment requirements](docs/plans/tripwire-route-policy.md).
 The [CCTP v2 USDC adapter](docs/plans/tripwire-cctp.md) verifies finalized burns and
 minted escrow backing on Base Sepolia → Ethereum Sepolia, with durable replay claims
 and a read-only audit command. `CctpEscrow` now creates immutable pending requests
@@ -115,8 +117,8 @@ lists to see each attestation and each blocked payout.
 | :--- | :--- | ---: | :--- |
 | 0 | Three ordinary payouts, each backed by a burn: all paid | 0.00 | NONE |
 | 1 | A payout to the attacker's contract: fresh, unverified, upgradeable | 0.65 | **THROTTLE** — cap halved, still paid |
-| 2 | A 900,000 payout to the same contract, 10× the route's usual size | 0.85 | **DELAY** — held (`OutflowDelayed`); an honest 40,000 payout in the same minute is paid |
-| 3 | A forged 11,580,000 payout with no burn behind it | 1.00 | **FREEZE** — blocked (`RoutePaused`) |
+| 2 | A 900,000 payout to the same contract, 10× the route's usual size | 0.85 | **DELAY** — held (`ReleaseDelayed`); an honest 40,000 payout in the same minute is paid |
+| 3 | A forged 11,580,000 payout with no burn behind it | 1.00 | **FREEZE + REJECT** — terminally blocked (`ReleaseRejected`) |
 
 Reproduce it: `npm run tripwire:demo:local` runs the same four steps against
 the real bytecode in a local EVM, no keys needed.
@@ -213,10 +215,11 @@ against **no verifiable burn at all**.
 | CCTP v2 USDC: exact escrow backing, identity/fee binding, replay, durable claims and quarantine | 45 tests |
 | Authenticated CCTP escrow: atomic net mint/credit, self-ownership, rollback, receipt identity and deployment bindings | 74 tests |
 | Protection refresh: expiry/restart, chain clock, concurrent calls, key rotation, stale risk and RPC/quarantine failures | 28 tests |
-| Release-review and authenticated CCTP guards broken on purpose | 7 + 8 mutants caught |
+| Route isolation, rolling caps, request delay and historical review policy | 42 tests |
+| Guardian/release-review/authenticated CCTP guards broken on purpose | 38 mutants caught |
 | Check before you sign, incl. "nothing reachable from /check can sign" | 40 tests |
-| Gas: check an outflow · accept an attestation | 36.7k · 84.5k |
-| Total | **567 tests passing** |
+| Gas: check an outflow · accept an attestation | 79.0k · 84.5k |
+| Total | **609 tests passing** |
 
 The dashboard runs the exact contract bytecode the tests run, and a test fails
 if they ever differ.
@@ -228,7 +231,7 @@ git clone https://github.com/shokkanuly/Chainstory.git
 cd Chainstory
 npm install
 npm run dev                    # Retold at /app and /check, Tripwire at /tripwire
-npm test                       # 567 tests
+npm test                       # 609 tests
 npm run tripwire:demo:local    # the four-step attack, in a local EVM
 ```
 

@@ -16,9 +16,8 @@ import { blockHeaderSchema, receiptFinality } from '../finality.js';
 import { ContractEventFeed, type Clients, type Deployment, type TestnetConfig } from './sepolia.js';
 import demo from './contracts.artifact.js';
 import { readGuardianProtection } from './guardianState.js';
-
-const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((a) => a.toLowerCase() as Hex);
-const releaseTuple = z.tuple([address, z.bigint().positive(), z.number().int().min(0).max(4), z.bigint().nonnegative(), address, z.bigint().nonnegative(), z.number().int().min(0).max(3)]);
+import { assertProtectionPolicy } from './protectionPolicy.js';
+import { readReleasePolicyState, releaseTuple } from './releaseState.js';
 
 export interface RpcDestination {
   chainId: number; route: string; routeId: Hex; startBlock: string;
@@ -46,6 +45,11 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
   const from = BigInt(z.string().regex(/^(0|[1-9][0-9]*)$/).parse(d.startBlock));
   // Validate immutable bindings before opening a write path. An old vault fails here.
   await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'MAX_REVIEW_TTL' });
+  await assertProtectionPolicy({
+    guardianVersion: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'GUARDIAN_POLICY_VERSION' }),
+    releaseVersion: () => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'RELEASE_POLICY_VERSION' }),
+    routePermission: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'isProtected', args: [vault.address, d.routeId] }),
+  });
   for (const [name, expected] of [['token', token.address], ['guardian', guardian.address], ['routeId', d.routeId]] as const) {
     const actual = await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: name });
     if (typeof actual !== 'string' || actual.toLowerCase() !== expected.toLowerCase()) throw new Error(`Vault ${name} does not match deployment.`);
@@ -54,6 +58,7 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
     source: sourceAddress, vault: vault.address, guardian: guardian.address, token: token.address,
     sender: cfg.account.address, decimals: 6, finalityMode: 'finalized', sourceVerifier: opts.source?.scope });
   try {
+    const minimumBlock = () => store.transactions().reduce((highest, tx) => tx.block && BigInt(tx.block) > highest ? BigInt(tx.block) : highest, 0n);
     const source = opts.source?.create(store);
     let clock = Number((await c.pub.getBlock()).timestamp);
     const transactionPort: TransactionPort = {
@@ -85,7 +90,7 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
           functionName: 'getRoute', args: [routeId], blockNumber }),
         readOracle: (blockNumber) => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi,
           functionName: 'oracle', blockNumber }),
-        minimumBlock: () => store.transactions().reduce((highest, tx) => tx.block && BigInt(tx.block) > highest ? BigInt(tx.block) : highest, 0n),
+        minimumBlock,
       }),
       submitAttestation: async (a, signature) => {
         const result = await sender.send(`attestation/${a.nonce}`, { to: guardian.address,
@@ -110,10 +115,13 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
     const operator = new ReleaseOperator(watcher, sender, new Attestor(cfg.account, guardianPort, {
       now: () => clock, beforeSign: () => watcher.assertCanonical(),
     }), {
-      read: async (messageId) => {
-        const r = releaseTuple.parse(await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'releases', args: [messageId] }));
-        return { recipient: r[0], amount: r[1], state: r[2], nonce: r[5] };
-      },
+      read: (messageId) => readReleasePolicyState({
+        getBlock: (args) => c.pub.getBlock(args), minimumBlock,
+        readRelease: (blockNumber) => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi,
+          functionName: 'releases', args: [messageId], blockNumber }),
+        readDelay: (blockNumber) => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi,
+          functionName: 'releaseDelayUntil', args: [messageId], blockNumber }),
+      }),
       review: async (observation, nonce) => {
         const now = Number((await c.pub.getBlock()).timestamp);
         const review = { messageId: observation.release.messageId, routeId: d.routeId, token: token.address,

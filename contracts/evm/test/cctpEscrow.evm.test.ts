@@ -11,7 +11,7 @@ import { cctpAddressWord, cctpBeneficiaryHook, cctpEscrowReleaseId } from '../..
 import { CCTP_BASE_SEPOLIA_TO_SEPOLIA as route } from '../../../src/chains/evm/registry/cctp.js';
 import { bytesReplace, nonce } from '../../../scripts/tripwire/__tests__/fixtures/cctp.js';
 import { ReleaseDecision, signReleaseReview } from '../../../scripts/tripwire/review.js';
-import { ResponseTier } from '../../../src/tripwire/onChain.js';
+import { ResponseTier, signAttestation } from '../../../src/tripwire/onChain.js';
 
 const input = standardJsonInput('TripwireDemo.sol');
 input.sources['CctpHarness.sol'] = { content: readFileSync(new URL('./fixtures/CctpHarness.sol', import.meta.url), 'utf8')
@@ -36,7 +36,7 @@ async function setup() {
   await vm.sendContract(token, actors.owner, 'mint', [vault.address, NET * 10n]);
   await vm.sendContract(token, actors.owner, 'transferOwnership', [transmitter.address]);
   await vm.send(actors.owner, 'configureRoute', [ROUTE, NET * 100n, 3600n]);
-  await vm.send(actors.owner, 'setProtected', [vault.address, true]);
+  await vm.send(actors.owner, 'setProtected', [vault.address, ROUTE, true]);
   const body = concatHex([u32(1), cctpAddressWord(route.source.usdc), cctpAddressWord(vault.address), u256(AMOUNT),
     cctpAddressWord(actors.owner.address), u256(1000n), u256(FEE), u256(0n), cctpBeneficiaryHook(actors.attacker.address)]);
   const message = concatHex([u32(1), u32(6), u32(0), nonce, cctpAddressWord(route.source.messenger),
@@ -54,6 +54,29 @@ async function setup() {
 }
 
 describe('authenticated CCTP escrow', () => {
+  it('applies a sticky delay to each authenticated credit, even after the route hold has matured', async () => {
+    const f = await setup(); await f.receive();
+    await f.vm.send(actors.owner, 'configureRoute', [ROUTE, NET * 5n, 3600n]);
+    const att = { routeId: ROUTE, riskScore: 85n, validUntil: f.vm.now + 300n, nonce: 1n };
+    await f.vm.send(actors.relayer, 'submitAttestation', [ROUTE, 85n, att.validUntil, 1n,
+      await signAttestation(actors.oracle, f.vm.address, att, LOCAL_CHAIN_ID)]);
+    f.vm.warp(1801n); expect((await f.review()).ok).toBe(true);
+    expect((await f.vm.sendContract(f.vault, actors.owner, 'executeRelease', [f.id])).error).toBe('ReleaseDelayed');
+    expect(await f.vm.readContract(f.token, 'balanceOf', [actors.attacker.address])).toBe(0n);
+    f.vm.warp(1800n); expect((await f.review({ nonce: 2n })).ok).toBe(true);
+    expect((await f.vm.sendContract(f.vault, actors.owner, 'executeRelease', [f.id])).ok).toBe(true);
+    expect(await f.vm.readContract(f.token, 'balanceOf', [actors.attacker.address])).toBe(NET);
+  });
+  it('requires escrow permission for its own route and rolls back a payout when only another route is allowed', async () => {
+    const f = await setup(); await f.receive(); await f.review(); const other = keccak256(toHex('other-escrow-route'));
+    await f.vm.send(actors.owner, 'configureRoute', [other, NET * 100n, 3600n]);
+    await f.vm.send(actors.owner, 'setProtected', [f.vault.address, ROUTE, false]);
+    await f.vm.send(actors.owner, 'setProtected', [f.vault.address, other, true]);
+    expect((await f.vm.sendContract(f.vault, actors.owner, 'executeRelease', [f.id])).error).toBe('NotProtected');
+    expect(await f.vm.readContract(f.token, 'balanceOf', [actors.attacker.address])).toBe(0n);
+    await f.vm.send(actors.owner, 'setProtected', [f.vault.address, ROUTE, true]);
+    expect((await f.vm.sendContract(f.vault, actors.owner, 'executeRelease', [f.id])).ok).toBe(true);
+  });
   it('creates an immutable pending credit for exactly the net mint and requires review before paying once', async () => {
     const f = await setup();
     expect((await f.vm.readContract<string>(f.vault, 'owner')).toLowerCase()).toBe(f.vault.address);

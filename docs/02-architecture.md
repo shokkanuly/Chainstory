@@ -152,3 +152,11 @@ block, bounded below by observed write receipts. Source evidence stays finalized
 Fresh pending assessments may renew a matching active tier near expiry; stale
 decisions are not persisted as permanent risk flags. Existing queue/outbox recovery
 and quarantine apply to refresh signatures and transactions as well.
+
+ADR-020 scopes guardian callers by route, uses a bounded conservative rolling
+budget and adds a sticky per-message delay to ProtectedVault/CctpEscrow. The
+operator binds request delay to chain time and waits without repeated ALLOW
+signatures, while reassessing risk/source health/protection. Immutable policy-v2
+markers and route grants are checked before opening the signing lifecycle;
+release review domain version is 2. Existing deployment-bound persistence and
+read-only browser boundaries remain. See [policy/rollout](plans/tripwire-route-policy.md).

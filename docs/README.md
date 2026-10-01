@@ -64,6 +64,9 @@ PENDING request are atomic; the operator verifies both in the settlement receipt
 External review, fresh deployment and the live transfer pilot remain pending.
 The sixth adds continuous refresh of freshly justified pending risk before the
 guardian's 24-hour expiry, with chain-state reconciliation and the existing outbox.
+The seventh scopes reporter permissions to routes, removes fixed-window boundary
+bursts and gives large delayed requests individual clocks. This immutable policy
+v2 needs a fresh reviewed deployment; [limits and rollout](plans/tripwire-route-policy.md).
 See [the plan](plans/tripwire-hardening.md)
 for implemented behavior, remaining P0 work and the old Sepolia deployment boundary.
 The wallet/Solana phase table below describes the earlier project work.

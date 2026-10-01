@@ -170,6 +170,11 @@ Source hints keep source-derived identities because the emitted nonce is zero;
 the locator connects a nonce-derived escrow request to its actual source event.
 The factory checks escrow version/self-owner/CCTP bindings before opening the
 journal or creating the signing lifecycle. It never relays receives or burns.
+The signing lifecycle additionally requires guardian/release policy markers 2
+and the escrow's scoped route grant (ADR-020). New authenticated credits inherit
+sticky per-request DELAY and the shared conservative rolling cap; release reviews
+use domain version 2. Historical source audits remain read-only and do not attest
+this release policy. [Policy and fresh-deployment boundary](tripwire-route-policy.md).
 The existing `tripwire:operator:sepolia` command remains the synthetic deployment
 runner and does not enable this adapter automatically.
 

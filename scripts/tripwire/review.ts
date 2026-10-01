@@ -45,7 +45,7 @@ export function releaseDecision(observation: Observation): ReleaseDecision {
 
 export function signReleaseReview(signer: LocalAccount, vault: Hex, review: ReleaseReview, chainId: number): Promise<Hex> {
   return signer.signTypedData({
-    domain: { name: 'TripwireProtectedVault', version: '1', chainId, verifyingContract: vault },
+    domain: { name: 'TripwireProtectedVault', version: '2', chainId, verifyingContract: vault },
     types: RELEASE_REVIEW_TYPES, primaryType: 'ReleaseReview', message: review,
   });
 }

@@ -40,6 +40,7 @@ import { z } from 'zod';
 import { blockHeaderSchema, blockHashSchema, finalizedCheckpointSchema, FinalityConflictError } from '../finality.js';
 import { releaseDecision, releaseMinimumTier, signReleaseReview, type ReleaseReview } from '../review.js';
 import demo from './contracts.artifact.js';
+import { assertProtectionPolicy } from './protectionPolicy.js';
 
 export const ROOT = resolve(import.meta.dirname, '../../..');
 export const EXPLORER = 'https://sepolia.etherscan.io';
@@ -203,7 +204,7 @@ export async function deploy(cfg: TestnetConfig, c: Clients, log: (s: string) =>
     c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'configureRoute', args: [ROUTE_ID, CAP, WINDOW_SECONDS] })
   );
   await run('guardian.setProtected(vault)', () =>
-    c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'setProtected', args: [vault.address, true] })
+    c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'setProtected', args: [vault.address, ROUTE_ID, true] })
   );
   await run(`token.mint(vault, ${VAULT_FUNDING / USDC})`, () =>
     c.wallet.writeContract({ address: token.address, abi: demo.DemoUSDC.abi, functionName: 'mint', args: [vault.address, VAULT_FUNDING] })
@@ -439,13 +440,20 @@ export async function runTestnetDemo(
   // Old deployed vaults lack the execution gate. Fail before sending reset or payout transactions.
   try {
     await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'MAX_REVIEW_TTL' });
+    await assertProtectionPolicy({
+      guardianVersion: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'GUARDIAN_POLICY_VERSION' }),
+      releaseVersion: () => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'RELEASE_POLICY_VERSION' }),
+      routePermission: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'isProtected', args: [vault.address, ROUTE_ID] }),
+    });
   } catch {
-    throw new Error('This deployment has no release-review gate (or its RPC is unavailable). Deploy the current demo contracts before running it.');
+    throw new Error('This deployment has no release-review gate or current protection policy (or its RPC is unavailable). Deploy the current demo contracts before running it.');
   }
 
-  // Every run starts from a clean route. A tier set by an earlier run lasts
-  // 24 hours, and the hour's outflow total carries over; the owner's resume
-  // and a fresh configureRoute clear both.
+  // Configuration/resume cannot erase rolling spend. Refuse a repeat demo
+  // before reset transactions; wait for prior usage to age out naturally.
+  const usage = z.bigint().nonnegative().parse(await c.pub.readContract({ address: guardian.address,
+    abi: guardianArtifact.abi, functionName: 'rollingUsage', args: [ROUTE_ID] }));
+  if (usage > 0n) throw new Error('This demo route has recent outflows. Wait for its rolling budget to age out before rerunning the demo.');
   for (const [label, functionName, args] of [
     ['guardian.resume', 'resume', [ROUTE_ID]],
     ['guardian.configureRoute', 'configureRoute', [ROUTE_ID, CAP, WINDOW_SECONDS]],
