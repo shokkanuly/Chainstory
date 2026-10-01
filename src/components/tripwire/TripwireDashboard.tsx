@@ -38,6 +38,7 @@ import type { ControllerState, ReplayController } from '@/tripwire/replay/contro
 import { clock, reportDate, usd } from '@/tripwire/replay/format';
 import type { Verdict } from '@/tripwire/types';
 import { DURATION, EASE, useReducedMotion } from '@/lib/motion';
+import DecodeText from '@/components/motion/DecodeText';
 
 const SPEEDS = [
   { label: '0.5×', ms: 1400 },
@@ -80,7 +81,13 @@ export default function TripwireDashboard() {
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
       <header>
         <p className="b-eyebrow">Tripwire · a circuit breaker for bridges</p>
-        <h1 className="mt-2 text-3xl font-bold tracking-[-0.03em] sm:text-4xl">Would it have stopped them?</h1>
+        <DecodeText
+          as="h1"
+          text="Would it have stopped them?"
+          duration={900}
+          delay={120}
+          className="mt-2 block font-display text-[clamp(2rem,4.4vw,3.2rem)] font-semibold leading-[1.02] tracking-[-0.04em]"
+        />
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
           Every major bridge drain of 2026 was a single transaction, so a breaker has to act before it executes.
           Tripwire checks that each payout is backed by a burn it can verify — and if not, pauses that route. Replay

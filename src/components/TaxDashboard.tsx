@@ -96,7 +96,12 @@ export default function TaxDashboard({ summary, chainId = 'ethereum' }: Props) {
           const value = card.getValue(summary);
           const variant = card.getVariant(value);
           return (
-            <motion.div key={card.key} className="stat-card" variants={child}>
+            <motion.div
+              key={card.key}
+              className="stat-card fx-spot"
+              variants={child}
+              style={{ ['--spot' as string]: variant === 'negative' ? 'var(--b-loss)' : variant === 'positive' ? 'var(--b-gain)' : 'var(--b-purple)' }}
+            >
               <div className="flex items-center justify-between">
                 <span className="stat-card-label">{card.label}</span>
                 <span className="text-base"><InlineIcon icon={card.icon} size={16} /></span>

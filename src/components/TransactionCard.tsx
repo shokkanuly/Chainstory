@@ -3,20 +3,22 @@ import type { ClassifiedTransaction, TaxCategory } from '../types';
 import { formatAddress } from '../services/etherscan';
 import { explorerTxUrl } from '../services/chains';
 import { CATEGORY_ICON, InlineIcon } from './icons';
-import { motion } from 'framer-motion';
-import { useRise } from '../lib/motion';
+import { forwardRef, useRef, type CSSProperties } from 'react';
+import { motion, useInView } from 'framer-motion';
+import { EASE, useReducedMotion } from '../lib/motion';
+import DecodeText from './motion/DecodeText';
 
 interface Props {
   tx: ClassifiedTransaction;
   index: number;
 }
 
-const CATEGORY_META: Record<TaxCategory | 'unknown', { label: string; className: string }> = {
-  trade: { label: 'Trade', className: 'cat-trade' },
-  income: { label: 'Income', className: 'cat-income' },
-  transfer: { label: 'Transfer', className: 'cat-transfer' },
-  nft: { label: 'NFT', className: 'cat-nft' },
-  unknown: { label: 'Unknown', className: 'cat-unknown' },
+const CATEGORY_META: Record<TaxCategory | 'unknown', { label: string; className: string; color: string }> = {
+  trade: { label: 'Trade', className: 'cat-trade', color: 'var(--cat-trade)' },
+  income: { label: 'Income', className: 'cat-income', color: 'var(--cat-income)' },
+  transfer: { label: 'Transfer', className: 'cat-transfer', color: 'var(--b-purple)' },
+  nft: { label: 'NFT', className: 'cat-nft', color: 'var(--cat-nft)' },
+  unknown: { label: 'Unknown', className: 'cat-unknown', color: 'var(--b-purple)' },
 };
 
 function formatDate(date: Date): string {
@@ -41,20 +43,37 @@ function formatUsd(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
-export default function TransactionCard({ tx, index }: Props) {
-  const rise = useRise(Math.min(index * 0.035, 0.35), 10);
+// Forwarded so the timeline's AnimatePresence can measure a card as it leaves.
+const TransactionCard = forwardRef<HTMLDivElement, Props>(function TransactionCard({ tx, index }, forwarded) {
+  const reduce = useReducedMotion();
+  const local = useRef<HTMLDivElement>(null);
+  const inView = useInView(local, { once: true, amount: 0.25 });
   const meta = CATEGORY_META[tx.category];
   const isLoading = tx.status === 'classifying' || tx.status === 'pending';
   const isFailed = tx.isError === '1';
+  // Sequence: a feed is an ordered history, so the first screenful arrives in
+  // order. Rows scrolled to later arrive at once, never waiting on the queue.
+  const delay = reduce ? 0 : index < 8 ? index * 0.06 : 0;
 
   return (
     <motion.div
-      // Sequence: a feed is an ordered history, so rows arrive in order. The
-      // cap keeps a hundred rows from taking several seconds to settle.
-      {...rise}
-      className={`tx-card ${isLoading ? 'tx-card--loading' : ''} ${isFailed ? 'tx-card--failed' : ''}`}
+      ref={(el) => {
+        local.current = el;
+        if (typeof forwarded === 'function') forwarded(el);
+        else if (forwarded) forwarded.current = el;
+      }}
+      layout={reduce ? false : 'position'}
+      // Each row rises out of the page and a line of light crosses it: the
+      // chain being read, one transaction at a time.
+      initial={reduce ? false : { opacity: 0, y: 28, rotateX: -18, scale: 0.98 }}
+      animate={inView ? { opacity: 1, y: 0, rotateX: 0, scale: 1 } : undefined}
+      exit={reduce ? undefined : { opacity: 0, scale: 0.96, transition: { duration: 0.18 } }}
+      transition={{ duration: 0.7, ease: EASE, delay }}
+      style={{ transformPerspective: 1000, transformOrigin: '50% 0%', ['--scan' as string]: meta.color } as CSSProperties}
+      data-scan={inView && !reduce ? 'on' : undefined}
+      className={`tx-card fx-scan ${isLoading ? 'tx-card--loading' : ''} ${isFailed ? 'tx-card--failed' : ''}`}
     >
-      <div className="tx-card-inner">
+      <div className="tx-card-inner fx-spot" style={{ ['--spot' as string]: meta.color } as CSSProperties}>
         {/* Header: date + category */}
         <div className="tx-card-header">
           <div className="tx-date">
@@ -71,10 +90,12 @@ export default function TransactionCard({ tx, index }: Props) {
         </div>
 
         {/* Description */}
+        {/* The story decodes from hex as the row arrives, or as its
+            classification lands while you watch. */}
         {isLoading ? (
           <div className="skeleton-line" />
         ) : (
-          <p className="tx-description">{tx.description}</p>
+          <DecodeText as="p" className="tx-description" text={tx.description} play={inView} delay={delay * 1000 + 180} duration={750} />
         )}
 
         {/* Values */}
@@ -138,4 +159,6 @@ export default function TransactionCard({ tx, index }: Props) {
       </div>
     </motion.div>
   );
-}
+});
+
+export default TransactionCard;

@@ -1,9 +1,10 @@
 // src/components/Navbar.tsx
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion, useScroll, useSpring } from 'framer-motion'
 import { Menu, X } from 'lucide-react'
 import Logo from './Logo'
+import ThemeToggle from './ThemeToggle'
 
 // Absolute, so the links work from /app and /tripwire as well as the landing page.
 const navLinks = [
@@ -20,6 +21,9 @@ export default function Navbar() {
   const product = useLocation().pathname.startsWith('/tripwire') ? 'Tripwire' : 'Retold'
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  // Reading progress, as a thread of light along the bar's lower edge.
+  const { scrollYProgress } = useScroll()
+  const progress = useSpring(scrollYProgress, { stiffness: 200, damping: 34, restDelta: 0.001 })
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20)
@@ -34,7 +38,7 @@ export default function Navbar() {
       transition={{ duration: 0.5, ease: 'easeOut' }}
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
         scrolled
-          ? 'glass-strong border-b border-border/60 shadow-lg shadow-black/20'
+          ? 'nav-solid border-b border-border/60 shadow-lg shadow-black/20'
           : 'bg-transparent'
       }`}
     >
@@ -54,7 +58,7 @@ export default function Navbar() {
               <a
                 key={link.href}
                 href={link.href}
-                className="px-3 py-2 text-[13px] font-medium text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-secondary/60"
+                className="px-3 py-2 text-[14px] font-medium text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-secondary/60"
               >
                 {link.label}
               </a>
@@ -63,6 +67,7 @@ export default function Navbar() {
 
           {/* CTA */}
           <div className="hidden md:flex items-center gap-3">
+            <ThemeToggle />
             <a
               href="https://github.com/shokkanuly/Chainstory"
               target="_blank"
@@ -82,12 +87,22 @@ export default function Navbar() {
           {/* Mobile toggle */}
           <button
             className="md:hidden p-2 text-muted-foreground hover:text-foreground rounded-lg transition-colors"
+            aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobileOpen}
             onClick={() => setMobileOpen(!mobileOpen)}
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
       </div>
+
+      {scrolled && !reduce && (
+        <motion.div
+          aria-hidden
+          className="absolute bottom-[-1px] left-0 right-0 h-[2px] origin-left"
+          style={{ scaleX: progress, background: 'linear-gradient(90deg, var(--b-purple), var(--b-cyan))', boxShadow: '0 0 12px var(--b-purple)' }}
+        />
+      )}
 
       {/* Mobile menu */}
       <AnimatePresence>
@@ -112,6 +127,10 @@ export default function Navbar() {
                   {link.label}
                 </a>
               ))}
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-sm text-muted-foreground">Theme</span>
+                <ThemeToggle />
+              </div>
               <div className="pt-3 border-t border-border mt-3">
                 <a
                   href="/app"

@@ -1,11 +1,10 @@
 // src/components/ThemeToggle.tsx
 //
-// Three states, not two: light, dark, and following the operating system.
+// Three states: light, dark, and following the operating system.
 //
-// A two-state toggle has to pick a starting side, which means someone whose
-// machine is set to dark gets a flash of white on first load. Defaulting to
-// "system" and only writing an override when the visitor actually chooses one
-// avoids that, and respects a setting they already made.
+// Dark is the default: it is the brand's look, and index.html starts dark.
+// Every explicit choice is stored, and a small script in index.html applies it
+// before first paint, so a visitor who chose light never sees a dark flash.
 
 import { useEffect, useState } from 'react';
 import { MonitorIcon, MoonIcon, SunIcon } from '@phosphor-icons/react';
@@ -17,10 +16,10 @@ const STORAGE_KEY = 'chainstory-theme';
 function readStored(): Theme {
   try {
     const value = localStorage.getItem(STORAGE_KEY);
-    return value === 'light' || value === 'dark' ? value : 'system';
+    return value === 'light' || value === 'system' ? value : 'dark';
   } catch {
-    // Private windows and blocked storage both throw. Follow the OS instead.
-    return 'system';
+    // Private windows and blocked storage both throw. Keep the default.
+    return 'dark';
   }
 }
 
@@ -37,7 +36,7 @@ const OPTIONS: { value: Theme; label: string; icon: typeof SunIcon }[] = [
 ];
 
 export default function ThemeToggle({ className }: { className?: string }) {
-  const [theme, setTheme] = useState<Theme>('system');
+  const [theme, setTheme] = useState<Theme>(readStored);
 
   useEffect(() => {
     const stored = readStored();
@@ -49,8 +48,7 @@ export default function ThemeToggle({ className }: { className?: string }) {
     setTheme(next);
     apply(next);
     try {
-      if (next === 'system') localStorage.removeItem(STORAGE_KEY);
-      else localStorage.setItem(STORAGE_KEY, next);
+      localStorage.setItem(STORAGE_KEY, next);
     } catch {
       // The choice still applies for this session.
     }
