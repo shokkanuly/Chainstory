@@ -122,7 +122,7 @@ export async function runLocalLoop(onStep?: (step: StepResult) => void): Promise
       ]);
       if (!review.ok) throw new Error(`Local release review failed: ${review.error}`);
       const outflow = await guardian.sendContract(vault, actors.relayer, 'executeRelease', [observation.release.messageId]);
-      watcher.acknowledge(observation.release.messageId);
+      await watcher.acknowledge(observation.release.messageId);
       payouts.push({ ...observation, attestation, review, outflow });
     }
     const result: StepResult = {

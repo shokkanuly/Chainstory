@@ -119,3 +119,14 @@ The EVM explorer and Gemini keys sit behind the server-side proxy (ADR-013); oth
 
 Add a chain → new adapter + registry entries (playbook in `08`). Add a protocol → decoder + registry entry + fixture.
 Add a story category → `domain` enum + template + tax mapping decision (taxable / income / non-taxable) in one change.
+
+
+## Tripwire operator persistence (ADR-015)
+
+The operator under `scripts/tripwire/` uses a local SQLite store for atomic
+feed checkpoints, pending release work and a signed transaction outbox. The
+browser and stateless proxy runtimes do not import or access it. One process
+owns a deployment-bound state file; recovery reuses original signed transaction
+bytes and reconciles terminal vault states. HOLD/delay work remains queued.
+See the [operator runbook](plans/tripwire-operator.md) for scope, recovery and
+the outstanding finality/source-verification boundaries.

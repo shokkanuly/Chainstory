@@ -1,0 +1,99 @@
+// Sepolia wiring for the durable operator. No resets, synthetic burns or route resumes.
+import { encodeFunctionData, TransactionReceiptNotFoundError, type Hex } from 'viem';
+import { z } from 'zod';
+import guardianArtifact from '../../../src/tripwire/guardian.artifact.js';
+import { ResponseTier } from '../../../src/tripwire/onChain.js';
+import type { ContractRiskSummary, RouteBaseline } from '../../../src/tripwire/types.js';
+import { FLAG_LIST_NAME, lookupFlaggedAddress } from '../../../src/services/preventiveScamScanner.js';
+import { Attestor, type GuardianPort } from '../attest.js';
+import { burnEventSchema, releaseEventSchema } from '../events.js';
+import { ReleaseOperator } from '../operator.js';
+import { releaseDecision, releaseMinimumTier, signReleaseReview } from '../review.js';
+import { DurableSender, type TransactionPort } from '../sender.js';
+import { OperatorStore } from '../store.js';
+import { Watcher, type SourceEvidence } from '../watch.js';
+import { ContractEventFeed, type Clients, type Deployment, type TestnetConfig } from './sepolia.js';
+import demo from './contracts.artifact.js';
+
+const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((a) => a.toLowerCase() as Hex);
+const releaseTuple = z.tuple([address, z.bigint().positive(), z.number().int().min(0).max(4), z.bigint().nonnegative(), address, z.bigint().nonnegative(), z.number().int().min(0).max(3)]);
+
+export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deployment, stateFile: string, opts: {
+  baseline: RouteBaseline | null;
+  contractFacts?: (address: Hex) => Promise<ContractRiskSummary | null>;
+  /** Required for ALLOW. Absent by default: logs from MockSourceBridge are not source proofs. */
+  verifySource?: (release: z.infer<typeof releaseEventSchema>, observed: bigint | null) => Promise<SourceEvidence>;
+}) {
+  const { ProtectedVault: vault, TripwireGuardian: guardian, MockSourceBridge: bridge, DemoUSDC: token } = d.contracts;
+  if (c.chainId !== d.chainId || c.chainId !== 11155111) throw new Error('Deployment chain does not match Sepolia RPC.');
+  const from = BigInt(z.string().regex(/^(0|[1-9][0-9]*)$/).parse(d.startBlock));
+  // Validate immutable bindings before opening a write path. An old vault fails here.
+  await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'MAX_REVIEW_TTL' });
+  for (const [name, expected] of [['token', token.address], ['guardian', guardian.address], ['routeId', d.routeId]] as const) {
+    const actual = await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: name });
+    if (typeof actual !== 'string' || actual.toLowerCase() !== expected.toLowerCase()) throw new Error(`Vault ${name} does not match deployment.`);
+  }
+  const store = new OperatorStore(stateFile, { route: d.route, chainId: c.chainId, sourceChainId: c.chainId,
+    source: bridge.address, vault: vault.address, guardian: guardian.address, token: token.address,
+    sender: cfg.account.address, decimals: 6 });
+  try {
+    let clock = Number((await c.pub.getBlock()).timestamp);
+    const transactionPort: TransactionPort = {
+      chainId: c.chainId, sender: cfg.account.address,
+      prepare: async (request) => {
+        const tx = await c.wallet.prepareTransactionRequest({ type: 'eip1559', account: cfg.account, to: request.to as Hex,
+          data: request.data as Hex, value: BigInt(request.value) });
+        return c.wallet.signTransaction(tx);
+      },
+      broadcast: (raw) => c.pub.sendRawTransaction({ serializedTransaction: raw }),
+      receipt: async (hash) => {
+        try { return await c.pub.getTransactionReceipt({ hash }); }
+        catch (error) { if (error instanceof TransactionReceiptNotFoundError) return null; throw error; }
+      },
+      waitReceipt: (hash) => c.pub.waitForTransactionReceipt({ hash, timeout: 60_000 }),
+    };
+    const sender = new DurableSender(store, transactionPort);
+    const guardianPort: GuardianPort = {
+      address: guardian.address, chainId: c.chainId,
+      currentTier: async (routeId) => z.number().int().min(0).max(3).parse(
+        await c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'currentTier', args: [routeId] })) as ResponseTier,
+      submitAttestation: async (a, signature) => {
+        const result = await sender.send(`attestation/${a.nonce}`, { to: guardian.address,
+          data: encodeFunctionData({ abi: guardianArtifact.abi, functionName: 'submitAttestation', args: [a.routeId, a.riskScore, a.validUntil, a.nonce, signature] }), value: '0' });
+        return { ok: result.status === 'confirmed', txHash: result.hash as Hex, gas: BigInt(result.gas ?? '0') };
+      },
+    };
+    const watcher = new Watcher({ route: d.route, chain: 'ethereum', token: 'tdUSDC', decimals: 6, bridge: vault.address, store,
+      ingress: new ContractEventFeed(c, bridge.address, demo.MockSourceBridge.abi, 'Burned', from,
+        (a, t) => burnEventSchema.parse({ messageId: a.messageId, amount: a.amount, timestamp: t })),
+      egress: new ContractEventFeed(c, vault.address, demo.ProtectedVault.abi, 'ReleaseRequested', from,
+        (a, t) => releaseEventSchema.parse({ messageId: a.messageId, recipient: a.to, amount: a.amount, timestamp: t })),
+      baseline: opts.baseline, verifySource: opts.verifySource, contractFacts: opts.contractFacts, now: () => clock,
+      screening: { isFlagged: (a) => lookupFlaggedAddress(a) !== null,
+        describe: (a) => lookupFlaggedAddress(a) ? `${FLAG_LIST_NAME}: ${lookupFlaggedAddress(a)?.name}` : undefined },
+    });
+    const operator = new ReleaseOperator(watcher, sender, new Attestor(cfg.account, guardianPort, { now: () => clock }), {
+      read: async (messageId) => {
+        const r = releaseTuple.parse(await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'releases', args: [messageId] }));
+        return { recipient: r[0], amount: r[1], state: r[2], nonce: r[5] };
+      },
+      review: async (observation, nonce) => {
+        const now = Number((await c.pub.getBlock()).timestamp);
+        const review = { messageId: observation.release.messageId, routeId: d.routeId, token: token.address,
+          recipient: observation.release.recipient, amount: observation.release.amount, decision: releaseDecision(observation),
+          minimumTier: releaseMinimumTier(observation), validUntil: BigInt(now + 300), nonce };
+        const signature = await signReleaseReview(cfg.account, vault.address, review, c.chainId);
+        return { to: vault.address, data: encodeFunctionData({ abi: demo.ProtectedVault.abi, functionName: 'reviewRelease',
+          args: [review.messageId, review.decision, review.minimumTier, review.validUntil, review.nonce, signature] }), value: '0' };
+      },
+      canExecute: async (messageId) => {
+        try { await c.pub.simulateContract({ account: cfg.account, address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'executeRelease', args: [messageId] }); return true; }
+        catch { return false; } // Preserve the job for delayed/capped payouts or unavailable RPC.
+      },
+      execute: (messageId) => ({ to: vault.address, data: encodeFunctionData({ abi: demo.ProtectedVault.abi, functionName: 'executeRelease', args: [messageId] }), value: '0' }),
+    }, d.routeId);
+    return { store, sender, watcher, tick: async () => {
+      clock = Number((await c.pub.getBlock()).timestamp); return operator.tick();
+    }, close: () => store.close() };
+  } catch (error) { store.close(); throw error; }
+}

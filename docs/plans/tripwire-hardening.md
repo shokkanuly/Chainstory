@@ -53,8 +53,8 @@ for these checks.
 4. Read the release's current nonce. Sign the next review with its required minimum
    tier and short expiry. Submit and confirm that review before attempting execution.
 5. Execute through the gated payout contract. A revert is not a successful payment.
-6. Record confirmed outcomes before acknowledging an observation. Keep a separate
-   durable retry/review queue for held, delayed and expired requests.
+6. Acknowledge only matching on-chain EXECUTED or REJECTED outcomes. Keep held,
+   delayed and expired requests in the durable queue for reassessment.
 
 An ALLOW review is an additional operator gate, not a cryptographic source proof.
 The reviewer can allow an existing request; it cannot create one, modify payout
@@ -78,7 +78,7 @@ verification or continuous production operator is claimed here.
 
 | Priority | Work | Acceptance condition |
 | :--- | :--- | :--- |
-| P0 | Durable event, cursor, pending-request and submission store | Crash at each transaction boundary loses no observation; restart retries signed/submitted transactions safely |
+| Done locally | Durable event/cursor/pending state and signed transaction journal | Atomic snapshot + original-byte recovery, terminal receipt reconciliation and HOLD/delay retries; [runbook](tripwire-operator.md) |
 | P0 | Adapter for one selected bridge and one asset | Wrong chain/contract/token/recipient/amount and reused source messages are rejected; missing data is held |
 | P0 | Finality and reorg reconciliation | Reverted source evidence invalidates affected pending reviews; database state and cursors follow canonical block hashes |
 | P1 | Continuous attestor with protection refresh | Persistent risk does not silently lose route protection at the 24-hour boundary; restart reconciles current on-chain state |
@@ -89,5 +89,6 @@ verification or continuous production operator is claimed here.
 | Pilot | Observe one real route before enforcing small limits | Honest traffic and attack/failure fixtures quantify detection, false holds and additional latency |
 
 Operator persistence belongs outside the read-only browser app and existing
-stateless API proxies. Its design will be recorded in a separate ADR. No new
-dependencies are introduced by this first milestone.
+stateless API proxies. Its design is recorded in ADR-015. Node
+built-in SQLite adds no npm dependency. The standalone operator is implemented
+locally; its source proof and baseline adapters remain deliberately unconfigured.
