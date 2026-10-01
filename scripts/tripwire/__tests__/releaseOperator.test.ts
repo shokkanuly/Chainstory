@@ -101,6 +101,28 @@ describe('durable release queue', () => {
     f.store.close(); const restored = f.open(); expect((await f.make(restored).tick())[0].action).toBe('executed');
     expect(restored.loadWatcher()?.pending).toEqual([]); expect(await f.make(restored).tick()).toEqual([]);
   });
+  it('waits through a sticky delay across restart without review churn, then freshly reviews at maturity', async () => {
+    const f = fixture(); const now = BigInt(f.release.timestamp), until = now + 1800n;
+    f.setState({ state: ReleaseState.VERIFIED, nonce: 1n, delay: { now, until } });
+    const review = vi.spyOn(f.releasePort, 'review');
+    expect((await f.operator.tick())[0].action).toBe('delayed'); expect(review).not.toHaveBeenCalled();
+    f.store.close(); const restored = f.open(); const operator = f.make(restored);
+    expect((await operator.tick())[0].action).toBe('delayed'); expect(restored.transactions()).toEqual([]);
+    f.setState({ delay: { now: until, until } });
+    expect((await operator.tick())[0].action).toBe('executed'); expect(review).toHaveBeenCalledTimes(1);
+    expect(restored.loadWatcher()?.pending).toEqual([]);
+  });
+  it('revokes ALLOW during a sticky delay as soon as source evidence becomes unavailable', async () => {
+    const f = fixture({ verifySource: undefined });
+    f.setState({ state: ReleaseState.VERIFIED, delay: { now: 100n, until: 200n } });
+    expect((await f.operator.tick())[0].action).toBe('held');
+    expect(f.store.transactions()[0].request.data).toBe('0x01'); expect(f.store.loadWatcher()?.pending).toHaveLength(1);
+  });
+  it('refuses malformed delay state before reviewing or acknowledging a request', async () => {
+    const f = fixture(); f.setState({ state: ReleaseState.VERIFIED, delay: { now: -1n, until: 200n } });
+    await expect(f.operator.tick()).rejects.toThrow(); expect(f.store.transactions()).toEqual([]);
+    expect(f.store.loadWatcher()?.pending).toHaveLength(1);
+  });
   it('reconciles an executed payout after acknowledgment commit failed without executing again', async () => {
     const f = fixture(); const save = f.store.saveWatcher.bind(f.store);
     vi.spyOn(f.store, 'saveWatcher').mockImplementation((s) => { if (s.completed.length) throw new Error('Disk full'); save(s); });

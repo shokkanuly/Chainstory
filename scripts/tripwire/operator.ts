@@ -11,6 +11,7 @@ export enum ReleaseState { PENDING, VERIFIED, HELD, REJECTED, EXECUTED }
 const releaseStatusSchema = z.object({
   recipient: z.string().regex(/^0x[0-9a-fA-F]{40}$/), amount: z.bigint().positive(),
   state: z.number().int().min(0).max(4), nonce: z.bigint().nonnegative(),
+  delay: z.object({ until: z.bigint().nonnegative(), now: z.bigint().nonnegative() }).optional(),
 });
 export type ReleaseStatus = z.infer<typeof releaseStatusSchema>;
 export interface ReleasePort {
@@ -53,6 +54,13 @@ export class ReleaseOperator {
       // without signing the same HOLD repeatedly while data is missing.
       if (decision === ReleaseDecision.HOLD && state.state !== ReleaseState.VERIFIED) {
         results.push({ messageId, action: 'held' }); continue;
+      }
+      // Keep reevaluating risk/protection, but do not spend a review nonce/gas
+      // every tick during an already established per-request hold. At maturity
+      // a fresh review is required; HOLD/REJECT can still revoke an old ALLOW now.
+      if (decision === ReleaseDecision.ALLOW && state.state === ReleaseState.VERIFIED &&
+        state.delay && state.delay.now < state.delay.until) {
+        results.push({ messageId, action: 'delayed' }); continue;
       }
       // Re-read the per-message nonce after route protection settles.
       state = await this.read(observation);

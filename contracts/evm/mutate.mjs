@@ -22,7 +22,7 @@ const M = [
  ['DELAY hold: window ignored', 'block.timestamp < r.delayUntil && amount', 'amount'],
  ['escalate-only: downgrades allowed', 'if (incoming >= active) {', 'if (true) {'],
  ['refresh reopens the DELAY window', 'incoming == Tier.DELAY && active != Tier.DELAY', 'incoming == Tier.DELAY'],
- ['reconfigure clears the tier', 'r.outflowInWindow = 0;\n        emit RouteConfigured', 'r.outflowInWindow = 0;\n        r.tier = Tier.NONE; r.tierExpiresAt = 0; r.pausedUntil = 0;\n        emit RouteConfigured'],
+ ['reconfigure clears the tier', 'emit RouteConfigured(routeId, cap, windowSeconds);', 'r.tier = Tier.NONE; r.tierExpiresAt = 0; r.pausedUntil = 0;\n        emit RouteConfigured(routeId, cap, windowSeconds);'],
  ['resume keeps the pause', 'r.pausedUntil = 0;\n        r.tier = Tier.NONE;', 'r.tier = Tier.NONE;'],
  ['resume keeps the tier', 'r.tier = Tier.NONE;\n        r.tierExpiresAt = 0;\n        r.delayUntil = 0;', 'r.delayUntil = 0;'],
  ['resume keeps the DELAY hold clock', 'r.tierExpiresAt = 0;\n        r.delayUntil = 0;', 'r.tierExpiresAt = 0;'],
@@ -30,6 +30,11 @@ const M = [
  ['DELAY threshold off by one', 'riskScore >= DELAY_THRESHOLD', 'riskScore > DELAY_THRESHOLD'],
  ['FREEZE threshold off by one', 'riskScore >= FREEZE_THRESHOLD', 'riskScore > FREEZE_THRESHOLD'],
  ['FREEZE does not pause', 'if (incoming == Tier.FREEZE) r.pausedUntil = until;', ''],
+ ['route isolation: any reporter spends any route', 'if (!isProtected[msg.sender][routeId]) revert NotProtected(msg.sender);', ''],
+ ['rolling limit: previous usage ignored', 'uint256 total = rollingUsage(routeId) + amount;', 'uint256 total = amount;'],
+ ['rolling limit: last ring slot omitted', 'i < ROLLING_BUCKETS; ++i', 'i < ROLLING_BUCKETS - 1; ++i'],
+ ['rolling limit: expires usage one second early', 'uint256(bucket.lastOutflow) + window > block.timestamp', 'uint256(bucket.lastOutflow) + window - 1 > block.timestamp'],
+ ['rolling limit: reconfigure discards spent budget', 'emit RouteConfigured(routeId, cap, windowSeconds);', 'delete _outflows[routeId];\n        emit RouteConfigured(routeId, cap, windowSeconds);'],
 ];
 const REVIEW_MUTANTS = [
  ['review signer: any signature accepted', 'if (reviewer != ITripwireOracle(address(guardian)).oracle()) revert InvalidReviewer(reviewer);', ''],
@@ -39,6 +44,10 @@ const REVIEW_MUTANTS = [
  ['review rotation: old signer allowance stays valid', 'if (r.reviewer != ITripwireOracle(address(guardian)).oracle()) revert InvalidReviewer(r.reviewer);', ''],
  ['review protection: no risk tier required', 'if (guardian.currentTier(routeId) < r.minimumTier) revert RequiredProtectionMissing(routeId, r.minimumTier);', ''],
  ['review execution: a release can pay twice', 'r.state = ReleaseState.EXECUTED;', ''],
+ ['request delay: ALLOW never starts the clock', 'if (delay > 0) releaseDelayUntil[messageId]', 'if (false) releaseDelayUntil[messageId]'],
+ ['request delay: repeated reviews reopen the clock', 'decision == ReviewDecision.ALLOW && releaseDelayUntil[messageId] == 0', 'decision == ReviewDecision.ALLOW'],
+ ['request delay: a waiting payout can execute', 'if (block.timestamp < releaseAt) revert ReleaseDelayed(messageId, releaseAt);', ''],
+ ['request delay: a clear review bypasses starting a DELAY clock', 'if (releaseAt == 0 && guardian.outflowDelay(routeId, r.amount) > 0) revert RequestDelayNotStarted(messageId);', ''],
 ];
 const CCTP_MUTANTS = [
  ['CCTP ownership: owner may invent credits', 'ProtectedVault(address(this), token_, guardian_, routeId_)', 'ProtectedVault(msg.sender, token_, guardian_, routeId_)'],
@@ -57,8 +66,9 @@ try {
     writeFileSync(SOL, sol.replace(from, to));
     execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
     let caught;
-    try { execSync('npx vitest run contracts/ -t "^(?!artifact)"', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
+    try { execSync('npx vitest run contracts/evm/test/TripwireGuardian.evm.test.ts contracts/evm/test/routeLimits.evm.test.ts -t "^(?!artifact)"', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
     results.push([name, caught ? 'caught' : 'SURVIVED']);
+    console.log(results.at(-1)[1].padEnd(18), name);
   }
   writeFileSync(SOL, sol);
   for (const [name, from, to] of REVIEW_MUTANTS) {
@@ -66,8 +76,9 @@ try {
     writeFileSync(VAULT, vault.replace(from, to));
     execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
     let caught;
-    try { execSync('npx vitest run contracts/evm/test/releaseSafety.evm.test.ts', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
+    try { execSync('npx vitest run contracts/evm/test/releaseSafety.evm.test.ts contracts/evm/test/routeLimits.evm.test.ts', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
     results.push([name, caught ? 'caught' : 'SURVIVED']);
+    console.log(results.at(-1)[1].padEnd(18), name);
   }
   writeFileSync(VAULT, vault);
   for (const [name, from, to] of CCTP_MUTANTS) {
@@ -77,13 +88,14 @@ try {
     let caught;
     try { execSync('npx vitest run contracts/evm/test/cctpEscrow.evm.test.ts', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
     results.push([name, caught ? 'caught' : 'SURVIVED']);
+    console.log(results.at(-1)[1].padEnd(18), name);
   }
 } finally {
   writeFileSync(SOL, sol); writeFileSync(ART, art);
   writeFileSync(VAULT, vault); writeFileSync(DEMO_ART, demoArt);
   writeFileSync(ESCROW, escrow); writeFileSync(CCTP_ART, cctpArt);
 }
-for (const r of results) console.log(r[1].padEnd(18), r[0]);
+for (const [name, status] of results.filter((r) => r[1] === 'PATTERN NOT FOUND')) console.log(status.padEnd(18), name);
 const bad = results.filter((r) => r[1] !== 'caught').length;
 console.log(bad ? `${bad} of ${results.length} mutants not caught` : `all ${results.length} mutants caught`);
 process.exit(bad ? 1 : 0);

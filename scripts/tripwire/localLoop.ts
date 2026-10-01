@@ -60,7 +60,7 @@ export async function runLocalLoop(onStep?: (step: StepResult) => void): Promise
   const token = await guardian.deployContract(demo.DemoUSDC, [actors.owner.address]);
   const vault = await guardian.deployContract(demo.ProtectedVault, [actors.owner.address, token.address, guardian.address, ROUTE_ID]);
   await guardian.send(actors.owner, 'configureRoute', [ROUTE_ID, CAP, WINDOW]);
-  await guardian.send(actors.owner, 'setProtected', [vault.address, true]);
+  await guardian.send(actors.owner, 'setProtected', [vault.address, ROUTE_ID, true]);
   await guardian.sendContract(token, actors.owner, 'mint', [vault.address, 20_000_000n * USDC]);
 
   const port: GuardianPort = {

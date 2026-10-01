@@ -36,7 +36,7 @@ describe('the local watch → attest → guardian loop', async () => {
   });
 
   it('DELAY holds the large payout and lets the honest small one through', () => {
-    expect(outcome(steps[2])).toEqual(['OutflowDelayed', 'paid']);
+    expect(outcome(steps[2])).toEqual(['ReleaseDelayed', 'paid']);
     // The small one needs no attestation: the route is already at DELAY.
     expect(steps[2].payouts[1].attestation.action).toBe('skipped');
   });
