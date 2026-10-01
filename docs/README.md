@@ -62,6 +62,8 @@ durable source/settlement/nonce claims and a read-only receipt audit command.
 The fifth adds self-owned `CctpEscrow`: an authenticated Circle mint and immutable
 PENDING request are atomic; the operator verifies both in the settlement receipt.
 External review, fresh deployment and the live transfer pilot remain pending.
+The sixth adds continuous refresh of freshly justified pending risk before the
+guardian's 24-hour expiry, with chain-state reconciliation and the existing outbox.
 See [the plan](plans/tripwire-hardening.md)
 for implemented behavior, remaining P0 work and the old Sepolia deployment boundary.
 The wallet/Solana phase table below describes the earlier project work.

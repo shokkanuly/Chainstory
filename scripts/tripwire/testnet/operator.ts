@@ -15,6 +15,7 @@ import { Watcher, type SourceAdapter, type SourceEvidence } from '../watch.js';
 import { blockHeaderSchema, receiptFinality } from '../finality.js';
 import { ContractEventFeed, type Clients, type Deployment, type TestnetConfig } from './sepolia.js';
 import demo from './contracts.artifact.js';
+import { readGuardianProtection } from './guardianState.js';
 
 const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((a) => a.toLowerCase() as Hex);
 const releaseTuple = z.tuple([address, z.bigint().positive(), z.number().int().min(0).max(4), z.bigint().nonnegative(), address, z.bigint().nonnegative(), z.number().int().min(0).max(3)]);
@@ -78,6 +79,14 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
       address: guardian.address, chainId: c.chainId,
       currentTier: async (routeId) => z.number().int().min(0).max(3).parse(
         await c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'currentTier', args: [routeId] })) as ResponseTier,
+      protectionState: (routeId) => readGuardianProtection({
+        getBlock: (args) => c.pub.getBlock(args),
+        readRoute: (blockNumber) => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi,
+          functionName: 'getRoute', args: [routeId], blockNumber }),
+        readOracle: (blockNumber) => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi,
+          functionName: 'oracle', blockNumber }),
+        minimumBlock: () => store.transactions().reduce((highest, tx) => tx.block && BigInt(tx.block) > highest ? BigInt(tx.block) : highest, 0n),
+      }),
       submitAttestation: async (a, signature) => {
         const result = await sender.send(`attestation/${a.nonce}`, { to: guardian.address,
           data: encodeFunctionData({ abi: guardianArtifact.abi, functionName: 'submitAttestation', args: [a.routeId, a.riskScore, a.validUntil, a.nonce, signature] }), value: '0' });

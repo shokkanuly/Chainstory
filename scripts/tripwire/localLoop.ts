@@ -110,7 +110,7 @@ export async function runLocalLoop(onStep?: (step: StepResult) => void): Promise
     const payouts: PayoutResult[] = [];
     for (const observation of await watcher.tick()) {
       const attestation = await attestor.handle(ROUTE_ID, observation.assessment);
-      if (attestation.action === 'rejected') throw new Error('Guardian rejected the risk attestation; the release remains pending.');
+      if (attestation.action === 'rejected' || attestation.action === 'unavailable') throw new Error('Guardian protection is unavailable or rejected; the release remains pending.');
       const releaseReview: ReleaseReview = {
         messageId: observation.release.messageId, routeId: ROUTE_ID, token: token.address,
         recipient: observation.release.recipient, amount: observation.release.amount,
@@ -147,7 +147,7 @@ export function describeStep(step: StepResult, index: number): string[] {
     const a = p.assessment;
     const burn = p.burned === null ? 'SOURCE UNKNOWN' : p.burned === p.release.amount ? 'burn ✓' : p.burned === 0n ? 'NO BURN' : `burn ${usdc(p.burned)}`;
     const attest =
-      p.attestation.action === 'skipped'
+      p.attestation.action === 'skipped' || p.attestation.action === 'unavailable'
         ? `no attestation (${p.attestation.reason})`
         : `${p.attestation.action === 'submitted' ? 'attested' : 'REJECTED'} ${p.attestation.attestation.riskScore} → ${ResponseTier[p.attestation.tier]}` +
           (p.attestation.result.gas ? `, gas ${p.attestation.result.gas.toLocaleString('en-US')}` : '');

@@ -53,7 +53,7 @@ function print(step: TestnetStep, i: number) {
   console.log(`\n[${i}] ${step.title}`);
   for (const p of step.payouts) {
     const attest =
-      p.attestation.action === 'skipped'
+      p.attestation.action === 'skipped' || p.attestation.action === 'unavailable'
         ? `no attestation (${p.attestation.reason})`
         : `${p.attestation.action === 'submitted' ? 'attested' : 'REJECTED'} ${p.attestation.attestation.riskScore} → ${ResponseTier[p.attestation.tier]}`;
     console.log(`    ${usdc(p.amount)} → ${short(p.recipient)} · ${p.burned === null ? 'SOURCE UNKNOWN' : p.burned === p.amount ? 'burn ✓' : p.burned === 0n ? 'NO BURN' : `burn ${usdc(p.burned)}`}`);

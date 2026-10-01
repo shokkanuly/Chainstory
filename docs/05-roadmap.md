@@ -19,6 +19,7 @@ remain historical context.
 | Ethereum/Sepolia finalized observations, receipt reorg recovery and durable quarantine | Implemented locally; ADR-016; no live deployment |
 | CCTP v2 Standard USDC adapter, Base Sepolia → Ethereum Sepolia | Implemented locally; [escrow/runbook](plans/tripwire-cctp.md), ADR-017; synthetic fixtures, live pilot pending |
 | Authenticated CCTP mint → immutable pending escrow release | Implemented locally; ADR-018; self-owned escrow, exact net mint, atomic rollback and authenticated operator policy; external review/deployment pending |
+| Continuous refresh of justified route protection | Implemented locally; ADR-019; chain-bound expiry/clock/oracle reconciliation, renewed pending assessments and existing durable outbox; live operation pending |
 | Live deployment of the release-gated vault | Not deployed; old Sepolia vault is incompatible with current demo scripts |
 
 Tripwire and Check before you sign, planned in [plans/tripwire-hackathon.md](plans/tripwire-hackathon.md) (each stage's result is recorded there).

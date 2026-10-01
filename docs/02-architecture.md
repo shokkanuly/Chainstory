@@ -145,3 +145,10 @@ the read-only audit CLI remain in `scripts/tripwire/`. Durable source and settle
 identities/nonce claims bind a finalized burn to the exact escrow payout. The
 operator factory is explicit; no CCTP signing/relaying enters the browser or proxies.
 See the [CCTP runbook](plans/tripwire-cctp.md) for policy and remaining trust boundaries.
+
+ADR-019 adds protection refresh inside the existing operator tick. Guardian
+tier/expiry/oracle and chain time are read from one hash-checked latest state
+block, bounded below by observed write receipts. Source evidence stays finalized.
+Fresh pending assessments may renew a matching active tier near expiry; stale
+decisions are not persisted as permanent risk flags. Existing queue/outbox recovery
+and quarantine apply to refresh signatures and transactions as well.
