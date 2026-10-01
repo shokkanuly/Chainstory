@@ -57,6 +57,7 @@ export const DEMO_CONTRACTS = {
   MockSourceBridge: 'TripwireDemo.sol',
   ProtectedVault: 'TripwireDemo.sol',
   DrainReceiver: 'TripwireDemo.sol',
+  TripwireQuorum: 'TripwireQuorum.sol',
   ERC1967Proxy: '@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol',
 };
 

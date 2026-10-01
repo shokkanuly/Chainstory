@@ -5,6 +5,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {ITripwireGuardian} from "./ITripwireGuardian.sol";
 
 /// @title TripwireGuardian
@@ -39,6 +40,11 @@ import {ITripwireGuardian} from "./ITripwireGuardian.sol";
 ///        MAX_ATTESTATION_TTL. A signed-but-unsubmitted attestation cannot be
 ///        held back and fired days later.
 ///
+///      - The oracle may be one key or a contract. A contract oracle (for
+///        example TripwireQuorum, ADR-021) is asked through ERC-1271, so a
+///        k-of-n attestor set replaces the single key without changing any
+///        rule above: no quorum can do more than one oracle key could.
+///
 ///      - An unconfigured route rejects outflows. Failing closed on a route the
 ///        guardian knows nothing about is the only safe default for a breaker.
 contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
@@ -59,7 +65,7 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
     }
 
     uint256 public constant MAX_SCORE = 100;
-    uint256 public constant GUARDIAN_POLICY_VERSION = 2;
+    uint256 public constant GUARDIAN_POLICY_VERSION = 3;
     uint256 public constant ROLLING_BUCKETS = 17;
     struct Bucket { uint128 amount; uint64 lastOutflow; }
     mapping(bytes32 routeId => Bucket[17]) private _outflows;
@@ -205,8 +211,7 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         Route storage r = _routes[routeId];
         if (r.windowSeconds == 0) revert RouteNotConfigured(routeId);
 
-        address signer = ECDSA.recover(hashAttestation(routeId, riskScore, validUntil, nonce), signature);
-        if (signer != oracle) revert InvalidSigner(signer);
+        _requireOracleSignature(hashAttestation(routeId, riskScore, validUntil, nonce), signature);
 
         usedNonces[nonce] = true;
 
@@ -228,6 +233,18 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         }
 
         emit AttestationAccepted(routeId, riskScore, nonce, r.tierExpiresAt, currentTier(routeId));
+    }
+
+    /// @dev One key: recover and compare. A contract oracle: ERC-1271, which a
+    ///      TripwireQuorum answers only for a threshold of distinct attestors.
+    function _requireOracleSignature(bytes32 digest, bytes calldata signature) private view {
+        address current = oracle;
+        if (current.code.length == 0) {
+            address signer = ECDSA.recover(digest, signature);
+            if (signer != current) revert InvalidSigner(signer);
+        } else if (!SignatureChecker.isValidERC1271SignatureNowCalldata(current, digest, signature)) {
+            revert InvalidSigner(current);
+        }
     }
 
     // --- views ---------------------------------------------------------------

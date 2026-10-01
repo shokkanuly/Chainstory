@@ -7,9 +7,12 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {ITripwireGuardian} from "./ITripwireGuardian.sol";
 // Compiled alongside: the attacker's receiving contract is deployed behind it.
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+// Compiled alongside: the k-of-n attestor set a deployment may install as the oracle.
+import {TripwireQuorum} from "./TripwireQuorum.sol";
 
 // The testnet stage around TripwireGuardian: a bridge's two ends and the
 // attacker's receiving contract. Demo contracts, deployed by
@@ -71,7 +74,7 @@ contract ProtectedVault is Ownable, EIP712 {
     mapping(bytes32 messageId => Release) public releases;
     mapping(bytes32 messageId => uint256) public releaseDelayUntil;
 
-    uint256 public constant RELEASE_POLICY_VERSION = 2;
+    uint256 public constant RELEASE_POLICY_VERSION = 3;
     uint256 public constant MAX_REVIEW_TTL = 10 minutes;
     bytes32 public constant REVIEW_TYPEHASH = keccak256(
         "ReleaseReview(bytes32 messageId,bytes32 routeId,address token,address recipient,uint256 amount,uint8 decision,uint8 minimumTier,uint256 validUntil,uint256 nonce)"
@@ -128,8 +131,7 @@ contract ProtectedVault is Ownable, EIP712 {
         // Per-release monotonically increasing nonces also reject an older ALLOW
         // signature arriving after a newer HOLD. Random single-use nonces do not.
         if (nonce <= r.reviewNonce) revert ReviewNonceAlreadyUsed(nonce);
-        address reviewer = ECDSA.recover(hashReleaseReview(messageId, decision, minimumTier, validUntil, nonce), signature);
-        if (reviewer != ITripwireOracle(address(guardian)).oracle()) revert InvalidReviewer(reviewer);
+        address reviewer = _requireReviewer(hashReleaseReview(messageId, decision, minimumTier, validUntil, nonce), signature);
         r.reviewNonce = nonce;
         r.state = decision == ReviewDecision.ALLOW
             ? ReleaseState.VERIFIED : decision == ReviewDecision.HOLD ? ReleaseState.HELD : ReleaseState.REJECTED;
@@ -141,6 +143,19 @@ contract ProtectedVault is Ownable, EIP712 {
             if (delay > 0) releaseDelayUntil[messageId] = block.timestamp + delay;
         }
         emit ReleaseReviewed(messageId, decision, validUntil, nonce);
+    }
+
+    /// @dev The guardian's oracle signs every review: one key through ECDSA, or a
+    ///      contract (TripwireQuorum, ADR-021) through ERC-1271. Returns the oracle.
+    function _requireReviewer(bytes32 digest, bytes calldata signature) private view returns (address) {
+        address current = ITripwireOracle(address(guardian)).oracle();
+        if (current.code.length == 0) {
+            address reviewer = ECDSA.recover(digest, signature);
+            if (reviewer != current) revert InvalidReviewer(reviewer);
+        } else if (!SignatureChecker.isValidERC1271SignatureNowCalldata(current, digest, signature)) {
+            revert InvalidReviewer(current);
+        }
+        return current;
     }
 
     function hashReleaseReview(bytes32 messageId, ReviewDecision decision, ITripwireGuardian.Tier minimumTier, uint256 validUntil, uint256 nonce)

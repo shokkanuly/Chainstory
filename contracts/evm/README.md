@@ -20,6 +20,10 @@ volume cap cannot see.
 - Reconfiguring a route's cap leaves its tier in place. Only the owner's
   `resume` lifts a tier early, and it clears everything. The owner can also
   rotate the oracle key.
+- The oracle may be one key or a contract. `TripwireQuorum` (ADR-021) is a
+  k-of-n attestor set answering ERC-1271: route attestations and release reviews
+  then need `threshold` distinct attestor signatures, in ascending signer order.
+  Membership changes only by a quorum of the current set; there is no owner.
 
 ## Safety properties
 
@@ -34,6 +38,8 @@ Each is enforced by the contract and broken deliberately by a test.
 | OpenZeppelin ECDSA rejects high-`s` | No second valid signature exists for an accepted attestation |
 | Unconfigured routes reject outflows | Fails closed on a route the guardian knows nothing about |
 | Only allow-listed contracts report outflows | An outsider cannot inflate usage to force a route shut |
+| A quorum oracle needs `threshold` distinct members, honest majority | One stolen attestor key can neither approve a release nor tighten a route alone |
+| Quorum membership changes are quorum-signed and epoch-bound | No single key, and no replayed approval, can rewrite who attests |
 
 ## Verification
 

@@ -1,4 +1,5 @@
-// Mutation tests for the guardian's tier logic and the vault's release review gate.
+// Mutation tests for the guardian's tier logic, the vault's release review gate,
+// and the k-of-n attestor quorum.
 //
 //   npm run test:mutants
 //
@@ -37,7 +38,7 @@ const M = [
  ['rolling limit: reconfigure discards spent budget', 'emit RouteConfigured(routeId, cap, windowSeconds);', 'delete _outflows[routeId];\n        emit RouteConfigured(routeId, cap, windowSeconds);'],
 ];
 const REVIEW_MUTANTS = [
- ['review signer: any signature accepted', 'if (reviewer != ITripwireOracle(address(guardian)).oracle()) revert InvalidReviewer(reviewer);', ''],
+ ['review signer: any signature accepted', 'if (reviewer != current) revert InvalidReviewer(reviewer);', ''],
  ['review nonce: older approvals accepted', 'if (nonce <= r.reviewNonce)', 'if (nonce == r.reviewNonce)'],
  ['review decision: HOLD and REJECT become VERIFIED', 'r.state = decision == ReviewDecision.ALLOW\n            ? ReleaseState.VERIFIED : decision == ReviewDecision.HOLD ? ReleaseState.HELD : ReleaseState.REJECTED;', 'r.state = ReleaseState.VERIFIED;'],
  ['review expiry: old allowance to execute stays valid', 'if (block.timestamp > r.reviewedUntil) revert ReviewExpired(r.reviewedUntil);', ''],
@@ -59,6 +60,23 @@ const CCTP_MUTANTS = [
  ['CCTP receive: false success accepted', 'if (!transmitter.receiveMessage(message, attestation)) revert CctpReceiveFailed();', 'transmitter.receiveMessage(message, attestation);'],
  ['CCTP mint: pooled funds count as a fresh deposit', 'if (afterMint < beforeMint || afterMint - beforeMint != net) revert CctpMintMismatch();', ''],
 ];
+// Threshold attestation (ADR-021): the quorum contract, and the guardian's and
+// vault's ERC-1271 path that consults it. Each file is restored after its mutant.
+const QUORUM = 'contracts/evm/src/TripwireQuorum.sol';
+const quorum = readFileSync(QUORUM, 'utf8');
+const ORACLE_MUTANTS = [
+ [QUORUM, 'quorum: fewer than threshold accepted', 'count < threshold || ', ''],
+ [QUORUM, 'quorum: a repeated key counts twice', 'signer <= previous ||', 'signer < previous ||'],
+ [QUORUM, 'quorum: an outsider counts', ' || !isSigner[signer]', ''],
+ [QUORUM, 'quorum: majority rule dropped', ' || nextThreshold * 2 <= n', ''],
+ [QUORUM, 'quorum: anyone rotates membership', 'if (!_quorumSigned(hashUpdate(next, nextThreshold, epoch), signature)) revert QuorumNotMet();', ''],
+ [QUORUM, 'quorum: rotation approval replayable', '++epoch;', ''],
+ [QUORUM, 'quorum: removed signers keep counting', 'for (uint256 i; i < _signers.length; ++i) isSigner[_signers[i]] = false;', ''],
+ [SOL, 'guardian: single-key signature unchecked', 'if (signer != current) revert InvalidSigner(signer);', ''],
+ [SOL, 'guardian: contract oracle unchecked', 'revert InvalidSigner(current);', ''],
+ [VAULT, 'vault: contract oracle unchecked', 'revert InvalidReviewer(current);', ''],
+];
+const ORIGINAL = { [QUORUM]: quorum, [SOL]: sol, [VAULT]: vault };
 const results = [];
 try {
   for (const [name, from, to] of M) {
@@ -81,6 +99,17 @@ try {
     console.log(results.at(-1)[1].padEnd(18), name);
   }
   writeFileSync(VAULT, vault);
+  for (const [file, name, from, to] of ORACLE_MUTANTS) {
+    const source = ORIGINAL[file];
+    if (!source.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
+    writeFileSync(file, source.replace(from, to));
+    execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
+    let caught;
+    try { execSync('npx vitest run contracts/evm/test/quorum.evm.test.ts contracts/evm/test/TripwireGuardian.evm.test.ts contracts/evm/test/releaseSafety.evm.test.ts -t "^(?!artifact)"', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
+    writeFileSync(file, source);
+    results.push([name, caught ? 'caught' : 'SURVIVED']);
+    console.log(results.at(-1)[1].padEnd(18), name);
+  }
   for (const [name, from, to] of CCTP_MUTANTS) {
     if (!escrow.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
     writeFileSync(ESCROW, escrow.replace(from, to));
@@ -94,6 +123,7 @@ try {
   writeFileSync(SOL, sol); writeFileSync(ART, art);
   writeFileSync(VAULT, vault); writeFileSync(DEMO_ART, demoArt);
   writeFileSync(ESCROW, escrow); writeFileSync(CCTP_ART, cctpArt);
+  writeFileSync(QUORUM, quorum);
 }
 for (const [name, status] of results.filter((r) => r[1] === 'PATTERN NOT FOUND')) console.log(status.padEnd(18), name);
 const bad = results.filter((r) => r[1] !== 'caught').length;
