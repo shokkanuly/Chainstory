@@ -138,3 +138,25 @@ only finalized terminal vault state completes a job. An unfinalized receipt reor
 reuses its original signed bytes, while a finalized-history conflict persists a
 quarantine. This is provider-trusting Ethereum/Sepolia policy, not a consensus
 light client or a substitute for independent bridge-message authentication.
+
+ADR-017 adds the CCTP v2 USDC post-mint source adapter. Pure EVM codecs/verified
+protocol facts live in `src/chains/evm/`; receipts, proof claims, signing guards and
+the read-only audit CLI remain in `scripts/tripwire/`. Durable source and settlement
+identities/nonce claims bind a finalized burn to the exact escrow payout. The
+operator factory is explicit; no CCTP signing/relaying enters the browser or proxies.
+See the [CCTP runbook](plans/tripwire-cctp.md) for policy and remaining trust boundaries.
+
+ADR-019 adds protection refresh inside the existing operator tick. Guardian
+tier/expiry/oracle and chain time are read from one hash-checked latest state
+block, bounded below by observed write receipts. Source evidence stays finalized.
+Fresh pending assessments may renew a matching active tier near expiry; stale
+decisions are not persisted as permanent risk flags. Existing queue/outbox recovery
+and quarantine apply to refresh signatures and transactions as well.
+
+ADR-020 scopes guardian callers by route, uses a bounded conservative rolling
+budget and adds a sticky per-message delay to ProtectedVault/CctpEscrow. The
+operator binds request delay to chain time and waits without repeated ALLOW
+signatures, while reassessing risk/source health/protection. Immutable policy-v2
+markers and route grants are checked before opening the signing lifecycle;
+release review domain version is 2. Existing deployment-bound persistence and
+read-only browser boundaries remain. See [policy/rollout](plans/tripwire-route-policy.md).

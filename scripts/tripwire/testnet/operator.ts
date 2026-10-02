@@ -6,38 +6,60 @@ import { ResponseTier } from '../../../src/tripwire/onChain.js';
 import type { ContractRiskSummary, RouteBaseline } from '../../../src/tripwire/types.js';
 import { FLAG_LIST_NAME, lookupFlaggedAddress } from '../../../src/services/preventiveScamScanner.js';
 import { Attestor, type GuardianPort } from '../attest.js';
-import { burnEventSchema, releaseEventSchema } from '../events.js';
+import { burnEventSchema, releaseEventSchema, type BurnEvent, type LogFeed } from '../events.js';
 import { ReleaseOperator } from '../operator.js';
 import { releaseDecision, releaseMinimumTier, signReleaseReview } from '../review.js';
 import { DurableSender, type TransactionPort } from '../sender.js';
 import { OperatorStore } from '../store.js';
-import { Watcher, type SourceEvidence } from '../watch.js';
+import { Watcher, type SourceAdapter, type SourceEvidence } from '../watch.js';
 import { blockHeaderSchema, receiptFinality } from '../finality.js';
 import { ContractEventFeed, type Clients, type Deployment, type TestnetConfig } from './sepolia.js';
 import demo from './contracts.artifact.js';
+import { readGuardianProtection } from './guardianState.js';
+import { assertProtectionPolicy } from './protectionPolicy.js';
+import { readReleasePolicyState, releaseTuple } from './releaseState.js';
 
-const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((a) => a.toLowerCase() as Hex);
-const releaseTuple = z.tuple([address, z.bigint().positive(), z.number().int().min(0).max(4), z.bigint().nonnegative(), address, z.bigint().nonnegative(), z.number().int().min(0).max(3)]);
+export interface RpcDestination {
+  chainId: number; route: string; routeId: Hex; startBlock: string;
+  vault: Hex; guardian: Hex; token: Hex;
+}
 
-export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deployment, stateFile: string, opts: {
+export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deployment | RpcDestination, stateFile: string, opts: {
   baseline: RouteBaseline | null;
   contractFacts?: (address: Hex) => Promise<ContractRiskSummary | null>;
   /** Required for ALLOW. Absent by default: logs from MockSourceBridge are not source proofs. */
   verifySource?: (release: z.infer<typeof releaseEventSchema>, observed: bigint | null) => Promise<SourceEvidence>;
+  source?: {
+    chainId: number; address: Hex; scope: SourceAdapter['scope'];
+    create: (store: OperatorStore) => { adapter: SourceAdapter; ingress: LogFeed<BurnEvent> };
+  };
 }) {
-  const { ProtectedVault: vault, TripwireGuardian: guardian, MockSourceBridge: bridge, DemoUSDC: token } = d.contracts;
+  const { vault, guardian, token } = 'contracts' in d ? { vault: d.contracts.ProtectedVault, guardian: d.contracts.TripwireGuardian, token: d.contracts.DemoUSDC }
+    : { vault: { address: d.vault }, guardian: { address: d.guardian }, token: { address: d.token } };
+  const bridge = 'contracts' in d ? d.contracts.MockSourceBridge : null;
+  if (!opts.source && !bridge) throw new Error('A real deployment requires its source adapter.');
+  if (opts.source && opts.verifySource) throw new Error('Configure one source verifier.');
+  const sourceAddress = opts.source?.address ?? bridge?.address;
+  if (!sourceAddress) throw new Error('Source contract is not configured.');
   if (c.chainId !== d.chainId || c.chainId !== 11155111) throw new Error('Deployment chain does not match Sepolia RPC.');
   const from = BigInt(z.string().regex(/^(0|[1-9][0-9]*)$/).parse(d.startBlock));
   // Validate immutable bindings before opening a write path. An old vault fails here.
   await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'MAX_REVIEW_TTL' });
+  await assertProtectionPolicy({
+    guardianVersion: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'GUARDIAN_POLICY_VERSION' }),
+    releaseVersion: () => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'RELEASE_POLICY_VERSION' }),
+    routePermission: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'isProtected', args: [vault.address, d.routeId] }),
+  });
   for (const [name, expected] of [['token', token.address], ['guardian', guardian.address], ['routeId', d.routeId]] as const) {
     const actual = await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: name });
     if (typeof actual !== 'string' || actual.toLowerCase() !== expected.toLowerCase()) throw new Error(`Vault ${name} does not match deployment.`);
   }
-  const store = new OperatorStore(stateFile, { route: d.route, chainId: c.chainId, sourceChainId: c.chainId,
-    source: bridge.address, vault: vault.address, guardian: guardian.address, token: token.address,
-    sender: cfg.account.address, decimals: 6, finalityMode: 'finalized' });
+  const store = new OperatorStore(stateFile, { route: d.route, chainId: c.chainId, sourceChainId: opts.source?.chainId ?? c.chainId,
+    source: sourceAddress, vault: vault.address, guardian: guardian.address, token: token.address,
+    sender: cfg.account.address, decimals: 6, finalityMode: 'finalized', sourceVerifier: opts.source?.scope });
   try {
+    const minimumBlock = () => store.transactions().reduce((highest, tx) => tx.block && BigInt(tx.block) > highest ? BigInt(tx.block) : highest, 0n);
+    const source = opts.source?.create(store);
     let clock = Number((await c.pub.getBlock()).timestamp);
     const transactionPort: TransactionPort = {
       finalityMode: 'finalized', chainId: c.chainId, sender: cfg.account.address,
@@ -62,6 +84,14 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
       address: guardian.address, chainId: c.chainId,
       currentTier: async (routeId) => z.number().int().min(0).max(3).parse(
         await c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'currentTier', args: [routeId] })) as ResponseTier,
+      protectionState: (routeId) => readGuardianProtection({
+        getBlock: (args) => c.pub.getBlock(args),
+        readRoute: (blockNumber) => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi,
+          functionName: 'getRoute', args: [routeId], blockNumber }),
+        readOracle: (blockNumber) => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi,
+          functionName: 'oracle', blockNumber }),
+        minimumBlock,
+      }),
       submitAttestation: async (a, signature) => {
         const result = await sender.send(`attestation/${a.nonce}`, { to: guardian.address,
           data: encodeFunctionData({ abi: guardianArtifact.abi, functionName: 'submitAttestation', args: [a.routeId, a.riskScore, a.validUntil, a.nonce, signature] }), value: '0' });
@@ -69,22 +99,29 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
           txHash: result.hash as Hex, gas: BigInt(result.gas ?? '0') };
       },
     };
-    const watcher = new Watcher({ route: d.route, chain: 'ethereum', token: 'tdUSDC', decimals: 6, bridge: vault.address, store,
-      ingress: new ContractEventFeed(c, bridge.address, demo.MockSourceBridge.abi, 'Burned', from,
-        (a, t) => burnEventSchema.parse({ messageId: a.messageId, amount: a.amount, timestamp: t }), { finality: 'finalized' }),
+    const ingress = source?.ingress ?? (bridge ? new ContractEventFeed(c, bridge.address, demo.MockSourceBridge.abi, 'Burned', from,
+        (a, t) => burnEventSchema.parse({ messageId: a.messageId, amount: a.amount, timestamp: t }), { finality: 'finalized' })
+      : null);
+    if (!ingress) throw new Error('Source feed is not configured.');
+    const watcher = new Watcher({ route: d.route, chain: 'ethereum', token: source ? 'USDC' : 'tdUSDC', decimals: 6, bridge: vault.address, store,
+      ingress,
       egress: new ContractEventFeed(c, vault.address, demo.ProtectedVault.abi, 'ReleaseRequested', from,
         (a, t) => releaseEventSchema.parse({ messageId: a.messageId, recipient: a.to, amount: a.amount, timestamp: t }), { finality: 'finalized' }),
-      baseline: opts.baseline, verifySource: opts.verifySource, contractFacts: opts.contractFacts, now: () => clock,
+      baseline: opts.baseline, verifySource: opts.verifySource, sourceAdapter: source?.adapter,
+      payoutToleranceBps: source ? 0n : undefined, contractFacts: opts.contractFacts, now: () => clock,
       screening: { isFlagged: (a) => lookupFlaggedAddress(a) !== null,
         describe: (a) => lookupFlaggedAddress(a) ? `${FLAG_LIST_NAME}: ${lookupFlaggedAddress(a)?.name}` : undefined },
     });
     const operator = new ReleaseOperator(watcher, sender, new Attestor(cfg.account, guardianPort, {
       now: () => clock, beforeSign: () => watcher.assertCanonical(),
     }), {
-      read: async (messageId) => {
-        const r = releaseTuple.parse(await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'releases', args: [messageId] }));
-        return { recipient: r[0], amount: r[1], state: r[2], nonce: r[5] };
-      },
+      read: (messageId) => readReleasePolicyState({
+        getBlock: (args) => c.pub.getBlock(args), minimumBlock,
+        readRelease: (blockNumber) => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi,
+          functionName: 'releases', args: [messageId], blockNumber }),
+        readDelay: (blockNumber) => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi,
+          functionName: 'releaseDelayUntil', args: [messageId], blockNumber }),
+      }),
       review: async (observation, nonce) => {
         const now = Number((await c.pub.getBlock()).timestamp);
         const review = { messageId: observation.release.messageId, routeId: d.routeId, token: token.address,

@@ -5,6 +5,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {ITripwireGuardian} from "./ITripwireGuardian.sol";
 
 /// @title TripwireGuardian
@@ -39,13 +40,20 @@ import {ITripwireGuardian} from "./ITripwireGuardian.sol";
 ///        MAX_ATTESTATION_TTL. A signed-but-unsubmitted attestation cannot be
 ///        held back and fired days later.
 ///
+///      - The oracle may be one key or a contract. A contract oracle (for
+///        example TripwireQuorum, ADR-021) is asked through ERC-1271, so a
+///        k-of-n attestor set replaces the single key without changing any
+///        rule above: no quorum can do more than one oracle key could.
+///
 ///      - An unconfigured route rejects outflows. Failing closed on a route the
 ///        guardian knows nothing about is the only safe default for a breaker.
 contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
     /// @dev Storage for route parameters and graduated defensive state.
     struct Route {
         uint128 cap;
+        /// Inspection field, calculated by getRoute rather than stored usage.
         uint128 outflowInWindow;
+        /// Initial configuration time; never resets the rolling budget.
         uint64 windowStart;
         uint64 windowSeconds;
         /// FREEZE clock: all outflow reverts until this time.
@@ -57,6 +65,10 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
     }
 
     uint256 public constant MAX_SCORE = 100;
+    uint256 public constant GUARDIAN_POLICY_VERSION = 3;
+    uint256 public constant ROLLING_BUCKETS = 17;
+    struct Bucket { uint128 amount; uint64 lastOutflow; }
+    mapping(bytes32 routeId => Bucket[17]) private _outflows;
     
     /// @notice Scores at or above each threshold apply that tier. Inclusive, to
     ///         match the oracle's own `score >= threshold` rule.
@@ -81,7 +93,7 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
     mapping(bytes32 routeId => Route) private _routes;
     /// @notice Contracts permitted to report outflows. Without this an
     ///         unrelated caller could inflate a route's usage to force it shut.
-    mapping(address caller => bool) public isProtected;
+    mapping(address caller => mapping(bytes32 routeId => bool)) public isProtected;
     mapping(uint256 nonce => bool) public usedNonces;
 
     event RouteConfigured(bytes32 indexed routeId, uint128 cap, uint64 windowSeconds);
@@ -89,10 +101,12 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
     event AttestationAccepted(bytes32 indexed routeId, uint256 riskScore, uint256 nonce, uint64 expiresAt, Tier tier);
     event RouteResumed(bytes32 indexed routeId);
     event OracleUpdated(address indexed previous, address indexed next);
-    event ProtectedSet(address indexed caller, bool allowed);
+    event ProtectedSet(address indexed caller, bytes32 indexed routeId, bool allowed);
 
     error ZeroAddress();
     error InvalidRouteConfig();
+    error WindowChangeNotAllowed();
+    error InvalidOutflow();
     error NotProtected(address caller);
     error RouteNotConfigured(bytes32 routeId);
     error RoutePaused(bytes32 routeId, uint64 pausedUntil);
@@ -119,17 +133,18 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
     function configureRoute(bytes32 routeId, uint128 cap, uint64 windowSeconds) external onlyOwner {
         if (cap == 0 || windowSeconds == 0) revert InvalidRouteConfig();
         Route storage r = _routes[routeId];
+        // Changing bucket width would reinterpret or discard spending history.
+        if (r.windowSeconds != 0 && r.windowSeconds != windowSeconds) revert WindowChangeNotAllowed();
+        if (r.windowSeconds == 0) r.windowStart = uint64(block.timestamp);
         r.cap = cap;
         r.windowSeconds = windowSeconds;
-        r.windowStart = uint64(block.timestamp);
-        r.outflowInWindow = 0;
         emit RouteConfigured(routeId, cap, windowSeconds);
     }
 
-    function setProtected(address caller, bool allowed) external onlyOwner {
+    function setProtected(address caller, bytes32 routeId, bool allowed) external onlyOwner {
         if (caller == address(0)) revert ZeroAddress();
-        isProtected[caller] = allowed;
-        emit ProtectedSet(caller, allowed);
+        isProtected[caller][routeId] = allowed;
+        emit ProtectedSet(caller, routeId, allowed);
     }
 
     /// @notice Rotate the oracle key — the escape hatch if it is compromised.
@@ -153,16 +168,11 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
 
     /// @inheritdoc ITripwireGuardian
     function onTokenOutflow(bytes32 routeId, uint256 amount) external {
-        if (!isProtected[msg.sender]) revert NotProtected(msg.sender);
-
         Route storage r = _routes[routeId];
         if (r.windowSeconds == 0) revert RouteNotConfigured(routeId);
+        if (!isProtected[msg.sender][routeId]) revert NotProtected(msg.sender);
+        if (amount == 0) revert InvalidOutflow();
         if (isPaused(routeId)) revert RoutePaused(routeId, r.pausedUntil);
-
-        if (block.timestamp >= uint256(r.windowStart) + r.windowSeconds) {
-            r.windowStart = uint64(block.timestamp);
-            r.outflowInWindow = 0;
-        }
 
         Tier tier = currentTier(routeId);
         if (
@@ -171,10 +181,14 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
 
         uint256 effectiveCap = _effectiveCap(r.cap, tier);
 
-        uint256 total = uint256(r.outflowInWindow) + amount;
+        uint256 total = rollingUsage(routeId) + amount;
         if (total > effectiveCap) revert RateLimited(routeId, total, effectiveCap);
-
-        r.outflowInWindow = uint128(total);
+        uint256 width = (uint256(r.windowSeconds) + 15) / 16;
+        Bucket storage bucket = _outflows[routeId][(block.timestamp / width) % ROLLING_BUCKETS];
+        // A ring slot is reused only after more than a full window has passed.
+        if (uint256(bucket.lastOutflow) + r.windowSeconds <= block.timestamp) bucket.amount = 0;
+        bucket.amount += uint128(amount);
+        bucket.lastOutflow = uint64(block.timestamp);
         emit OutflowRecorded(routeId, amount, total);
     }
 
@@ -197,8 +211,7 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         Route storage r = _routes[routeId];
         if (r.windowSeconds == 0) revert RouteNotConfigured(routeId);
 
-        address signer = ECDSA.recover(hashAttestation(routeId, riskScore, validUntil, nonce), signature);
-        if (signer != oracle) revert InvalidSigner(signer);
+        _requireOracleSignature(hashAttestation(routeId, riskScore, validUntil, nonce), signature);
 
         usedNonces[nonce] = true;
 
@@ -220,6 +233,18 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         }
 
         emit AttestationAccepted(routeId, riskScore, nonce, r.tierExpiresAt, currentTier(routeId));
+    }
+
+    /// @dev One key: recover and compare. A contract oracle: ERC-1271, which a
+    ///      TripwireQuorum answers only for a threshold of distinct attestors.
+    function _requireOracleSignature(bytes32 digest, bytes calldata signature) private view {
+        address current = oracle;
+        if (current.code.length == 0) {
+            address signer = ECDSA.recover(digest, signature);
+            if (signer != current) revert InvalidSigner(signer);
+        } else if (!SignatureChecker.isValidERC1271SignatureNowCalldata(current, digest, signature)) {
+            revert InvalidSigner(current);
+        }
     }
 
     // --- views ---------------------------------------------------------------
@@ -250,10 +275,27 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
     function routeStatus(bytes32 routeId) external view returns (Status) {
         if (isPaused(routeId)) return Status.PAUSED;
         Route storage r = _routes[routeId];
-        bool windowLive = block.timestamp < uint256(r.windowStart) + r.windowSeconds;
+        if (r.windowSeconds == 0) return Status.RATE_LIMITED;
         uint256 effectiveCap = _effectiveCap(r.cap, currentTier(routeId));
-        if (windowLive && r.outflowInWindow >= effectiveCap && effectiveCap != 0) return Status.RATE_LIMITED;
+        if (rollingUsage(routeId) >= effectiveCap) return Status.RATE_LIMITED;
         return Status.ACTIVE;
+    }
+
+    /// @notice Conservative rolling usage: a bucket expires one full window
+    /// after its last outflow. Nothing spent in the last window is omitted;
+    /// older spends can stay counted for at most ceil(windowSeconds / 16) - 1
+    /// extra seconds. Work/storage are bounded regardless of transfer count.
+    function rollingUsage(bytes32 routeId) public view returns (uint256 total) {
+        uint256 window = _routes[routeId].windowSeconds;
+        for (uint256 i; i < ROLLING_BUCKETS; ++i) {
+            Bucket storage bucket = _outflows[routeId][i];
+            if (uint256(bucket.lastOutflow) + window > block.timestamp) total += bucket.amount;
+        }
+    }
+
+    /// @inheritdoc ITripwireGuardian
+    function outflowDelay(bytes32 routeId, uint256 amount) external view returns (uint256) {
+        return currentTier(routeId) == Tier.DELAY && amount > _routes[routeId].cap / 10 ? DELAY_WINDOW : 0;
     }
 
     /// @dev One definition of each tier's cap, shared by the hook and the view.
@@ -264,6 +306,8 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
 
     /// @notice Route state for the dashboard's route matrix.
     function getRoute(bytes32 routeId) external view returns (Route memory) {
-        return _routes[routeId];
+        Route memory r = _routes[routeId];
+        r.outflowInWindow = uint128(rollingUsage(routeId));
+        return r;
     }
 }

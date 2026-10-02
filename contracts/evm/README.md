@@ -20,6 +20,10 @@ volume cap cannot see.
 - Reconfiguring a route's cap leaves its tier in place. Only the owner's
   `resume` lifts a tier early, and it clears everything. The owner can also
   rotate the oracle key.
+- The oracle may be one key or a contract. `TripwireQuorum` (ADR-021) is a
+  k-of-n attestor set answering ERC-1271: route attestations and release reviews
+  then need `threshold` distinct attestor signatures, in ascending signer order.
+  Membership changes only by a quorum of the current set; there is no owner.
 
 ## Safety properties
 
@@ -34,6 +38,8 @@ Each is enforced by the contract and broken deliberately by a test.
 | OpenZeppelin ECDSA rejects high-`s` | No second valid signature exists for an accepted attestation |
 | Unconfigured routes reject outflows | Fails closed on a route the guardian knows nothing about |
 | Only allow-listed contracts report outflows | An outsider cannot inflate usage to force a route shut |
+| A quorum oracle needs `threshold` distinct members, honest majority | One stolen attestor key can neither approve a release nor tighten a route alone |
+| Quorum membership changes are quorum-signed and epoch-bound | No single key, and no replayed approval, can rewrite who attests |
 
 ## Verification
 
@@ -80,6 +86,28 @@ contract nobody tested.
 node contracts/evm/compile.mjs   # rebuild the artifact after changing the .sol
 npm test
 ```
+
+## Authenticated CCTP escrow
+
+`CctpEscrow.sol` inherits the tested review/guardian gate and owns itself. The
+only path to a new PENDING request calls Circle's MessageTransmitter in the same
+transaction, requires an exact net USDC balance increase, and takes the immutable
+beneficiary from the authenticated hook. The source burn must restrict
+`destinationCaller` to the escrow, so a direct relay cannot strand a mint without
+a request. Source/destination route fields, known versions, standard finality,
+canonical EVM addresses, fee/expiration, payload hash and nonce are bound.
+Execution still needs a fresh Tripwire review and the guardian's approval.
+
+The separate operator artifact has a 9,422-byte runtime, below EIP-170. It is not
+imported by the browser and does not contain the test attester harness. Tests cover
+42 EVM regressions plus artifact consistency; eight added mutation cases verify
+the new guards. `npm run test:mutants` runs 29 cases in total and restores all
+source/artifact files after completion. Circle quorum verification remains the
+real Circle contract's responsibility; our one-signer local harness is a fixture.
+No public deployment or live transfer is claimed. Rejected credits stay locked;
+there is no administrator withdrawal/refund escape hatch. See the
+[CCTP runbook](../../docs/plans/tripwire-cctp.md) and ADR-018 for deployment and
+legacy-policy migration constraints.
 
 ## The boundary bug this suite now guards
 

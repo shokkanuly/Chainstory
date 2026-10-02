@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import { burnEventSchema, releaseEventSchema, eventOriginSchema } from './events.js';
 import { blockHashSchema, feedCheckpointSchema, finalizedCheckpointSchema } from './finality.js';
+import { proofPosition, sourceProofSchema, sourceVerifierScopeSchema, type SourceProof } from './sourceProof.js';
 
 const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((v) => v.toLowerCase());
 const hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
@@ -16,6 +17,7 @@ const scopeSchema = z.object({
   source: address, vault: address, guardian: address, token: address, sender: address,
   decimals: z.number().int().min(0).max(36),
   finalityMode: z.enum(['local', 'finalized']).default('local'),
+  sourceVerifier: sourceVerifierScopeSchema.optional(),
 }).strict();
 export type OperatorScope = z.input<typeof scopeSchema>;
 export const watcherStateSchema = z.object({
@@ -71,16 +73,18 @@ export class OperatorStore {
       chmodSync(file, 0o600);
       this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
         CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, value TEXT NOT NULL);`);
-      const expected = encode({ version: 2, scope: this.scope });
+        CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS source_proofs (id TEXT PRIMARY KEY, source_key TEXT UNIQUE NOT NULL,
+          settlement_key TEXT UNIQUE NOT NULL, nonce TEXT UNIQUE NOT NULL, value TEXT NOT NULL);`);
+      const expected = encode({ version: 3, scope: this.scope });
       const metadata = this.db.prepare('SELECT value FROM state WHERE key=?').get('metadata');
-      if (!metadata && (this.db.prepare('SELECT key FROM state LIMIT 1').get() || this.db.prepare('SELECT id FROM transactions LIMIT 1').get())) {
+      if (!metadata && (this.db.prepare('SELECT key FROM state LIMIT 1').get() || this.db.prepare('SELECT id FROM transactions LIMIT 1').get() || this.db.prepare('SELECT id FROM source_proofs LIMIT 1').get())) {
         throw new Error('Operator state metadata is missing. Refusing to assume its deployment scope.');
       }
       if (metadata && metadata.value !== expected) throw new Error('Operator state schema version or deployment scope does not match.');
       this.db.prepare('INSERT OR IGNORE INTO state VALUES (?, ?)').run('metadata', expected);
       // Validate persisted input before any caller may poll or sign.
-      this.loadWatcher(); this.transactions();
+      this.loadWatcher(); this.transactions(); this.sourceProofs(); this.sourceQuarantine();
     } catch (error) { this.close(); throw error; }
   }
 
@@ -96,6 +100,54 @@ export class OperatorStore {
     // One atomic row contains BOTH cursors, events, pending jobs and history.
     this.db.prepare('INSERT INTO state VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
       .run('watcher', encode(checked));
+  }
+
+  sourceProofs(): SourceProof[] {
+    return this.db.prepare('SELECT * FROM source_proofs ORDER BY rowid').all().map((row) => {
+      const proof = sourceProofSchema.parse(JSON.parse(String(row.value)));
+      this.checkProofScope(proof);
+      if (row.id !== proof.messageId || row.source_key !== proofPosition(proof.source) ||
+        row.settlement_key !== proofPosition(proof.destination) || row.nonce !== proof.nonce) {
+        throw new Error('Source proof journal identity is corrupt.');
+      }
+      return proof;
+    });
+  }
+
+  sourceQuarantine(): string | null {
+    const row = this.db.prepare('SELECT value FROM state WHERE key=?').get('source_quarantine');
+    return row ? z.string().min(1).max(2048).parse(JSON.parse(String(row.value))) : null;
+  }
+
+  /** A proof audit may discover a conflict before a watcher snapshot exists. */
+  quarantineSource(reason: string): void {
+    if (!this.scope.sourceVerifier) throw new Error('Source quarantine requires its scoped adapter.');
+    const checked = z.string().min(1).max(2048).parse(reason);
+    this.db.prepare('INSERT OR IGNORE INTO state VALUES (?, ?)').run('source_quarantine', encode(checked));
+  }
+
+  /** Claim source event, settlement event and bridge nonce atomically before ALLOW. */
+  saveSourceProof(input: SourceProof): 'saved' | 'reused' {
+    const proof = sourceProofSchema.parse(input); this.checkProofScope(proof);
+    const prior = this.sourceProofs();
+    const same = prior.find((p) => p.messageId === proof.messageId);
+    if (same) {
+      if (encode(same) !== encode(proof)) throw new Error('Cannot replace authenticated source proof.');
+      return 'saved'; // Idempotent recheck; never a second credit.
+    }
+    if (prior.some((p) => p.nonce === proof.nonce || proofPosition(p.source) === proofPosition(proof.source) ||
+      proofPosition(p.destination) === proofPosition(proof.destination))) return 'reused';
+    this.db.prepare('INSERT INTO source_proofs VALUES (?, ?, ?, ?, ?)')
+      .run(proof.messageId, proofPosition(proof.source), proofPosition(proof.destination), proof.nonce, encode(proof));
+    return 'saved';
+  }
+
+  private checkProofScope(proof: SourceProof): void {
+    if (this.scope.finalityMode !== 'finalized' || !this.scope.sourceVerifier ||
+      proof.source.chainId !== this.scope.sourceChainId || proof.source.address !== this.scope.source ||
+      proof.destination.chainId !== this.scope.chainId || proof.destination.address !== this.scope.sourceVerifier.settlement) {
+      throw new Error('Source proof deployment scope does not match.');
+    }
   }
 
   private checkOrigins(state: WatcherState): void {

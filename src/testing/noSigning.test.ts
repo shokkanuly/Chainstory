@@ -7,7 +7,7 @@
 // the same scan must flag the modules in the app that do sign or connect.
 
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, relative, resolve } from 'node:path';
+import { dirname, relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = resolve(__dirname, '../..');
@@ -64,7 +64,8 @@ describe('/check cannot sign or send', () => {
   const files = reachable(ENTRY);
 
   it('walks the whole pipeline, not just the page', () => {
-    const names = files.map((f) => relative(SRC, f));
+    // Compare POSIX-style paths so the check holds on Windows checkouts too.
+    const names = files.map((f) => relative(SRC, f).split(sep).join('/'));
     for (const expected of [
       'components/check/CheckBeforeSign.tsx',
       'services/preSignCheck.ts',

@@ -57,6 +57,21 @@ execution gate and retryable observations. The second adds durable operator stat
 signed transaction recovery and HOLD/delay retries. The third adds finalized
 RPC observations, receipt reorg recovery and durable quarantine
 ([runbook](plans/tripwire-operator.md)).
+The fourth adds a [CCTP v2 USDC post-mint escrow adapter](plans/tripwire-cctp.md),
+durable source/settlement/nonce claims and a read-only receipt audit command.
+The fifth adds self-owned `CctpEscrow`: an authenticated Circle mint and immutable
+PENDING request are atomic; the operator verifies both in the settlement receipt.
+External review, fresh deployment and the live transfer pilot remain pending.
+The sixth adds continuous refresh of freshly justified pending risk before the
+guardian's 24-hour expiry, with chain-state reconciliation and the existing outbox.
+The seventh scopes reporter permissions to routes, removes fixed-window boundary
+bursts and gives large delayed requests individual clocks. This immutable policy
+v2 needs a fresh reviewed deployment; [limits and rollout](plans/tripwire-route-policy.md).
+The eighth closes the settlement-firewall brief's remaining gaps: a k-of-n
+`TripwireQuorum` replaces the single oracle key (policy v3), source proofs are read
+through independent RPC providers that must agree, and one proof-first verdict with
+named checks and a tighten-only route policy decides every release
+([build map](plans/tripwire-settlement-firewall.md), ADR-021–023).
 See [the plan](plans/tripwire-hardening.md)
 for implemented behavior, remaining P0 work and the old Sepolia deployment boundary.
 The wallet/Solana phase table below describes the earlier project work.

@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Solidity-0.8.37-363636?logo=solidity&logoColor=white" alt="Solidity" />
   <img src="https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/viem-2.56-FFC517" alt="viem" />
-  <img src="https://img.shields.io/badge/tests-414_passing-brightgreen" alt="414 tests passing" />
+  <img src="https://img.shields.io/badge/tests-665_passing-brightgreen" alt="665 tests passing" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
 </p>
 
@@ -44,15 +44,44 @@ Retold's full documentation is in [docs/chainstory.md](docs/chainstory.md).
 
 ## Tripwire
 
+**A pre-execution settlement firewall.** Cross-chain systems can authenticate a
+message and still allow an economically invalid outcome. Tripwire sits in front
+of destination settlement and asks one question before money is minted or
+released: *can an independent system prove the source event actually happened?*
+
+```
+source burn / lock  →  bridge message  →  TRIPWIRE: verify source + invariants + policy  →  ALLOW / THROTTLE / DELAY / FREEZE  →  settle
+```
+
+| Build focus | In the code |
+| :--- | :--- |
+| Pre-execution hook | The vault pays only after a fresh, payout-bound ALLOW and a guardian check; the CCTP escrow creates requests only from an authenticated mint |
+| Deterministic invariants, proof first | `settlementVerdict`: a failed source/backing proof rejects and freezes; risk signals can only hold |
+| Independent verification | Finalized reads, reorg quarantine, and source proofs read through independent RPC providers that must agree |
+| Programmable policy | Per-route rolling caps and request delay on-chain; tighten-only size limit and hold line off-chain |
+| Safe, scoped enforcement | Per-route tiers that escalate only and expire in 24 h; the oracle can never move funds |
+| Trust model | A k-of-n `TripwireQuorum` replaces the single oracle key |
+
+Build map, status and open work: [docs/plans/tripwire-settlement-firewall.md](docs/plans/tripwire-settlement-firewall.md).
+
 **Release hardening (local, 2026-09-30):** the latest `ProtectedVault` requires a
 fresh signed review for each payout. Pending, unavailable and held requests cannot
 execute; invalid requests remain rejected after route protection expires. The local
 demo now runs the actual gated vault as well as the guardian. See the
 [hardening plan](docs/plans/tripwire-hardening.md) for the trust boundary and remaining
-work: an independent real-bridge/source consensus adapter. The operator now
+work. The operator now
 has durable state, a signed transaction journal, HOLD/delay recovery, finalized RPC
-observations and reorg handling; see its
-[runbook](docs/plans/tripwire-operator.md).
+observations, reorg handling and continuous protection refresh while fresh pending
+risk persists; see its
+[runbook](docs/plans/tripwire-operator.md). Route-scoped reporters, conservative
+rolling caps and per-request DELAY are implemented locally in immutable policy v2;
+[limits and fresh-deployment requirements](docs/plans/tripwire-route-policy.md).
+The [CCTP v2 USDC adapter](docs/plans/tripwire-cctp.md) verifies finalized burns and
+minted escrow backing on Base Sepolia → Ethereum Sepolia, with durable replay claims
+and a read-only audit command. `CctpEscrow` now creates immutable pending requests
+only from an authenticated Circle mint in the same transaction, for the exact
+net amount and hook beneficiary. Its fixtures are synthetic; external review,
+fresh deployment and the live pilot remain pending.
 
 On 18 April 2026, $292M left Kelp DAO's bridge. Not over hours — in **a single
 release**. Verus lost $11.58M the same way in May, Syscoin ~$10M in June.
@@ -108,8 +137,8 @@ lists to see each attestation and each blocked payout.
 | :--- | :--- | ---: | :--- |
 | 0 | Three ordinary payouts, each backed by a burn: all paid | 0.00 | NONE |
 | 1 | A payout to the attacker's contract: fresh, unverified, upgradeable | 0.65 | **THROTTLE** — cap halved, still paid |
-| 2 | A 900,000 payout to the same contract, 10× the route's usual size | 0.85 | **DELAY** — held (`OutflowDelayed`); an honest 40,000 payout in the same minute is paid |
-| 3 | A forged 11,580,000 payout with no burn behind it | 1.00 | **FREEZE** — blocked (`RoutePaused`) |
+| 2 | A 900,000 payout to the same contract, 10× the route's usual size | 0.85 | **DELAY** — held (`ReleaseDelayed`); an honest 40,000 payout in the same minute is paid |
+| 3 | A forged 11,580,000 payout with no burn behind it | 1.00 | **FREEZE + REJECT** — terminally blocked (`ReleaseRejected`) |
 
 Reproduce it: `npm run tripwire:demo:local` runs the same four steps against
 the real bytecode in a local EVM, no keys needed.
@@ -201,11 +230,16 @@ against **no verifiable burn at all**.
 | Signed release gate: field/domain binding, replay/order, expiry, key rotation, terminal rejection, required protection | 23 tests |
 | Watcher retry, missing/conflicting source data, deduplication and acknowledgement | 11 tests |
 | RPC/decode cursor recovery, bounded catch-up and old-deployment refusal | 4 tests |
-| Durable state, SIGKILL, transaction inclusion/finality recovery and HOLD/delay queue | 48 tests |
-| Finalized log/provenance, canonical headers/checkpoints, receipt finality and signing guard | 20 tests |
+| Durable state, SIGKILL, transaction inclusion/finality recovery and HOLD/delay queue | 49 tests |
+| Finalized log/provenance, canonical headers/checkpoints, receipt finality and signing guard | 21 tests |
+| CCTP v2 USDC: exact escrow backing, identity/fee binding, replay, durable claims and quarantine | 45 tests |
+| Authenticated CCTP escrow: atomic net mint/credit, self-ownership, rollback, receipt identity and deployment bindings | 74 tests |
+| Protection refresh: expiry/restart, chain clock, concurrent calls, key rotation, stale risk and RPC/quarantine failures | 28 tests |
+| Route isolation, rolling caps, request delay and historical review policy | 42 tests |
+| Guardian/release-review/authenticated CCTP guards broken on purpose | 38 mutants caught |
 | Check before you sign, incl. "nothing reachable from /check can sign" | 40 tests |
-| Gas: check an outflow · accept an attestation | 36.7k · 84.5k |
-| Total | **414 tests passing** |
+| Gas: check an outflow · accept an attestation | 79.0k · 84.5k |
+| Total | **609 tests passing** |
 
 The dashboard runs the exact contract bytecode the tests run, and a test fails
 if they ever differ.
@@ -217,7 +251,7 @@ git clone https://github.com/shokkanuly/Chainstory.git
 cd Chainstory
 npm install
 npm run dev                    # Retold at /app and /check, Tripwire at /tripwire
-npm test                       # 414 tests
+npm test                       # 609 tests
 npm run tripwire:demo:local    # the four-step attack, in a local EVM
 ```
 
@@ -248,7 +282,7 @@ to build live route baselines is next.
 | Retold | Wallet stories, draft Form 8949, approvals, contract risk, Check before you sign, opt-in AI wording | Solana analysis in the app (adapters exist, not wired in) |
 | Tripwire oracle | Five rules, graduated tiers, `indeterminate` when blind | Baselines from live history; a trained model |
 | Guardian | THROTTLE / DELAY / FREEZE, escalate-only, 24 h expiry, on Sepolia | Mainnet; a Solana (Anchor) guardian |
-| Operations | Watcher and single-signer attestor, local and on Sepolia | 2-of-3 threshold signing; a relayer / mempool hook |
+| Operations | Durable watcher/transaction journal, finalized RPC guards, authenticated CCTP v2 USDC escrow tested locally | External review/deployment; live CCTP pilot; 2-of-3 signing; relayer |
 | Further ideas | — | zkML proofs of the score (EZKL), a sentinel network, bounties for reporters |
 
 ## Sources

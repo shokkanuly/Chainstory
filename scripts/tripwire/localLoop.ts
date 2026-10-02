@@ -6,7 +6,8 @@
 // touches a real network. Stage 4 swaps the feeds and the guardian port for
 // testnet RPCs and keeps everything else.
 
-import { formatUnits, keccak256, toHex, type Hex } from 'viem';
+import { formatUnits, keccak256, toHex, type Hex, type LocalAccount } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import artifact from '../../src/tripwire/guardian.artifact.js';
 import { GuardianVM, LOCAL_CHAIN_ID, actors, type CallResult } from '../../src/tripwire/guardianVM.js';
 import { ResponseTier } from '../../src/tripwire/onChain.js';
@@ -18,6 +19,7 @@ import { MemoryFeed, type BurnEvent, type ReleaseEvent } from './events.js';
 import { Watcher, type Observation } from './watch.js';
 import demo from './testnet/contracts.artifact.js';
 import { ReleaseDecision, releaseDecision, releaseMinimumTier, signReleaseReview, type ReleaseReview } from './review.js';
+import { localMember, quorumAccount } from './quorum.js';
 
 export const ROUTE_NAME = 'sepolia:base-sepolia:USDC';
 export const ROUTE_ID = keccak256(toHex(ROUTE_NAME));
@@ -55,13 +57,31 @@ export interface StepResult {
   tierAfter: ResponseTier;
 }
 
-export async function runLocalLoop(onStep?: (step: StepResult) => void): Promise<StepResult[]> {
+/** Demo attestor keys for the 2-of-3 quorum (ADR-021). Local only; they sign nothing elsewhere. */
+const ATTESTORS = ['a1', 'b2', 'c3'].map((b) => privateKeyToAccount(`0x${b.repeat(32)}` as Hex))
+  .sort((a, b) => (BigInt(a.address) < BigInt(b.address) ? -1 : 1));
+
+export interface LocalLoopOptions {
+  /** Replace the single oracle key with a 2-of-3 TripwireQuorum; the third attestor is offline. */
+  quorum?: boolean;
+}
+
+export async function runLocalLoop(onStep?: (step: StepResult) => void, opts: LocalLoopOptions = {}): Promise<StepResult[]> {
   const guardian = await GuardianVM.deploy(artifact, { start: START, oracle: actors.oracle.address });
   const token = await guardian.deployContract(demo.DemoUSDC, [actors.owner.address]);
   const vault = await guardian.deployContract(demo.ProtectedVault, [actors.owner.address, token.address, guardian.address, ROUTE_ID]);
   await guardian.send(actors.owner, 'configureRoute', [ROUTE_ID, CAP, WINDOW]);
-  await guardian.send(actors.owner, 'setProtected', [vault.address, true]);
+  await guardian.send(actors.owner, 'setProtected', [vault.address, ROUTE_ID, true]);
   await guardian.sendContract(token, actors.owner, 'mint', [vault.address, 20_000_000n * USDC]);
+  let signer: LocalAccount = actors.oracle;
+  if (opts.quorum) {
+    const quorum = await guardian.deployContract(demo.TripwireQuorum, [ATTESTORS.map((a) => a.address), 2n]);
+    const installed = await guardian.send(actors.owner, 'setOracle', [quorum.address]);
+    if (!installed.ok) throw new Error(`Local quorum install failed: ${installed.error}`);
+    const offline = () => false;
+    signer = quorumAccount({ address: quorum.address, signers: ATTESTORS.map((a) => a.address), threshold: 2 },
+      [localMember(ATTESTORS[0]), localMember(ATTESTORS[1]), localMember(ATTESTORS[2], offline)]);
+  }
 
   const port: GuardianPort = {
     address: guardian.address,
@@ -97,7 +117,7 @@ export async function runLocalLoop(onStep?: (step: StepResult) => void): Promise
       : { status: 'verified', amount: burned },
   });
   let nonce = 0n;
-  const attestor = new Attestor(actors.oracle, port, { now, nextNonce: () => ++nonce });
+  const attestor = new Attestor(signer, port, { now, nextNonce: () => ++nonce });
 
   const results: StepResult[] = [];
   for (const [i, step] of ATTACK_STEPS.entries()) {
@@ -110,13 +130,13 @@ export async function runLocalLoop(onStep?: (step: StepResult) => void): Promise
     const payouts: PayoutResult[] = [];
     for (const observation of await watcher.tick()) {
       const attestation = await attestor.handle(ROUTE_ID, observation.assessment);
-      if (attestation.action === 'rejected') throw new Error('Guardian rejected the risk attestation; the release remains pending.');
+      if (attestation.action === 'rejected' || attestation.action === 'unavailable') throw new Error('Guardian protection is unavailable or rejected; the release remains pending.');
       const releaseReview: ReleaseReview = {
         messageId: observation.release.messageId, routeId: ROUTE_ID, token: token.address,
         recipient: observation.release.recipient, amount: observation.release.amount,
         decision: releaseDecision(observation), minimumTier: releaseMinimumTier(observation), validUntil: guardian.now + 300n, nonce: ++nonce,
       };
-      const signature = await signReleaseReview(actors.oracle, vault.address, releaseReview, LOCAL_CHAIN_ID);
+      const signature = await signReleaseReview(signer, vault.address, releaseReview, LOCAL_CHAIN_ID);
       const review = await guardian.sendContract(vault, actors.relayer, 'reviewRelease', [
         releaseReview.messageId, releaseReview.decision, releaseReview.minimumTier, releaseReview.validUntil, releaseReview.nonce, signature,
       ]);
@@ -147,7 +167,7 @@ export function describeStep(step: StepResult, index: number): string[] {
     const a = p.assessment;
     const burn = p.burned === null ? 'SOURCE UNKNOWN' : p.burned === p.release.amount ? 'burn ✓' : p.burned === 0n ? 'NO BURN' : `burn ${usdc(p.burned)}`;
     const attest =
-      p.attestation.action === 'skipped'
+      p.attestation.action === 'skipped' || p.attestation.action === 'unavailable'
         ? `no attestation (${p.attestation.reason})`
         : `${p.attestation.action === 'submitted' ? 'attested' : 'REJECTED'} ${p.attestation.attestation.riskScore} → ${ResponseTier[p.attestation.tier]}` +
           (p.attestation.result.gas ? `, gas ${p.attestation.result.gas.toLocaleString('en-US')}` : '');

@@ -14,6 +14,7 @@ a deployment of the current gated vault. No deployment was performed in this mil
 | `scripts/tripwire/watch.ts` | Checkpoint both feeds with ingested events before returning assessments; retain exact request history and conflicts |
 | `scripts/tripwire/sender.ts` | Validate and save signed bytes before broadcast; reconcile receipts/rebroadcast the same transaction after restart |
 | `scripts/tripwire/operator.ts` | Apply protection, review, retry holds/delays, acknowledge only confirmed terminal outcomes |
+| `scripts/tripwire/attest.ts`, `testnet/guardianState.ts` | Reconcile chain-bound tier/expiry/oracle and refresh justified protection before expiry |
 | `scripts/tripwire/testnet/operator.ts` | Sepolia RPC, local signing, gated-vault binding checks and durable guardian/review/execution sends |
 
 Feeds expose `checkpoint()` and `restore(cursor)` in addition to `poll()`.
@@ -81,7 +82,7 @@ remain unchanged in behavior.
 
 Ethereum/Sepolia finalized RPC observations and receipt reorg recovery are
 implemented locally; the finality policy below remains provider-trusting. A real
-bridge/source consensus adapter, live baselines, guardian protection refresh,
+bridge/source consensus adapter, live baselines,
 gas replacement and queue compaction remain in the hardening plan. SQLite
 snapshots are intended for a single-route pilot, not high-volume production.
 
@@ -123,7 +124,12 @@ bytes already broadcast or an on-chain ALLOW; those still depend on the signed T
 and guardian checks. An affected route needs operator investigation and, when
 necessary, an on-chain pause through the existing guardian/owner controls.
 
-The database now uses **schema v2** and binds `local`/`finalized` mode to its scope.
+ADR-016 introduced **schema v2**, binding `local`/`finalized` mode to its scope.
+ADR-017 advances the current database to **v3** for immutable source/settlement/nonce
+claims, adapter policy fingerprints and standalone source quarantine. Both v1 and
+v2 are refused with their pending work preserved; migration requires reconciliation.
+See the [CCTP escrow runbook](tripwire-cctp.md). The legacy demo runner still holds
+unverified source data; only the explicit CCTP factory configures the real adapter.
 V1 is rejected with its data intact. Before migrating a previously running operator:
 stop it, back up its database/sidecars, reconcile all old signed transactions and
 on-chain allowances, and define a canonical rescan point for the selected bridge.
@@ -131,3 +137,74 @@ Do not delete/rename the old database or choose a fresh state filename to bypass
 its version/quarantine error; that hides queued work and nonce ownership. Automated
 migration/resume after a finalized-history incident is intentionally not supplied.
 No live state was migrated in this change.
+
+## Continuous protection refresh (ADR-019)
+
+The guardian already accepts same-tier attestations to extend protection by
+24 hours; previously the operator skipped every same-tier assessment. The
+durable operator now reads `getRoute` and `oracle` at one latest block, validates
+the response and rechecks that block's number/hash/timestamp. The head must not
+lag any write receipt already observed in this journal. This is a state/clock
+snapshot for short signature TTLs; source evidence and terminal acknowledgements
+retain their finalized policy.
+
+Every tick re-evaluates pending requests with the watcher. If fresh risk still
+justifies the active tier and at most one hour remains, the attestor signs a
+refresh. A higher tier escalates immediately; a lower score never extends a
+higher tier. Clear, indeterminate, invalid and unavailable assessments do not
+renew old protection. Same-tier DELAY refresh retains the original delay window,
+as enforced by the existing guardian. After a confirmed refresh, the new on-chain
+expiry suppresses repeated signatures, including after restart. Concurrent
+attestor calls are serialized.
+
+`AttestorOptions.refreshBeforeSeconds` defaults to 3600 and accepts 1–3600;
+signature TTL defaults to 300 seconds and accepts 1–600. A reconciled snapshot's
+chain timestamp controls both expiry decisions and signature TTL, independent
+of the host/caller clock. Legacy fixture/demo ports without `protectionState`
+can escalate but cannot automatically refresh; a failing configured snapshot
+never falls back to those ports.
+
+Guardian snapshot errors, unconfigured routes and a mismatched oracle return
+`unavailable`. The release runner retains the job and submits neither its review
+nor payout. Canonical source checks still run before signing/publication;
+durable quarantine prevents refresh as well as release work. All refresh sends
+use the existing signed/included/finalized outbox. An unresolved signed transaction
+blocks new nonce allocation; an ordinary unfinalized reorg replays its original
+bytes. No new persistence schema or scheduler service was introduced.
+
+Restart reads current chain state rather than reconstructing expiry from a local
+last-send timestamp. An offline gap can already have let the tier expire; fresh
+risk then establishes a new tier and DELAY opens a new review window. RPC/data
+outages, process downtime and old signed bytes cannot guarantee continuous route
+protection. Pending/held vault requests retain their independent review gate.
+Completed/rejected jobs are not permanent incident flags and do not auto-renew
+protection forever. Owner `resume` can be followed by a new escalation if a still
+pending request again presents fresh risk: stop/reconcile the operator when
+human review intends to suppress that response. No automatic resume or downgrade
+was added. Continuous operation still needs fresh route baselines and reliable
+data; the default unconfigured CLI does not manufacture them.
+
+Validation: 24 expiry/restart/clock/concurrency/oracle/RPC cases, including actual
+guardian bytecode, plus four durable-queue integration regressions. No live
+refresh, public transaction or deployment was performed.
+
+## Route policy v2 and request delay (ADR-020)
+
+The RPC runner now requires guardian/release policy markers 2 and a scoped
+`isProtected(vault, routeId)` grant before opening a journal or signing. ALLOW
+reviews use EIP-712 domain version 2. Historical deployments/signatures cannot be
+silently reused. Contracts need a fresh reviewed deployment and reconciliation
+of outstanding funds, queued requests and signed work.
+
+A large request under DELAY has its own sticky 30-minute clock, including requests
+reviewed after the original route window. The runner reads that clock and request
+at one checked block. While a verified request still merits ALLOW but its delay
+is pending, it keeps the queue without repeated review signatures. Source/risk
+and route protection continue to be evaluated; new HOLD/REJECT are submitted
+immediately. At maturity, a fresh review is submitted before simulating/executing.
+Expired reviews never become valid merely because a delay has elapsed.
+
+The guardian's cap now counts conservative rolling usage; resume/configuration
+cannot reset recent spending. Repeated testnet demos refuse a busy budget before
+reset writes. See [the complete policy](tripwire-route-policy.md) for the 224-second
+one-hour conservatism bound, gas tradeoff, permissions, compatibility and rollout.

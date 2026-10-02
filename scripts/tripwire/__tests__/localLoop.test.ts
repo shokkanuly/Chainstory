@@ -36,7 +36,7 @@ describe('the local watch → attest → guardian loop', async () => {
   });
 
   it('DELAY holds the large payout and lets the honest small one through', () => {
-    expect(outcome(steps[2])).toEqual(['OutflowDelayed', 'paid']);
+    expect(outcome(steps[2])).toEqual(['ReleaseDelayed', 'paid']);
     // The small one needs no attestation: the route is already at DELAY.
     expect(steps[2].payouts[1].attestation.action).toBe('skipped');
   });
@@ -47,5 +47,23 @@ describe('the local watch → attest → guardian loop', async () => {
     expect(forged.assessment.signals.find((s) => s.id === 'proof_payout_mismatch')?.deterministic).toBe(true);
     expect(outcome(steps[3])).toEqual(['ReleaseRejected']);
     expect(forged.review.ok).toBe(true);
+  });
+});
+
+describe('the same loop with a 2-of-3 quorum oracle and one attestor offline (ADR-021)', async () => {
+  const single: StepResult[] = await runLocalLoop();
+  const quorum: StepResult[] = await runLocalLoop(undefined, { quorum: true });
+  const summary = (steps: StepResult[]) => steps.map((s) => ({
+    tier: s.tierAfter,
+    payouts: s.payouts.map((p) => [p.attestation.action, p.review.ok, p.outflow.ok ? 'paid' : p.outflow.error]),
+  }));
+
+  it('reaches NONE → THROTTLE → DELAY → FREEZE with every attestation and review quorum-signed', () => {
+    expect(quorum.map((s) => s.tierAfter)).toEqual([ResponseTier.NONE, ResponseTier.THROTTLE, ResponseTier.DELAY, ResponseTier.FREEZE]);
+    expect(quorum.flatMap((s) => s.payouts).every((p) => p.review.ok)).toBe(true);
+  });
+
+  it('decides exactly as the single-key oracle did: the threshold changes who signs, not what is enforced', () => {
+    expect(summary(quorum)).toEqual(summary(single));
   });
 });
