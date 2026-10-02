@@ -307,16 +307,23 @@ describe('expiry and escape hatches', () => {
   });
 
   it('rotating the oracle stops the old key being able to pause', async () => {
+    expect((await g.send(owner, 'proposeOracle', [attacker.address])).ok).toBe(true);
+    g.warp(2n * DAY);
+    expect((await g.send(relayer, 'acceptOracle')).ok).toBe(true);
     const a = att();
-    const oldSig = await signAttestation(oracle, g.address, a);
-    expect((await g.send(owner, 'setOracle', [attacker.address])).ok).toBe(true);
-    const res = await submit(a, oldSig);
+    const res = await submit(a, await signAttestation(oracle, g.address, a));
     expect(res.error).toBe('InvalidSigner');
     expect(res.errorArgs).toEqual([oracle.address]);
   });
 
+  it('disabling the oracle stops every key being able to pause, at once', async () => {
+    expect((await g.send(owner, 'disableOracle')).ok).toBe(true);
+    expect(await g.read('oracle')).toBe('0x0000000000000000000000000000000000000000');
+    expect((await submit(att())).error).toBe('InvalidSigner');
+  });
+
   it('refuses a zero oracle on rotation', async () => {
-    expect((await g.send(owner, 'setOracle', ['0x0000000000000000000000000000000000000000'])).error).toBe(
+    expect((await g.send(owner, 'proposeOracle', ['0x0000000000000000000000000000000000000000'])).error).toBe(
       'ZeroAddress'
     );
   });
@@ -324,7 +331,10 @@ describe('expiry and escape hatches', () => {
   it.each([
     ['configureRoute', [OTHER_ROUTE, CAP, WINDOW]],
     ['setProtected', [attacker.address, ROUTE, true]],
-    ['setOracle', [attacker.address]],
+    ['proposeOracle', [attacker.address]],
+    ['cancelOracleRotation', []],
+    ['disableOracle', []],
+    ['rearmProtection', [ROUTE]],
     ['resume', [ROUTE]],
   ] as const)('only the owner may call %s', async (fn, args) => {
     expect((await g.send(attacker, fn, args)).error).toBe('OwnableUnauthorizedAccount');
@@ -341,7 +351,7 @@ describe('attestation replay protection', () => {
     expect((await submit(a, sig)).error).toBe('NonceAlreadyUsed');
   });
 
-  // Identical bytecode is deployed to four chains.
+  // The same bytecode is meant to run on several chains.
   it('a signature produced for another chain is rejected', async () => {
     const a = att();
     expect((await submit(a, await signAttestation(oracle, g.address, a, 42161))).error).toBe('InvalidSigner');

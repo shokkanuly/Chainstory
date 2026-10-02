@@ -1,12 +1,14 @@
 // Mutation tests for the guardian's tier logic, the vault's release review gate,
-// and the k-of-n attestor quorum.
+// the k-of-n attestor quorum, and the audit remediation (policy v4: time-locked
+// oracle rotation, bounded oracle protection, cumulative DELAY, REJECT cooldown).
 //
 //   npm run test:mutants
 //
 // Each mutant breaks one property the guardian promises (see the @dev block in
 // TripwireGuardian.sol). For each: patch the source, recompile the committed
 // artifact the tests deploy, run the contract tests, and require a failure.
-// The source and artifact are always restored, even if a run crashes.
+// The source and artifact are always restored, even if a run crashes or is
+// interrupted (SIGINT/SIGTERM): a killed run must never leave a mutant applied.
 // Exits non-zero if any mutant survives or no longer applies.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -18,9 +20,11 @@ const ESCROW = 'contracts/evm/src/CctpEscrow.sol', CCTP_ART = 'scripts/tripwire/
 const escrow = readFileSync(ESCROW, 'utf8'), cctpArt = readFileSync(CCTP_ART, 'utf8');
 const M = [
  ['DELAY cap: DELAY gets the full cap', 'tier == Tier.THROTTLE || tier == Tier.DELAY ? uint256(cap) / 2', 'tier == Tier.THROTTLE ? uint256(cap) / 2'],
- ['DELAY hold: never holds', 'tier == Tier.DELAY && block.timestamp < r.delayUntil && amount > r.cap / 10', 'false && tier == Tier.DELAY'],
- ['DELAY hold: threshold > becomes >=', 'amount > r.cap / 10', 'amount >= r.cap / 10'],
- ['DELAY hold: window ignored', 'block.timestamp < r.delayUntil && amount', 'amount'],
+ ['DELAY hold: never holds', 'if (held > r.cap / 10) revert OutflowDelayed', 'if (false) revert OutflowDelayed'],
+ ['DELAY hold: threshold > becomes >=', 'held > r.cap / 10', 'held >= r.cap / 10'],
+ ['DELAY hold: window ignored', 'tier == Tier.DELAY && block.timestamp < r.delayUntil) {', 'tier == Tier.DELAY) {'],
+ ['DELAY hold: split payouts not counted', 'r.delayedOutflow = uint128(held);', ''],
+ ['DELAY hold: budget carries into a new DELAY', 'r.delayUntil = uint64(block.timestamp) + DELAY_WINDOW;\n                r.delayedOutflow = 0;', 'r.delayUntil = uint64(block.timestamp) + DELAY_WINDOW;'],
  ['escalate-only: downgrades allowed', 'if (incoming >= active) {', 'if (true) {'],
  ['refresh reopens the DELAY window', 'incoming == Tier.DELAY && active != Tier.DELAY', 'incoming == Tier.DELAY'],
  ['reconfigure clears the tier', 'emit RouteConfigured(routeId, cap, windowSeconds);', 'r.tier = Tier.NONE; r.tierExpiresAt = 0; r.pausedUntil = 0;\n        emit RouteConfigured(routeId, cap, windowSeconds);'],
@@ -36,6 +40,16 @@ const M = [
  ['rolling limit: last ring slot omitted', 'i < ROLLING_BUCKETS; ++i', 'i < ROLLING_BUCKETS - 1; ++i'],
  ['rolling limit: expires usage one second early', 'uint256(bucket.lastOutflow) + window > block.timestamp', 'uint256(bucket.lastOutflow) + window - 1 > block.timestamp'],
  ['rolling limit: reconfigure discards spent budget', 'emit RouteConfigured(routeId, cap, windowSeconds);', 'delete _outflows[routeId];\n        emit RouteConfigured(routeId, cap, windowSeconds);'],
+ // Audit remediation, policy v4.
+ ['rotation: notice period skipped', 'if (block.timestamp < pendingOracleAt) revert RotationNotReady(pendingOracleAt);', ''],
+ ['rotation: anyone proposes an oracle', 'function proposeOracle(address next) external onlyOwner', 'function proposeOracle(address next) external'],
+ ['kill switch: disable leaves the oracle in place', 'oracle = address(0);', ''],
+ ['protection: cap raised during a tier', 'if (r.windowSeconds != 0 && cap > r.cap && currentTier(routeId) != Tier.NONE) revert RaiseDuringProtection(routeId);', ''],
+ ['span: refreshes extend past 72 hours', 'if (until > limit) until = limit;', ''],
+ ['span: no cooldown between spans', '+ MAX_ORACLE_PROTECTION + PROTECTION_COOLDOWN', '+ MAX_ORACLE_PROTECTION'],
+ ['span: an exhausted span still accepts', 'if (until <= block.timestamp) revert ProtectionSpanExhausted(routeId);', ''],
+ ['span: owner re-arm ignored', 'r.protectionSince = uint64(block.timestamp);\n        emit ProtectionRearmed', 'emit ProtectionRearmed'],
+ ['span: resume keeps a spent span', 'r.protectionSince = 0;', ''],
 ];
 const REVIEW_MUTANTS = [
  ['review signer: any signature accepted', 'if (reviewer != current) revert InvalidReviewer(reviewer);', ''],
@@ -49,6 +63,10 @@ const REVIEW_MUTANTS = [
  ['request delay: repeated reviews reopen the clock', 'decision == ReviewDecision.ALLOW && releaseDelayUntil[messageId] == 0', 'decision == ReviewDecision.ALLOW'],
  ['request delay: a waiting payout can execute', 'if (block.timestamp < releaseAt) revert ReleaseDelayed(messageId, releaseAt);', ''],
  ['request delay: a clear review bypasses starting a DELAY clock', 'if (releaseAt == 0 && guardian.outflowDelay(routeId, r.amount) > 0) revert RequestDelayNotStarted(messageId);', ''],
+ // Audit remediation (CRIT-2): REJECT is a 7-day hard hold, then re-reviewable.
+ ['rejection: REJECT is terminal again', 'r.state == ReleaseState.REJECTED && block.timestamp < rejectedAt[messageId] + REJECTION_COOLDOWN', 'r.state == ReleaseState.REJECTED'],
+ ['rejection: no hold at all', 'r.state == ReleaseState.REJECTED && block.timestamp < rejectedAt[messageId] + REJECTION_COOLDOWN', 'false'],
+ ['rejection: REJECT does not start the hold', 'if (decision == ReviewDecision.REJECT) rejectedAt[messageId] = block.timestamp;', ''],
 ];
 const CCTP_MUTANTS = [
  ['CCTP ownership: owner may invent credits', 'ProtectedVault(address(this), token_, guardian_, routeId_)', 'ProtectedVault(msg.sender, token_, guardian_, routeId_)'],
@@ -77,6 +95,14 @@ const ORACLE_MUTANTS = [
  [VAULT, 'vault: contract oracle unchecked', 'revert InvalidReviewer(current);', ''],
 ];
 const ORIGINAL = { [QUORUM]: quorum, [SOL]: sol, [VAULT]: vault };
+const restore = () => {
+  writeFileSync(SOL, sol); writeFileSync(ART, art);
+  writeFileSync(VAULT, vault); writeFileSync(DEMO_ART, demoArt);
+  writeFileSync(ESCROW, escrow); writeFileSync(CCTP_ART, cctpArt);
+  writeFileSync(QUORUM, quorum);
+};
+// `finally` does not run when the process is killed. Restore on the way out.
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.once(signal, () => { restore(); process.exit(130); });
 const results = [];
 try {
   for (const [name, from, to] of M) {
@@ -84,7 +110,7 @@ try {
     writeFileSync(SOL, sol.replace(from, to));
     execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
     let caught;
-    try { execSync('npx vitest run contracts/evm/test/TripwireGuardian.evm.test.ts contracts/evm/test/routeLimits.evm.test.ts -t "^(?!artifact)"', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
+    try { execSync('npx vitest run contracts/evm/test/TripwireGuardian.evm.test.ts contracts/evm/test/routeLimits.evm.test.ts contracts/evm/test/auditRegression.evm.test.ts -t "^(?!artifact)"', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
     results.push([name, caught ? 'caught' : 'SURVIVED']);
     console.log(results.at(-1)[1].padEnd(18), name);
   }
@@ -94,7 +120,7 @@ try {
     writeFileSync(VAULT, vault.replace(from, to));
     execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
     let caught;
-    try { execSync('npx vitest run contracts/evm/test/releaseSafety.evm.test.ts contracts/evm/test/routeLimits.evm.test.ts', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
+    try { execSync('npx vitest run contracts/evm/test/releaseSafety.evm.test.ts contracts/evm/test/routeLimits.evm.test.ts contracts/evm/test/auditRegression.evm.test.ts', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
     results.push([name, caught ? 'caught' : 'SURVIVED']);
     console.log(results.at(-1)[1].padEnd(18), name);
   }
@@ -120,10 +146,7 @@ try {
     console.log(results.at(-1)[1].padEnd(18), name);
   }
 } finally {
-  writeFileSync(SOL, sol); writeFileSync(ART, art);
-  writeFileSync(VAULT, vault); writeFileSync(DEMO_ART, demoArt);
-  writeFileSync(ESCROW, escrow); writeFileSync(CCTP_ART, cctpArt);
-  writeFileSync(QUORUM, quorum);
+  restore();
 }
 for (const [name, status] of results.filter((r) => r[1] === 'PATTERN NOT FOUND')) console.log(status.padEnd(18), name);
 const bad = results.filter((r) => r[1] !== 'caught').length;

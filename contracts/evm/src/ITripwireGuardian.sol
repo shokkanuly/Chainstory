@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 /// @title ITripwireGuardian
-/// @notice What a protected bridge or vault integrates against. Identical
-///         bytecode is deployed to Ethereum, Arbitrum, Base and Optimism.
+/// @notice What a protected bridge or vault integrates against. Written to
+///         deploy unchanged to any EVM chain; today it runs on Sepolia only.
 interface ITripwireGuardian {
     enum Status {
         ACTIVE,
@@ -19,8 +19,8 @@ interface ITripwireGuardian {
     }
 
     /// @notice EIP-7265-style outflow hook. Reverts if the route is frozen,
-    ///         if outflow exceeds the tier's cap, or if a large outflow falls
-    ///         inside a DELAY review window.
+    ///         if outflow exceeds the tier's cap, or if, inside a DELAY review
+    ///         window, total outflow would pass 10% of the cap.
     function onTokenOutflow(bytes32 routeId, uint256 amount) external;
 
     /// @notice Hold duration for a newly reviewed request under the active tier.
@@ -28,10 +28,11 @@ interface ITripwireGuardian {
     function outflowDelay(bytes32 routeId, uint256 amount) external view returns (uint256);
 
     /// @notice Submit an EIP-712 attestation signed by the risk oracle.
-    ///         Applies a graduated tier for 24h, escalate-only while active:
+    ///         Applies a graduated tier for up to 24h, escalate-only while
+    ///         active, and never past the oracle's 72-hour protection span:
     ///         - riskScore >= 95: FREEZE   — every outflow reverts
-    ///         - riskScore >= 85: DELAY    — cap halved, and outflows above 10%
-    ///                                       of the cap held for 30 minutes
+    ///         - riskScore >= 85: DELAY    — cap halved, and outflow past 10% of
+    ///                                       the cap in total held for 30 minutes
     ///         - riskScore >= 65: THROTTLE — cap halved
     function submitAttestation(
         bytes32 routeId,

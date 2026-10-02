@@ -7,27 +7,30 @@ import { createRpcOperator } from '../testnet/operator.js';
 import { runTestnetDemo, type Clients, type Deployment, type TestnetConfig } from '../testnet/sepolia.js';
 
 describe('route protection deployment boundary', () => {
-  const reader = () => ({ guardianVersion: async (): Promise<unknown> => 3n,
-    releaseVersion: async (): Promise<unknown> => 3n, routePermission: async (): Promise<unknown> => true });
+  const reader = () => ({ guardianVersion: async (): Promise<unknown> => 4n,
+    releaseVersion: async (): Promise<unknown> => 4n, routePermission: async (): Promise<unknown> => true });
   it('accepts the current policy and route-scoped permission', async () => {
     await expect(assertProtectionPolicy(reader())).resolves.toBeUndefined();
   });
-  it.each(['old guardian', 'old vault', 'single-key-only guardian', 'single-key-only vault', 'revoked route', 'unknown response', 'RPC error'])('refuses %s', async (kind) => {
+  it.each(['old guardian', 'old vault', 'single-key-only guardian', 'single-key-only vault', 'instant-rotation guardian',
+    'terminal-reject vault', 'revoked route', 'unknown response', 'RPC error'])('refuses %s', async (kind) => {
     const r = reader();
     if (kind === 'old guardian') r.guardianVersion = async () => 1n;
     if (kind === 'old vault') r.releaseVersion = async () => 1n;
     if (kind === 'single-key-only guardian') r.guardianVersion = async () => 2n;
     if (kind === 'single-key-only vault') r.releaseVersion = async () => 2n;
+    if (kind === 'instant-rotation guardian') r.guardianVersion = async () => 3n;
+    if (kind === 'terminal-reject vault') r.releaseVersion = async () => 3n;
     if (kind === 'revoked route') r.routePermission = async () => false;
-    if (kind === 'unknown response') r.guardianVersion = async () => '3';
+    if (kind === 'unknown response') r.guardianVersion = async () => '4';
     if (kind === 'RPC error') r.routePermission = async () => { throw new Error('offline'); };
     await expect(assertProtectionPolicy(r)).rejects.toThrow();
   });
   it.each(['guardian', 'vault', 'permission', 'busy'])('refuses demo %s before reset or payout transactions', async (kind) => {
     const writeContract = vi.fn();
     const readContract = vi.fn(async ({ functionName }: { functionName: string }) => {
-      if (functionName === 'GUARDIAN_POLICY_VERSION') return kind === 'guardian' ? 2n : 3n;
-      if (functionName === 'RELEASE_POLICY_VERSION') return kind === 'vault' ? 2n : 3n;
+      if (functionName === 'GUARDIAN_POLICY_VERSION') return kind === 'guardian' ? 3n : 4n;
+      if (functionName === 'RELEASE_POLICY_VERSION') return kind === 'vault' ? 3n : 4n;
       if (functionName === 'isProtected') return kind !== 'permission';
       if (functionName === 'rollingUsage') return 1n;
       return 600n;

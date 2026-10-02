@@ -24,8 +24,10 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 ///      - No owner. Membership changes only by a quorum of the current set
 ///        signing `UpdateSigners`, bound to this contract, chain and `epoch`;
 ///        each change bumps the epoch, so an approved update cannot be replayed.
-///        If the set is lost, the guardian owner installs a new quorum with
-///        `setOracle`, which also invalidates every outstanding release review.
+///        If the set is lost, the guardian owner disables the oracle at once
+///        (`disableOracle`), which also invalidates every outstanding release
+///        review, and installs a new quorum through the 2-day
+///        `proposeOracle` / `acceptOracle` rotation.
 ///
 ///      - The quorum signs digests that already bind their verifying contract,
 ///        chain, route and nonce, so it adds no replay surface of its own.

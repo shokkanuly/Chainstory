@@ -36,11 +36,15 @@ async function deployQuorum(signers: LocalAccount[], threshold: bigint) {
 }
 
 beforeEach(async () => {
-  vm = await GuardianVM.deploy(guardianArtifact);
-  quorum = await deployQuorum([A, B, C], 2n);
+  // The quorum is deployed first and the guardian starts with it as its oracle,
+  // as a real deployment does; rotating into it would take the 2-day notice.
+  vm = await GuardianVM.deploy(guardianArtifact, {
+    oracle: async (chain) =>
+      (quorum = await chain.deployContract(demo.TripwireQuorum, [[A, B, C].map((s) => s.address), 2n], actors.relayer)).address,
+  });
   config = { address: quorum.address, signers: [A, B, C].map((s) => s.address), threshold: 2 };
+  expect((await vm.read<string>('oracle')).toLowerCase()).toBe(quorum.address.toLowerCase());
   expect((await vm.send(actors.owner, 'configureRoute', [ROUTE, CAP, 3600n])).ok).toBe(true);
-  expect((await vm.send(actors.owner, 'setOracle', [quorum.address])).ok).toBe(true);
 });
 
 const attestation = (over: Partial<Attestation> = {}): Attestation =>
@@ -190,14 +194,31 @@ describe('release reviews through the quorum', () => {
     expect(await vm.readContract(f.token, 'balanceOf', [actors.bridge.address])).toBe(AMOUNT);
   });
 
-  it('installing a new quorum invalidates an outstanding quorum ALLOW', async () => {
+  it('disabling the oracle invalidates an outstanding quorum ALLOW at once', async () => {
     const f = await vaultFixture();
     const r = f.review();
     const account = quorumAccount(config, [localMember(A), localMember(B)]);
     expect((await f.send(r, await signReleaseReview(account, f.vault.address, r, LOCAL_CHAIN_ID)))).toMatchObject({ ok: true });
-    const next = await deployQuorum(ascending([C, D, E]), 2n);
-    expect((await vm.send(actors.owner, 'setOracle', [next.address])).ok).toBe(true);
+    expect((await vm.send(actors.owner, 'disableOracle')).ok).toBe(true);
     expect((await vm.sendContract(f.vault, actors.attacker, 'executeRelease', [MESSAGE]))).toMatchObject({ ok: false, error: 'InvalidReviewer' });
+    expect(await vm.readContract(f.token, 'balanceOf', [actors.bridge.address])).toBe(0n);
+  });
+
+  it('a new quorum takes over only after the 2-day notice, and the old set cannot review after it', async () => {
+    const f = await vaultFixture();
+    const next = await deployQuorum(ascending([C, D, E]), 2n);
+    expect((await vm.send(actors.owner, 'proposeOracle', [next.address])).ok).toBe(true);
+    expect((await vm.send(actors.attacker, 'acceptOracle')).error).toBe('RotationNotReady');
+    vm.warp(2n * 86_400n);
+    expect((await vm.send(actors.attacker, 'acceptOracle')).ok).toBe(true);
+    expect((await vm.read<string>('oracle')).toLowerCase()).toBe(next.address.toLowerCase());
+    const r = f.review();
+    const old = quorumAccount(config, [localMember(A), localMember(B)]);
+    expect((await f.send(r, await signReleaseReview(old, f.vault.address, r, LOCAL_CHAIN_ID)))).toMatchObject({ ok: false, error: 'InvalidReviewer' });
+    const fresh = quorumAccount({ address: next.address, signers: ascending([C, D, E]).map((s) => s.address), threshold: 2 },
+      [localMember(C), localMember(D)]);
+    expect((await f.send(r, await signReleaseReview(fresh, f.vault.address, r, LOCAL_CHAIN_ID)))).toMatchObject({ ok: true });
+    expect((await vm.sendContract(f.vault, actors.attacker, 'executeRelease', [MESSAGE]))).toMatchObject({ ok: true });
   });
 
   it('members decide independently: one refusal is tolerated, two block the review', async () => {

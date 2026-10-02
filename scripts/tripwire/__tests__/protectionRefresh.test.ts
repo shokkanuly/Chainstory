@@ -66,9 +66,9 @@ describe('continuous protection refresh', () => {
     expect(await f.create().handle(ROUTE, assessment(0.85))).toMatchObject({ action: 'submitted', purpose: 'escalate' });
     expect(await f.vm.read('currentTier', [ROUTE])).toBe(2);
   });
-  it('stops before signing when the oracle key has rotated', async () => {
+  it('stops before signing when the oracle has been disabled', async () => {
     const f = await setup(); await f.attestor.handle(ROUTE, assessment(0.85)); f.sign.mockClear();
-    await f.vm.send(actors.owner, 'setOracle', [actors.owner.address]); f.vm.warp(86400 - 1);
+    await f.vm.send(actors.owner, 'disableOracle'); f.vm.warp(86400 - 1);
     expect((await f.attestor.handle(ROUTE, assessment(0.85))).action).toBe('unavailable'); expect(f.sign).not.toHaveBeenCalled();
   });
   it('uses the bound chain clock even when the caller clock is incorrect', async () => {

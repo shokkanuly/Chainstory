@@ -73,9 +73,16 @@ contract ProtectedVault is Ownable, EIP712 {
 
     mapping(bytes32 messageId => Release) public releases;
     mapping(bytes32 messageId => uint256) public releaseDelayUntil;
+    /// @notice When the latest REJECT for a release was accepted.
+    mapping(bytes32 messageId => uint256) public rejectedAt;
 
-    uint256 public constant RELEASE_POLICY_VERSION = 3;
+    uint256 public constant RELEASE_POLICY_VERSION = 4;
     uint256 public constant MAX_REVIEW_TTL = 10 minutes;
+    /// @notice A REJECT is a hard hold for this long, then open to a fresh
+    ///         review. Never terminal: a backed credit must not be lost to one
+    ///         mistaken or hostile signature, and a re-review can only pay the
+    ///         release's own recorded recipient.
+    uint256 public constant REJECTION_COOLDOWN = 7 days;
     bytes32 public constant REVIEW_TYPEHASH = keccak256(
         "ReleaseReview(bytes32 messageId,bytes32 routeId,address token,address recipient,uint256 amount,uint8 decision,uint8 minimumTier,uint256 validUntil,uint256 nonce)"
     );
@@ -118,6 +125,7 @@ contract ProtectedVault is Ownable, EIP712 {
 
     /// @notice A fresh, single-use review is bound to this vault and every payout field.
     /// Bridge message authentication remains the bridge's responsibility; this is an additional risk gate.
+    /// A REJECTED release accepts a new review only after REJECTION_COOLDOWN.
     function reviewRelease(
         bytes32 messageId, ReviewDecision decision, ITripwireGuardian.Tier minimumTier,
         uint256 validUntil, uint256 nonce, bytes calldata signature
@@ -125,7 +133,9 @@ contract ProtectedVault is Ownable, EIP712 {
         Release storage r = releases[messageId];
         if (r.to == address(0)) revert UnknownRelease(messageId);
         if (r.state == ReleaseState.EXECUTED) revert AlreadyExecuted(messageId);
-        if (r.state == ReleaseState.REJECTED) revert ReleaseRejected(messageId);
+        if (r.state == ReleaseState.REJECTED && block.timestamp < rejectedAt[messageId] + REJECTION_COOLDOWN) {
+            revert ReleaseRejected(messageId);
+        }
         if (block.timestamp > validUntil) revert ReviewExpired(validUntil);
         if (validUntil > block.timestamp + MAX_REVIEW_TTL) revert ReviewTtlTooLong(validUntil);
         // Per-release monotonically increasing nonces also reject an older ALLOW
@@ -138,6 +148,7 @@ contract ProtectedVault is Ownable, EIP712 {
         r.reviewedUntil = validUntil;
         r.reviewer = reviewer;
         r.minimumTier = minimumTier;
+        if (decision == ReviewDecision.REJECT) rejectedAt[messageId] = block.timestamp;
         if (decision == ReviewDecision.ALLOW && releaseDelayUntil[messageId] == 0) {
             uint256 delay = guardian.outflowDelay(routeId, r.amount);
             if (delay > 0) releaseDelayUntil[messageId] = block.timestamp + delay;

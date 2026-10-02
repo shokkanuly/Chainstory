@@ -67,19 +67,25 @@ export interface LocalLoopOptions {
 }
 
 export async function runLocalLoop(onStep?: (step: StepResult) => void, opts: LocalLoopOptions = {}): Promise<StepResult[]> {
-  const guardian = await GuardianVM.deploy(artifact, { start: START, oracle: actors.oracle.address });
+  // With a quorum, the quorum is deployed first and the guardian starts with it
+  // as its oracle, as a real deployment does (rotating later takes 2 days' notice).
+  let quorumAddress = null as Hex | null; // assigned inside the deploy callback
+  const guardian = await GuardianVM.deploy(artifact, {
+    start: START,
+    oracle: opts.quorum
+      ? async (chain) => (quorumAddress = (await chain.deployContract(demo.TripwireQuorum,
+        [ATTESTORS.map((a) => a.address), 2n], actors.relayer)).address)
+      : actors.oracle.address,
+  });
   const token = await guardian.deployContract(demo.DemoUSDC, [actors.owner.address]);
   const vault = await guardian.deployContract(demo.ProtectedVault, [actors.owner.address, token.address, guardian.address, ROUTE_ID]);
   await guardian.send(actors.owner, 'configureRoute', [ROUTE_ID, CAP, WINDOW]);
   await guardian.send(actors.owner, 'setProtected', [vault.address, ROUTE_ID, true]);
   await guardian.sendContract(token, actors.owner, 'mint', [vault.address, 20_000_000n * USDC]);
   let signer: LocalAccount = actors.oracle;
-  if (opts.quorum) {
-    const quorum = await guardian.deployContract(demo.TripwireQuorum, [ATTESTORS.map((a) => a.address), 2n]);
-    const installed = await guardian.send(actors.owner, 'setOracle', [quorum.address]);
-    if (!installed.ok) throw new Error(`Local quorum install failed: ${installed.error}`);
+  if (quorumAddress) {
     const offline = () => false;
-    signer = quorumAccount({ address: quorum.address, signers: ATTESTORS.map((a) => a.address), threshold: 2 },
+    signer = quorumAccount({ address: quorumAddress, signers: ATTESTORS.map((a) => a.address), threshold: 2 },
       [localMember(ATTESTORS[0]), localMember(ATTESTORS[1]), localMember(ATTESTORS[2], offline)]);
   }
 

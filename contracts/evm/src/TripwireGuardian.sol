@@ -18,18 +18,39 @@ import {ITripwireGuardian} from "./ITripwireGuardian.sol";
 ///        funds, raise a cap, loosen a tier, or resume a route. A stolen oracle key is a denial of service on
 ///        the routes it attests against, never a theft.
 ///
+///      - The oracle alone cannot hold a route indefinitely. One span of
+///        oracle protection lasts at most MAX_ORACLE_PROTECTION (72 hours) from
+///        its first attestation, however often it is refreshed, and a new span
+///        starts only after a PROTECTION_COOLDOWN (24 hours) clear gap. Longer
+///        protection is a human decision: the owner re-arms the route
+///        (`rearmProtection`) or lowers its cap. A stolen oracle key therefore
+///        denies service for at most 72 hours at a time, and `disableOracle`
+///        ends that at once.
+///
+///      - Replacing the oracle is time-locked: `proposeOracle`, then
+///        `acceptOracle` once ORACLE_ROTATION_DELAY (2 days) has passed. Every
+///        gated vault trusts this guardian's oracle for release reviews, so an
+///        instant swap would let whoever holds the owner key approve payouts;
+///        the delay gives users and monitors public notice first. Removing the
+///        oracle is instant (`disableOracle`): with no oracle nothing can be
+///        attested or reviewed, so every gated payout fails closed.
+///
+///      - While a route is under protection its cap can be lowered, never
+///        raised. Raising it again takes an explicit `resume` first.
+///
 ///      - Response is graduated, and each tier is at least as strict as the
 ///        one below it: THROTTLE halves the window cap; DELAY keeps that cap
-///        and also holds large outflows for a review window; FREEZE stops all
-///        outflow. A higher risk score can never produce a looser limit.
+///        and also holds outflows for a review window once they pass 10% of
+///        the cap in total, so splitting one large payout into small ones
+///        is held all the same; FREEZE stops all outflow. A higher risk
+///        score can never produce a looser limit.
 ///
 ///      - A tier only escalates while active. A lower-score attestation arriving
 ///        during a harder tier is ignored, so it cannot be used to weaken one.
 ///
-///      - Every tier expires on its own, 24 hours after the attestation that
-///        set it, so an oracle can never brick a route. Only the owner lifts a
-///        tier early, and only through `resume` — reconfiguring a route's cap
-///        leaves its protection in place.
+///      - Every tier expires on its own, at most 24 hours after the attestation
+///        that set it. Only the owner lifts a tier early, and only through
+///        `resume` — reconfiguring a route's cap leaves its protection in place.
 ///
 ///      - Attestations are EIP-712 typed data. The domain binds chain id and
 ///        this contract's address, so a signature for Base cannot be replayed
@@ -62,10 +83,14 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         uint64 tierExpiresAt;
         /// DELAY clock: large outflows are held until this time.
         uint64 delayUntil;
+        /// Start of the current span of oracle protection (0: none yet).
+        uint64 protectionSince;
+        /// Outflow paid since the DELAY review window opened, against its 10% budget.
+        uint128 delayedOutflow;
     }
 
     uint256 public constant MAX_SCORE = 100;
-    uint256 public constant GUARDIAN_POLICY_VERSION = 3;
+    uint256 public constant GUARDIAN_POLICY_VERSION = 4;
     uint256 public constant ROLLING_BUCKETS = 17;
     struct Bucket { uint128 amount; uint64 lastOutflow; }
     mapping(bytes32 routeId => Bucket[17]) private _outflows;
@@ -84,11 +109,21 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
     uint64 public constant PAUSE_DURATION = 24 hours;
     uint256 public constant MAX_ATTESTATION_TTL = 10 minutes;
 
+    /// @notice Notice period before a proposed oracle can be installed.
+    uint64 public constant ORACLE_ROTATION_DELAY = 2 days;
+    /// @notice Longest the oracle alone may keep a route under protection.
+    uint64 public constant MAX_ORACLE_PROTECTION = 72 hours;
+    /// @notice Clear gap after a span before the oracle may open a new one.
+    uint64 public constant PROTECTION_COOLDOWN = 24 hours;
+
     bytes32 public constant ATTESTATION_TYPEHASH = keccak256(
         "Attestation(bytes32 routeId,uint256 riskScore,uint256 validUntil,uint256 nonce)"
     );
 
     address public oracle;
+    /// @notice An oracle the owner has proposed; anyone may install it once `pendingOracleAt` has passed.
+    address public pendingOracle;
+    uint64 public pendingOracleAt;
 
     mapping(bytes32 routeId => Route) private _routes;
     /// @notice Contracts permitted to report outflows. Without this an
@@ -101,6 +136,9 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
     event AttestationAccepted(bytes32 indexed routeId, uint256 riskScore, uint256 nonce, uint64 expiresAt, Tier tier);
     event RouteResumed(bytes32 indexed routeId);
     event OracleUpdated(address indexed previous, address indexed next);
+    event OracleRotationProposed(address indexed next, uint64 readyAt);
+    event OracleRotationCancelled(address indexed next);
+    event ProtectionRearmed(bytes32 indexed routeId, uint64 since);
     event ProtectedSet(address indexed caller, bytes32 indexed routeId, bool allowed);
 
     error ZeroAddress();
@@ -118,6 +156,10 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
     error AttestationTtlTooLong(uint256 validUntil);
     error NonceAlreadyUsed(uint256 nonce);
     error InvalidSigner(address recovered);
+    error NoPendingOracle();
+    error RotationNotReady(uint64 readyAt);
+    error RaiseDuringProtection(bytes32 routeId);
+    error ProtectionSpanExhausted(bytes32 routeId);
 
     constructor(address initialOwner, address oracle_)
         Ownable(initialOwner)
@@ -135,6 +177,8 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         Route storage r = _routes[routeId];
         // Changing bucket width would reinterpret or discard spending history.
         if (r.windowSeconds != 0 && r.windowSeconds != windowSeconds) revert WindowChangeNotAllowed();
+        // Under protection the owner may tighten a route, never loosen it.
+        if (r.windowSeconds != 0 && cap > r.cap && currentTier(routeId) != Tier.NONE) revert RaiseDuringProtection(routeId);
         if (r.windowSeconds == 0) r.windowStart = uint64(block.timestamp);
         r.cap = cap;
         r.windowSeconds = windowSeconds;
@@ -147,11 +191,50 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         emit ProtectedSet(caller, routeId, allowed);
     }
 
-    /// @notice Rotate the oracle key — the escape hatch if it is compromised.
-    function setOracle(address next) external onlyOwner {
+    /// @notice Kill switch, for a compromised or misbehaving oracle. Instant:
+    ///         with no oracle no attestation or release review verifies
+    ///         (ECDSA recovery never yields the zero address), so every gated
+    ///         payout fails closed until a replacement is accepted.
+    function disableOracle() external onlyOwner {
+        emit OracleUpdated(oracle, address(0));
+        oracle = address(0);
+    }
+
+    /// @notice Start the notice period for a new oracle. Proposing again restarts it.
+    function proposeOracle(address next) external onlyOwner {
         if (next == address(0)) revert ZeroAddress();
+        pendingOracle = next;
+        pendingOracleAt = uint64(block.timestamp) + ORACLE_ROTATION_DELAY;
+        emit OracleRotationProposed(next, pendingOracleAt);
+    }
+
+    function cancelOracleRotation() external onlyOwner {
+        address next = pendingOracle;
+        if (next == address(0)) revert NoPendingOracle();
+        pendingOracle = address(0);
+        pendingOracleAt = 0;
+        emit OracleRotationCancelled(next);
+    }
+
+    /// @notice Install the proposed oracle once its notice period has passed.
+    ///         Permissionless: the owner already decided, this only executes it.
+    function acceptOracle() external {
+        address next = pendingOracle;
+        if (next == address(0)) revert NoPendingOracle();
+        if (block.timestamp < pendingOracleAt) revert RotationNotReady(pendingOracleAt);
+        pendingOracle = address(0);
+        pendingOracleAt = 0;
         emit OracleUpdated(oracle, next);
         oracle = next;
+    }
+
+    /// @notice A human extends oracle protection through a real incident:
+    ///         a fresh 72-hour span starts now, cooldown or not.
+    function rearmProtection(bytes32 routeId) external onlyOwner {
+        Route storage r = _routes[routeId];
+        if (r.windowSeconds == 0) revert RouteNotConfigured(routeId);
+        r.protectionSince = uint64(block.timestamp);
+        emit ProtectionRearmed(routeId, r.protectionSince);
     }
 
     /// @notice Lift any tier or pause early, once a human review has cleared the route.
@@ -161,6 +244,9 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         r.tier = Tier.NONE;
         r.tierExpiresAt = 0;
         r.delayUntil = 0;
+        r.delayedOutflow = 0;
+        // A cleared incident ends the span: the next one gets full protection.
+        r.protectionSince = 0;
         emit RouteResumed(routeId);
     }
 
@@ -175,9 +261,13 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         if (isPaused(routeId)) revert RoutePaused(routeId, r.pausedUntil);
 
         Tier tier = currentTier(routeId);
-        if (
-            tier == Tier.DELAY && block.timestamp < r.delayUntil && amount > r.cap / 10
-        ) revert OutflowDelayed(routeId, amount, r.delayUntil);
+        if (tier == Tier.DELAY && block.timestamp < r.delayUntil) {
+            // Counted in total, not per transfer: a large payout split into
+            // pieces of 10% or less is held the same as the payout itself.
+            uint256 held = uint256(r.delayedOutflow) + amount;
+            if (held > r.cap / 10) revert OutflowDelayed(routeId, amount, r.delayUntil);
+            r.delayedOutflow = uint128(held);
+        }
 
         uint256 effectiveCap = _effectiveCap(r.cap, tier);
 
@@ -222,10 +312,16 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
 
         // Escalate or refresh; never downgrade an active tier.
         if (incoming >= active) {
+            if (_newSpanAllowed(r, active)) r.protectionSince = uint64(block.timestamp);
             uint64 until = uint64(block.timestamp) + PAUSE_DURATION;
+            // However often it refreshes, the oracle alone cannot hold the route past its span.
+            uint64 limit = r.protectionSince + MAX_ORACLE_PROTECTION;
+            if (until > limit) until = limit;
+            if (until <= block.timestamp) revert ProtectionSpanExhausted(routeId);
             // A new review window opens only on entering DELAY, not on refresh.
             if (incoming == Tier.DELAY && active != Tier.DELAY) {
                 r.delayUntil = uint64(block.timestamp) + DELAY_WINDOW;
+                r.delayedOutflow = 0;
             }
             if (incoming == Tier.FREEZE) r.pausedUntil = until;
             r.tier = incoming;
@@ -233,6 +329,13 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
         }
 
         emit AttestationAccepted(routeId, riskScore, nonce, r.tierExpiresAt, currentTier(routeId));
+    }
+
+    /// @dev A new span may open only once the last one has run its course and a
+    ///      full cooldown has passed with no tier active.
+    function _newSpanAllowed(Route storage r, Tier active) private view returns (bool) {
+        return active == Tier.NONE &&
+            block.timestamp >= uint256(r.protectionSince) + MAX_ORACLE_PROTECTION + PROTECTION_COOLDOWN;
     }
 
     /// @dev One key: recover and compare. A contract oracle: ERC-1271, which a
@@ -295,7 +398,21 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
 
     /// @inheritdoc ITripwireGuardian
     function outflowDelay(bytes32 routeId, uint256 amount) external view returns (uint256) {
-        return currentTier(routeId) == Tier.DELAY && amount > _routes[routeId].cap / 10 ? DELAY_WINDOW : 0;
+        if (currentTier(routeId) != Tier.DELAY) return 0;
+        Route storage r = _routes[routeId];
+        if (amount > r.cap / 10) return DELAY_WINDOW;
+        // A small request too, once the review window's 10% budget is spent.
+        return block.timestamp < r.delayUntil && uint256(r.delayedOutflow) + amount > r.cap / 10 ? DELAY_WINDOW : 0;
+    }
+
+    /// @notice Until when the oracle may hold this route if it attested now.
+    ///         A value at or before `block.timestamp` means the span is spent:
+    ///         attestations revert ProtectionSpanExhausted until the cooldown
+    ///         ends or the owner re-arms the route.
+    function protectionLimit(bytes32 routeId) external view returns (uint64) {
+        Route storage r = _routes[routeId];
+        if (_newSpanAllowed(r, currentTier(routeId))) return uint64(block.timestamp) + MAX_ORACLE_PROTECTION;
+        return r.protectionSince + MAX_ORACLE_PROTECTION;
     }
 
     /// @dev One definition of each tier's cap, shared by the hook and the view.

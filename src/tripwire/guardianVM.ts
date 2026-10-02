@@ -99,9 +99,18 @@ export class GuardianVM {
     this.now = start;
   }
 
+  /**
+   * `oracle` may be an address, or a function that deploys the oracle contract
+   * (a TripwireQuorum) into this chain first and returns its address — the
+   * guardian then starts with it, as a real deployment does, instead of
+   * rotating to it through the 2-day `proposeOracle` / `acceptOracle` notice.
+   */
   static async deploy(
     artifact: GuardianArtifact,
-    { start = 1_780_000_000n, oracle = actors.oracle.address }: { start?: bigint; oracle?: Hex } = {}
+    { start = 1_780_000_000n, oracle = actors.oracle.address }: {
+      start?: bigint;
+      oracle?: Hex | ((chain: GuardianVM) => Promise<Hex>);
+    } = {}
   ): Promise<GuardianVM> {
     const common = new Common({ chain: Mainnet, hardfork: Hardfork.Cancun });
     const vm = await createVM({ common });
@@ -109,9 +118,10 @@ export class GuardianVM {
       await vm.stateManager.putAccount(new Address(hexToBytes(a.address)), new Account(0n, 10n ** 21n));
     }
     const g = new GuardianVM(vm, common, artifact.abi, start);
+    const oracleAddress = typeof oracle === 'function' ? await oracle(g) : oracle;
     const res = await g.raw(
       actors.owner,
-      encodeDeployData({ abi: artifact.abi, bytecode: artifact.bytecode, args: [actors.owner.address, oracle] }),
+      encodeDeployData({ abi: artifact.abi, bytecode: artifact.bytecode, args: [actors.owner.address, oracleAddress] }),
       undefined
     );
     // ethereumjs reports `createdAddress` even when the constructor reverts, so

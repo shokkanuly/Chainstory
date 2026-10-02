@@ -123,12 +123,22 @@ describe('release execution gate', () => {
     expect((await f.vm.sendContract(f.vault, actors.attacker, 'executeRelease', [MESSAGE])).error).toBe('ReviewExpired');
   });
 
-  it('invalidates an existing allowance to execute when the oracle key is rotated', async () => {
+  it('invalidates an existing allowance to execute when the oracle is disabled', async () => {
     const f = await deployReleaseFixture();
     expect((await submit(f)).ok).toBe(true);
-    await f.vm.send(actors.owner, 'setOracle', [actors.relayer.address]);
+    await f.vm.send(actors.owner, 'disableOracle');
     expect((await f.vm.sendContract(f.vault, actors.attacker, 'executeRelease', [MESSAGE])).error).toBe('InvalidReviewer');
     expect((await submit(f, reviewFor(f, { nonce: 2n }))).error).toBe('InvalidReviewer');
+  });
+
+  it('refuses the old key once a rotated oracle has been accepted', async () => {
+    const f = await deployReleaseFixture();
+    await f.vm.send(actors.owner, 'proposeOracle', [actors.relayer.address]);
+    f.vm.warp(2 * 86_400);
+    expect((await f.vm.send(actors.attacker, 'acceptOracle')).ok).toBe(true);
+    expect((await submit(f)).error).toBe('InvalidReviewer');
+    const review = reviewFor(f);
+    expect((await submit(f, review, await signReleaseReview(actors.relayer, f.vault.address, review, LOCAL_CHAIN_ID))).ok).toBe(true);
   });
 
   it('keeps unknown data held until a new review allows the release', async () => {
@@ -140,13 +150,20 @@ describe('release execution gate', () => {
     expect((await f.vm.sendContract(f.vault, actors.attacker, 'executeRelease', [MESSAGE])).ok).toBe(true);
   });
 
-  it('never reopens a rejected release after route resume or protection expiry', async () => {
+  it('does not reopen a rejected release on route resume or protection expiry, only by a fresh review after 7 days', async () => {
     const f = await deployReleaseFixture();
     expect((await submit(f, reviewFor(f, { decision: ReleaseDecision.REJECT }))).ok).toBe(true);
     f.vm.warp(86_401);
     await f.vm.send(actors.owner, 'resume', [ROUTE]);
     expect((await f.vm.sendContract(f.vault, actors.attacker, 'executeRelease', [MESSAGE])).error).toBe('ReleaseRejected');
     expect((await submit(f, reviewFor(f, { nonce: 2n }))).error).toBe('ReleaseRejected');
+    f.vm.warp(6 * 86_400 - 2);
+    expect((await submit(f, reviewFor(f, { nonce: 2n }))).error).toBe('ReleaseRejected');
+    f.vm.warp(1);
+    expect((await f.vm.sendContract(f.vault, actors.attacker, 'executeRelease', [MESSAGE])).error).toBe('ReleaseRejected');
+    expect((await submit(f, reviewFor(f, { nonce: 2n }))).ok).toBe(true);
+    expect((await f.vm.sendContract(f.vault, actors.attacker, 'executeRelease', [MESSAGE])).ok).toBe(true);
+    expect(await f.vm.readContract(f.token, 'balanceOf', [actors.bridge.address])).toBe(AMOUNT);
   });
 
   it('does not consume a release or transfer tokens when the guardian rejects the payout', async () => {
