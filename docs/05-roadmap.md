@@ -6,7 +6,7 @@ Update the status table in `docs/README.md` and the checkboxes here as work land
 
 ## Hackathon build (September 2026) — status
 
-### Active Tripwire work — 2026-10-02
+### Active Tripwire work — 2026-10-03
 
 The current project focus is Tripwire. [Hardening plan](plans/tripwire-hardening.md)
 supersedes the hackathon scope for new work; the legacy wallet/Solana phases below
@@ -28,7 +28,7 @@ remain historical context.
 | REJECT as a 7-day hold that fresh evidence can reopen (CctpEscrow funds never stranded) | Implemented locally; ADR-025; contract and operator |
 | Separate key roles (owner Safe, oracle, two relayers), separate nonce lanes, fee-bumped replacement | Implemented locally; ADR-026; deploy and operator refuse one key |
 | Rolling baseline, safe-head release requests, exact one-sided backing, RPC failover, backoff | Implemented locally; ADR-027 |
-| Live deployment of the release-gated vault | Not deployed. The Sepolia contracts in `deployment.sepolia.json` are pre-v4 and the operator refuses them. Redeploy with the role keys and a Safe: [operator runbook](plans/tripwire-operator.md#redeploy-policy-v4-to-sepolia) |
+| Live deployment of the release-gated vault | Deployed to Sepolia 2026-10-03, policy v4: guardian `0xF58C0711Fed0F425383E5D07345880488889fE0F`, sources verified, ownership accepted by Safe `0x65DC895a989a8Ac3ef4Df7Eb1B968732c1fc3D0C`; live demo ran NONE → THROTTLE → DELAY → FREEZE. `deployment.sepolia.json` still lists the retired deployment until the new record is committed |
 | Independent quorum members (k-of-n signing on separate machines) | Not started: the contract enforces k-of-n, but the operator signs with one oracle key and the local quorum runs in one process |
 
 Tripwire and Check before you sign, planned in [plans/tripwire-hackathon.md](plans/tripwire-hackathon.md) (each stage's result is recorded there).

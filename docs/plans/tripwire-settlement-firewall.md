@@ -77,7 +77,7 @@ of settlement — not another security dashboard.
 | Priority | Work | Acceptance |
 | :--- | :--- | :--- |
 | P0 | External review of guardian, vault, escrow and quorum | Findings resolved or accepted in an ADR |
-| P0 | Fresh policy-v4 deployment with separate keys and an owner Safe on testnet ([runbook](tripwire-operator.md#redeploy-policy-v4-to-sepolia)) | Verified sources; operator refuses v3; Safe accepts ownership; a 2-day oracle rotation exercised on-chain |
+| P0 | 2-day oracle rotation exercised on-chain | Policy v4 is deployed on Sepolia with separate keys, verified sources and Safe ownership (2026-10-03); a `proposeOracle` → `acceptOracle` rotation is still to run |
 | P1 | Networked attestor members | Each member runs its own watcher and RPC set, on separate infrastructure, and signs over a transport; no co-located keys |
 | P1 | Quorum over `eth_getLogs` discovery, not only proofs | Event feeds read through the same agreement rule |
 | P1 | Evidence versions and measured baselines | Rolling baselines exist (ADR-027); still to do: reproducible scoring versions, measured false holds and latency on a real route |
