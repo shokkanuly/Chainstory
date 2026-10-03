@@ -6,7 +6,7 @@ import { keccak256, parseTransaction, toHex, type Hex } from 'viem';
 import { actors } from '../../../src/tripwire/guardianVM.js';
 import { Attestor, type GuardianPort } from '../attest.js';
 import { MemoryFeed, type BurnEvent, type ReleaseEvent } from '../events.js';
-import { ReleaseOperator, ReleaseState, type ReleaseStatus, type ReleasePort } from '../operator.js';
+import { ReleaseOperator, ReleaseState, type ReleaseOperatorOptions, type ReleaseStatus, type ReleasePort } from '../operator.js';
 import { ReleaseDecision, releaseDecision } from '../review.js';
 import { DurableSender, type TransactionPort } from '../sender.js';
 import { OperatorStore, type TransactionRequest } from '../store.js';
@@ -45,8 +45,8 @@ function fixture(extra: Partial<WatcherConfig> = {}, protection?: GuardianPort) 
     screening: { isFlagged: () => false, describe: () => undefined },
     verifySource: async (_r, burned) => burned === null ? { status: 'pending', reason: 'Missing backing.' } : { status: 'verified', amount: burned }, ...extra });
   const protectionSubmit = vi.fn().mockResolvedValue({ ok: true });
-  const make = (s: OperatorStore) => new ReleaseOperator(new Watcher(cfg(s)), new DurableSender(s, txPort),
-    new Attestor(actors.oracle, protection ?? { address: scope.guardian, chainId: 31337, currentTier: async () => 0, submitAttestation: protectionSubmit }, { now: () => release.timestamp }), releasePort, keccak256(toHex(scope.route)));
+  const make = (s: OperatorStore, opts?: ReleaseOperatorOptions) => new ReleaseOperator(new Watcher(cfg(s)), new DurableSender(s, txPort),
+    new Attestor(actors.oracle, protection ?? { address: scope.guardian, chainId: 31337, currentTier: async () => 0, submitAttestation: protectionSubmit }, { now: () => release.timestamp }), releasePort, keccak256(toHex(scope.route)), opts);
   return { store, open, make, operator: make(store), releasePort, release, txPort, canExecute, protectionSubmit,
     setState: (s: Partial<ReleaseStatus>) => { state = { ...state, ...s }; } };
 }
@@ -130,9 +130,33 @@ describe('durable release queue', () => {
     expect((await f.make(restored).tick())[0].action).toBe('executed');
     expect(restored.transactions().filter((t) => t.id.startsWith('execute/'))).toHaveLength(1);
   });
-  it('removes explicitly invalid backing only after confirmed terminal rejection', async () => {
+  // Policy v4 (CRIT-2): REJECT is a 7-day hold, not an end. The request stays queued and unpaid.
+  it('keeps a rejected release queued through its hold and never reviews it again while the proof is still invalid', async () => {
     const f = fixture({ verifySource: async () => ({ status: 'invalid', reason: 'Invalid independent proof.' }) });
-    expect((await f.operator.tick())[0].action).toBe('rejected'); expect(f.store.loadWatcher()?.pending).toEqual([]);
+    expect((await f.operator.tick())[0]).toMatchObject({ action: 'rejected' }); expect(f.store.loadWatcher()?.pending).toHaveLength(1);
+    f.setState({ rejection: { now: 100n, until: 200n } });
+    expect((await f.operator.tick())[0]).toMatchObject({ action: 'rejected', reason: expect.stringContaining('after 200') });
+    f.setState({ rejection: { now: 200n, until: 200n } });
+    expect((await f.operator.tick())[0].action).toBe('rejected');
+    expect(f.store.transactions().filter((t) => t.id.startsWith('review/'))).toHaveLength(1);
+    expect(f.store.transactions().some((t) => t.id.startsWith('execute/'))).toBe(false);
+  });
+  it('reopens a rejected release after its hold only when fresh evidence passes, then pays its own recipient', async () => {
+    let proven = false;
+    const f = fixture({ verifySource: async (_r, burned) => proven && burned !== null
+      ? { status: 'verified', amount: burned } : { status: 'invalid', reason: 'Source adapter misread the proof.' } });
+    expect((await f.operator.tick())[0].action).toBe('rejected');
+    proven = true; f.setState({ rejection: { now: 100n, until: 200n } });
+    expect((await f.operator.tick())[0].action).toBe('rejected'); // still inside the hold
+    f.setState({ rejection: { now: 200n, until: 200n } });
+    expect((await f.operator.tick())[0].action).toBe('executed');
+    expect(f.store.transactions().map((t) => t.id)).toEqual([`review/${f.release.messageId}/1`, `review/${f.release.messageId}/2`, `execute/${f.release.messageId}/2`]);
+    expect(f.store.loadWatcher()?.pending).toEqual([]);
+  });
+  it('treats a REJECT as held forever when the port cannot say when its hold ends', async () => {
+    const f = fixture(); f.setState({ state: ReleaseState.REJECTED, nonce: 1n });
+    expect((await f.operator.tick())[0]).toMatchObject({ action: 'rejected', reason: expect.stringContaining('never') });
+    expect(f.store.transactions()).toEqual([]);
   });
   it('refuses a different on-chain recipient before any review or payout', async () => {
     const f = fixture(); f.setState({ recipient: actors.owner.address });
@@ -142,7 +166,7 @@ describe('durable release queue', () => {
     let now = 1_780_000_000n, expiresAt = 0n, tier = 0;
     let flagged: boolean | null = true;
     const submit = vi.fn(async () => { tier = 3; expiresAt = now + 86400n; return { ok: true }; });
-    const snapshot = vi.fn(async () => ({ tier, expiresAt, now, oracle: actors.oracle.address, configured: true }));
+    const snapshot = vi.fn(async () => ({ tier, expiresAt, limit: now + 259_200n, now, oracle: actors.oracle.address, configured: true }));
     const port: GuardianPort = { address: actors.oracle.address, chainId: 31337, currentTier: async () => tier,
       protectionState: snapshot, submitAttestation: submit };
     const f = fixture({ now: () => Number(now), screening: { isFlagged: () => flagged, describe: () => 'Recorded screening fixture' } }, port);
@@ -173,5 +197,45 @@ describe('durable release queue', () => {
     f.store.saveWatcher({ ...f.store.loadWatcher()!, quarantine: 'Finalized source history changed' });
     f.snapshot.mockClear();
     expect((await f.make(f.store).tick())[0].action).toBe('held'); expect(f.submit).toHaveBeenCalledTimes(1); expect(f.snapshot).not.toHaveBeenCalled();
+  });
+
+  // HIGH-1: a stuck review must not hold back route protection, which has its own relayer lane.
+  async function stuckLane(f: ReturnType<typeof fixture>) {
+    const request = { to: f.release.recipient, data: '0x00', value: '0' };
+    const raw = await f.txPort.prepare(request); f.store.saveTransaction({ id: 'review/stuck', request, raw, hash: keccak256(raw), status: 'signed' });
+    // Underpriced: nodes keep it pending and nothing lands on chain.
+    f.txPort.broadcast = vi.fn(async (bytes: Hex) => keccak256(bytes));
+    f.txPort.waitReceipt = vi.fn().mockRejectedValue(new Error('WaitForTransactionReceiptTimeoutError'));
+  }
+  it('still submits route protection while the release lane is stuck', async () => {
+    const f = fixture({ screening: { isFlagged: () => true, describe: () => 'Recorded flagged recipient' } }); await stuckLane(f);
+    expect((await f.operator.tick())[0].action).toBe('held'); expect(f.protectionSubmit).toHaveBeenCalledTimes(1);
+  });
+  it('keeps a payout waiting while the release lane is stuck, and says why', async () => {
+    const f = fixture(); await stuckLane(f); const review = vi.spyOn(f.releasePort, 'review');
+    expect((await f.operator.tick())[0]).toMatchObject({ action: 'retry', reason: expect.stringContaining('Release transactions are blocked') });
+    expect(review).not.toHaveBeenCalled(); expect(f.store.transactions()).toHaveLength(1);
+  });
+  it('turns a failed attestation into a retry instead of failing the whole tick', async () => {
+    const port: GuardianPort = { address: actors.oracle.address, chainId: 31337, currentTier: async () => 0,
+      submitAttestation: vi.fn().mockRejectedValue(new Error('attestation relayer cannot pay')) };
+    const f = fixture({ screening: { isFlagged: () => true, describe: () => 'Fixture' } }, port);
+    expect((await f.operator.tick())[0]).toMatchObject({ action: 'retry', reason: expect.stringContaining('cannot pay') });
+    expect(f.store.transactions()).toEqual([]);
+  });
+  it('re-checks held releases on a doubling interval when configured, and sleeps through a REJECT hold', async () => {
+    let now = 1_780_000_000;
+    const f = fixture({ verifySource: undefined, now: () => now });
+    const operator = f.make(f.store, { heldBackoff: { initial: 30, max: 60 } });
+    expect((await operator.tick())[0].action).toBe('held');
+    expect(await operator.tick()).toEqual([]); // snoozed for 30 s
+    now += 30; expect((await operator.tick())[0].action).toBe('held');
+    now += 30; expect(await operator.tick()).toEqual([]); // now 60 s
+    now += 30; expect((await operator.tick())[0].action).toBe('held');
+    f.setState({ state: ReleaseState.REJECTED, nonce: 1n, rejection: { now: 0n, until: 7n * 86400n } });
+    now += 60; expect((await operator.tick())[0].action).toBe('rejected');
+    now += 7 * 86400 - 1; expect(await operator.tick()).toEqual([]);
+    now += 1; expect((await operator.tick())[0].action).toBe('rejected');
+    expect(() => f.make(f.store, { heldBackoff: { initial: 0, max: 60 } })).toThrow('whole seconds');
   });
 });

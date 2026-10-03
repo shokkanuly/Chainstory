@@ -97,7 +97,13 @@ export class Attestor {
         }
         now = state.now;
         active = now < state.expiresAt ? state.tier : ResponseTier.NONE;
+        // The guardian lets the oracle alone hold a route for a bounded span (HIGH-3).
+        // Past it, signing would only revert: the owner must re-arm or resume.
+        if (state.limit <= now) return { action: 'skipped', reason: 'the oracle protection span is spent; the owner must re-arm or resume the route' };
         refresh = tier === active && state.expiresAt - now <= BigInt(this.refreshBefore);
+        if (refresh && state.limit <= state.expiresAt) {
+          return { action: 'skipped', reason: `${ResponseTier[active]} already runs to the end of the oracle's protection span` };
+        }
       } else {
         // Legacy fixture ports can escalate but cannot infer expiry/refresh.
         active = z.number().int().min(0).max(3).parse(await this.guardian.currentTier(routeId));

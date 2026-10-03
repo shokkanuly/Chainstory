@@ -2,7 +2,7 @@
 import { keccak256, parseTransaction, recoverTransactionAddress, type Hex, type TransactionSerialized } from 'viem';
 import { z } from 'zod';
 import { blockHashSchema, FinalityConflictError, type ReceiptFinality } from './finality.js';
-import { OperatorStore, transactionRequestSchema, type TransactionRequest, type TransactionState } from './store.js';
+import { MAX_REPLACEMENTS, OperatorStore, transactionRequestSchema, type TransactionRequest, type TransactionState } from './store.js';
 
 const receiptSchema = z.object({ status: z.enum(['success', 'reverted']), blockNumber: z.bigint().nonnegative(), gasUsed: z.bigint().nonnegative(), blockHash: blockHashSchema.optional(), transactionHash: blockHashSchema.optional() });
 export type ConfirmedReceipt = z.infer<typeof receiptSchema>;
@@ -14,6 +14,12 @@ interface TransactionPortBase {
   broadcast(raw: Hex): Promise<Hex>;
   receipt(hash: Hex): Promise<ConfirmedReceipt | null>;
   waitReceipt(hash: Hex): Promise<ConfirmedReceipt>;
+  /**
+   * Re-sign `previous` for the same nonce, gas and call with higher EIP-1559
+   * fees; this method MUST NOT broadcast. Absent: a transaction that does not
+   * mine is only ever rebroadcast as it is.
+   */
+  replace?(previous: Hex): Promise<Hex>;
   /** Required on real chains; absent only for local fixture ports. */
   finality?(receipt: ConfirmedReceipt): Promise<ReceiptFinality>;
   assertSafe?(): Promise<void>;
@@ -80,13 +86,83 @@ export class DurableSender {
   }
 
   private async validate(state: TransactionState): Promise<void> {
-    const raw = state.raw as Hex;
-    const tx = parseTransaction(raw);
-    const sender = await recoverTransactionAddress({ serializedTransaction: raw as TransactionSerialized });
-    if (keccak256(raw) !== state.hash || tx.chainId !== this.port.chainId || sender.toLowerCase() !== this.store.scope.sender ||
-      tx.to?.toLowerCase() !== state.request.to || (tx.data ?? '0x') !== state.request.data || (tx.value ?? 0n).toString() !== state.request.value) {
-      throw new Error('Journaled signed transaction does not match its request or deployment scope.');
+    let previous: ReturnType<typeof parseTransaction> | null = null;
+    for (const version of versions(state)) {
+      const raw = version.raw as Hex;
+      const tx = parseTransaction(raw);
+      const sender = await recoverTransactionAddress({ serializedTransaction: raw as TransactionSerialized });
+      if (keccak256(raw) !== version.hash || tx.chainId !== this.port.chainId || sender.toLowerCase() !== this.store.scope.sender ||
+        tx.to?.toLowerCase() !== state.request.to || (tx.data ?? '0x') !== state.request.data || (tx.value ?? 0n).toString() !== state.request.value) {
+        throw new Error('Journaled signed transaction does not match its request or deployment scope.');
+      }
+      // A replacement may change only its fees, and must raise both enough for nodes to accept it.
+      if (previous && (previous.type !== 'eip1559' || tx.type !== 'eip1559' || tx.nonce !== previous.nonce || tx.gas !== previous.gas ||
+        !bumped(previous.maxFeePerGas, tx.maxFeePerGas) || !bumped(previous.maxPriorityFeePerGas, tx.maxPriorityFeePerGas))) {
+        throw new Error('A replacement must re-sign the same nonce, gas and call with both fees raised by at least 10%.');
+      }
+      previous = tx;
     }
+  }
+
+  /** A receipt for any journaled version. They share one nonce, so at most one can be canonical. */
+  private async findReceipt(state: TransactionState): Promise<{ receipt: ConfirmedReceipt; hash: Hex } | null> {
+    let found: { receipt: ConfirmedReceipt; hash: Hex } | null = null;
+    for (const version of versions(state)) {
+      const hash = version.hash as Hex;
+      const answer = await this.port.receipt(hash);
+      if (!answer) continue;
+      const receipt = receiptSchema.parse(answer);
+      if (receipt.transactionHash && receipt.transactionHash !== hash) throw new Error('RPC receipt belongs to another transaction.');
+      if (this.port.finality && await this.port.finality(receipt) === 'orphaned') continue;
+      if (found) throw new Error('RPC reports receipts for two versions of one nonce; reconcile against a healthy endpoint.');
+      found = { receipt, hash };
+    }
+    return found;
+  }
+
+  /** Only a receipt is success. Errors the operator must act on are raised; the rest are waited out. */
+  private async broadcast(state: TransactionState, version: { raw: string; hash: string }): Promise<'sent' | 'underpriced'> {
+    try {
+      const broadcastHash = await this.port.broadcast(version.raw as Hex);
+      if (broadcastHash.toLowerCase() !== version.hash.toLowerCase()) throw new Error('RPC returned a different transaction hash.');
+      return 'sent';
+    } catch (error) {
+      const text = errorText(error);
+      if (INSUFFICIENT_FUNDS.test(text)) {
+        throw new Error(`Sender ${this.port.sender} cannot pay for ${state.id}. Fund it, then recover; the journaled transaction is kept.`, { cause: error });
+      }
+      // Already-known/nonce-too-low/lost response is not success. Wait for a journaled hash.
+      return UNDERPRICED.test(text) ? 'underpriced' : 'sent';
+    }
+  }
+
+  /**
+   * Broadcast the newest version and wait for it. If it is priced out or not
+   * mined in time, journal a fee-bumped re-signing first, then broadcast that
+   * and leave it to the next recovery: one bump per call keeps each call bounded.
+   */
+  private async publish(state: TransactionState): Promise<{ receipt: ConfirmedReceipt; hash: Hex }> {
+    const latest = versions(state).at(-1) ?? { raw: state.raw, hash: state.hash };
+    let stuck: unknown = new Error(`${state.id} is priced below what nodes accept.`);
+    if (await this.broadcast(state, latest) === 'sent') {
+      try { return { receipt: await this.port.waitReceipt(latest.hash as Hex), hash: latest.hash as Hex }; }
+      catch (error) { stuck = error; }
+      // An earlier version can be mined while we wait on the newest.
+      const earlier = await this.findReceipt(state);
+      if (earlier) return earlier;
+    }
+    if (!this.port.replace) throw stuck;
+    if ((state.replacements ?? []).length >= MAX_REPLACEMENTS) {
+      throw new Error(`${state.id} is still unmined after ${MAX_REPLACEMENTS} fee bumps; check the relayer and fee ceiling.`, { cause: stuck });
+    }
+    await this.port.assertSafe?.();
+    const raw = await this.port.replace(latest.raw as Hex);
+    const replaced: TransactionState = { ...state, replacements: [...(state.replacements ?? []), { raw, hash: keccak256(raw) }] };
+    await this.validate(replaced);
+    this.store.saveTransaction(replaced); // no network send before this commit
+    await this.port.assertSafe?.();
+    await this.broadcast(replaced, { raw, hash: keccak256(raw) });
+    throw new Error(`${state.id} was not mined in time; a fee-bumped replacement is journaled and broadcast. Recover to wait for it.`, { cause: stuck });
   }
 
   private async conflict(message: string): Promise<never> {
@@ -101,45 +177,60 @@ export class DurableSender {
       if (!this.port.finality) return state; // In-process EVM fixtures only.
       if (!state.block || !state.blockHash || !state.gas) throw new Error('Terminal receipt has no finality anchor.');
       const finality = await this.port.finality({ status: state.status === 'confirmed' ? 'success' : 'reverted',
-        blockNumber: BigInt(state.block), blockHash: state.blockHash, gasUsed: BigInt(state.gas), transactionHash: state.hash as Hex });
+        blockNumber: BigInt(state.block), blockHash: state.blockHash, gasUsed: BigInt(state.gas), transactionHash: (state.minedHash ?? state.hash) as Hex });
       if (finality === 'orphaned') return this.conflict('A finalized transaction block changed; operator reconciliation is required.');
       if (finality !== 'finalized') throw new Error('RPC finality is behind an already finalized receipt.');
       return state;
     }
-    const hash = state.hash as Hex;
-    let receipt = await this.port.receipt(hash);
-    if (receipt) {
-      receipt = receiptSchema.parse(receipt);
-      if (receipt.transactionHash && receipt.transactionHash !== hash) throw new Error('RPC receipt belongs to another transaction.');
-      if (this.port.finality && await this.port.finality(receipt) === 'orphaned') receipt = null;
-    }
+    let found = await this.findReceipt(state);
     if (state.status === 'included') {
       if (!this.port.finality || !state.block || !state.blockHash || !state.gas || !state.receiptStatus) throw new Error('Included receipt has no finality anchor.');
+      const mined = (state.minedHash ?? state.hash) as Hex;
       const oldFinality = await this.port.finality({ status: state.receiptStatus, blockNumber: BigInt(state.block),
-        blockHash: state.blockHash, gasUsed: BigInt(state.gas), transactionHash: hash });
-      const changed = !receipt || receipt.blockHash !== state.blockHash || receipt.blockNumber.toString() !== state.block;
+        blockHash: state.blockHash, gasUsed: BigInt(state.gas), transactionHash: mined });
+      const changed = !found || found.hash !== mined || found.receipt.blockHash !== state.blockHash || found.receipt.blockNumber.toString() !== state.block;
       if (changed && oldFinality !== 'orphaned') throw new Error('RPC receipt is missing or inconsistent for a canonical inclusion; retry a healthy endpoint.');
       if (oldFinality === 'orphaned') state = this.store.reopenTransaction(state.id);
     }
-    if (!receipt) {
+    if (!found) {
       await this.port.assertSafe?.(); // Outside the catch: safety failures must stop publication.
-      try {
-        const broadcastHash = await this.port.broadcast(state.raw as Hex);
-        if (broadcastHash.toLowerCase() !== hash.toLowerCase()) throw new Error('RPC returned a different transaction hash.');
-      } catch {
-        // Already-known/nonce-too-low/lost response is not success. Wait for the original hash.
-      }
-      receipt = await this.port.waitReceipt(hash);
+      found = await this.publish(state);
     }
-    const checked = receiptSchema.parse(receipt);
+    const { hash } = found;
+    const checked = receiptSchema.parse(found.receipt);
     if (checked.transactionHash && checked.transactionHash !== hash) throw new Error('RPC receipt belongs to another transaction.');
     if (this.port.finality && (!checked.blockHash || !checked.transactionHash)) throw new Error('Receipt has no canonical transaction/block anchor.');
     const finality = this.port.finality ? z.enum(['pending', 'finalized', 'orphaned']).parse(await this.port.finality(checked)) : 'finalized';
     if (finality === 'orphaned') throw new Error('Transaction receipt is orphaned; retry canonical reconciliation.');
     const result: TransactionState = { ...state, status: finality === 'pending' ? 'included' : checked.status === 'success' ? 'confirmed' : 'reverted',
-      receiptStatus: checked.status, blockHash: checked.blockHash,
+      receiptStatus: checked.status, blockHash: checked.blockHash, minedHash: hash === state.hash ? undefined : hash,
       block: checked.blockNumber.toString(), gas: checked.gasUsed.toString() };
     this.store.saveTransaction(result);
     return result;
   }
+}
+
+/** The original signed bytes, then each journaled replacement. */
+function versions(state: TransactionState): { raw: string; hash: string }[] {
+  return [{ raw: state.raw, hash: state.hash }, ...(state.replacements ?? [])];
+}
+
+/** Nodes accept a same-nonce replacement only when it pays at least 10% more. */
+const bumped = (before: bigint | undefined, after: bigint | undefined) =>
+  before !== undefined && after !== undefined && after * 100n >= before * 110n;
+
+const INSUFFICIENT_FUNDS = /insufficient funds|InsufficientFundsError|exceeds the balance of the account/i;
+const UNDERPRICED = /underpriced|fee too low|FeeCapTooLowError|less than (the )?block base fee|fee cap less than/i;
+
+/** RPC clients wrap node errors; read the whole chain, bounded. */
+function errorText(error: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; current && depth < 6; depth++) {
+    if (typeof current !== 'object') { parts.push(String(current)); break; }
+    const e = current as { name?: unknown; message?: unknown; details?: unknown; shortMessage?: unknown; cause?: unknown };
+    for (const part of [e.name, e.shortMessage, e.message, e.details]) if (typeof part === 'string') parts.push(part);
+    current = e.cause;
+  }
+  return parts.join('\n');
 }

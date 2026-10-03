@@ -37,7 +37,9 @@ export function independentCctpRpc(primary: CctpRpc, verifiers: CctpRpc[] = [], 
 export async function createCctpRpcOperator(cfg: TestnetConfig, destination: Clients, deployment: RpcDestination,
   source: PublicClient<Transport, Chain>, sourceStartBlock: bigint, stateFile: string,
   locate: (messageId: Hex) => Promise<unknown | null>, opts: {
-    baseline: RouteBaseline | null; contractFacts?: (address: Hex) => Promise<ContractRiskSummary | null>;
+    /** 'rolling': recomputed each tick from finalized CCTP burns into this escrow (HIGH-2). */
+    baseline: RouteBaseline | null | 'rolling'; baselineHours?: number;
+    contractFacts?: (address: Hex) => Promise<ContractRiskSummary | null>;
     /** Independent verifier RPCs for source proofs; without them one provider is trusted. */
     verifiers?: { source?: CctpRpc[]; destination?: CctpRpc[]; quorum?: number };
   }) {

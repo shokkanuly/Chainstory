@@ -23,7 +23,8 @@ async function setup() {
     currentTier: (id) => vm.read<ResponseTier>('currentTier', [id]),
     protectionState: async (id) => {
       const r = await vm.read<{ tier: number; tierExpiresAt: bigint; windowSeconds: bigint }>('getRoute', [id]);
-      return { tier: r.tier, expiresAt: r.tierExpiresAt, now: vm.now, configured: r.windowSeconds > 0n, oracle: await vm.read('oracle') };
+      return { tier: r.tier, expiresAt: r.tierExpiresAt, limit: await vm.read('protectionLimit', [id]), now: vm.now,
+        configured: r.windowSeconds > 0n, oracle: await vm.read('oracle') };
     },
     submitAttestation: vi.fn((a, signature) => vm.send(actors.relayer, 'submitAttestation', [a.routeId, a.riskScore, a.validUntil, a.nonce, signature])),
   };
@@ -79,13 +80,42 @@ describe('continuous protection refresh', () => {
     const f = await setup();
     f.port.protectionState = async () => {
       if (kind === 'offline') throw new Error('RPC unavailable');
-      return kind === 'malformed' ? { tier: 99 } : { tier: 0, expiresAt: 0n, now: f.vm.now, oracle: actors.oracle.address, configured: false };
+      return kind === 'malformed' ? { tier: 99 } : { tier: 0, expiresAt: 0n, limit: f.vm.now + 259_200n, now: f.vm.now, oracle: actors.oracle.address, configured: false };
     };
     expect((await f.attestor.handle(ROUTE, assessment(0.85))).action).toBe('unavailable'); expect(f.sign).not.toHaveBeenCalled();
   });
   it('does not fall back to a legacy tier read when the protection snapshot fails', async () => {
     const f = await setup(); const current = vi.spyOn(f.port, 'currentTier'); f.port.protectionState = async () => { throw new Error('snapshot'); };
     await f.attestor.handle(ROUTE, assessment(0.85)); expect(current).not.toHaveBeenCalled(); expect(f.sign).not.toHaveBeenCalled();
+  });
+  // HIGH-3: the oracle alone may hold a route for 72 hours, then needs a 24-hour gap or an owner re-arm.
+  it('refreshes up to the 72-hour span, then stops signing until the cooldown ends', async () => {
+    const f = await setup(); const hour = 3600;
+    expect((await f.attestor.handle(ROUTE, assessment(0.95))).action).toBe('submitted');
+    for (let i = 0; i < 3; i++) {
+      f.vm.warp(23 * hour);
+      expect(await f.attestor.handle(ROUTE, assessment(0.95))).toMatchObject({ action: 'submitted', purpose: 'refresh' });
+    }
+    const start = f.vm.now - 69n * 3600n;
+    expect((await f.vm.read<{ tierExpiresAt: bigint }>('getRoute', [ROUTE])).tierExpiresAt).toBe(start + 72n * 3600n);
+    f.sign.mockClear();
+    f.vm.warp(2 * hour);
+    expect(await f.attestor.handle(ROUTE, assessment(0.95))).toMatchObject({ action: 'skipped', reason: expect.stringContaining('end of the oracle') });
+    f.vm.warp(2 * hour);
+    expect(await f.vm.read('currentTier', [ROUTE])).toBe(0);
+    expect(await f.attestor.handle(ROUTE, assessment(0.95))).toMatchObject({ action: 'skipped', reason: expect.stringContaining('span is spent') });
+    expect(f.sign).not.toHaveBeenCalled();
+    f.vm.warp(23 * hour); // 96 h: span plus cooldown
+    expect(await f.attestor.handle(ROUTE, assessment(0.95))).toMatchObject({ action: 'submitted', purpose: 'escalate' });
+    expect(await f.vm.read('currentTier', [ROUTE])).toBe(3);
+  });
+  it('signs again at once after the owner re-arms a spent span', async () => {
+    const f = await setup();
+    await f.attestor.handle(ROUTE, assessment(0.85)); f.vm.warp(73 * 3600);
+    expect((await f.attestor.handle(ROUTE, assessment(0.85))).action).toBe('skipped');
+    await f.vm.send(actors.owner, 'rearmProtection', [ROUTE]);
+    expect(await f.attestor.handle(ROUTE, assessment(0.85))).toMatchObject({ action: 'submitted', purpose: 'escalate' });
+    expect(await f.vm.read('currentTier', [ROUTE])).toBe(2);
   });
   it('validates refresh buffer and signature lifetime before creating a signer', async () => {
     const f = await setup();
@@ -101,19 +131,21 @@ describe('guardian RPC protection snapshot', () => {
     return { getBlock: vi.fn(async (_args: { blockTag: 'latest' } | { blockNumber: bigint }) => ({ number: 100n, hash,
       parentHash: toHex(0, { size: 32 }), timestamp: 10_000n })),
       readRoute: vi.fn(async (_block: bigint) => ({ tier: 2, tierExpiresAt: 11_000n, windowSeconds: 3600n })),
-      readOracle: vi.fn(async (_block: bigint) => actors.oracle.address), minimumBlock: () => 0n };
+      readOracle: vi.fn(async (_block: bigint) => actors.oracle.address),
+      readLimit: vi.fn(async (_block: bigint) => 20_000n), minimumBlock: () => 0n };
   }
   it('reads all state at one hash-checked block and uses its clock', async () => {
-    const r = reader(); expect(await readGuardianProtection(r)).toMatchObject({ tier: 2, expiresAt: 11_000n, now: 10_000n, configured: true });
-    expect(r.readRoute).toHaveBeenCalledWith(100n); expect(r.readOracle).toHaveBeenCalledWith(100n);
+    const r = reader(); expect(await readGuardianProtection(r)).toMatchObject({ tier: 2, expiresAt: 11_000n, limit: 20_000n, now: 10_000n, configured: true });
+    expect(r.readRoute).toHaveBeenCalledWith(100n); expect(r.readOracle).toHaveBeenCalledWith(100n); expect(r.readLimit).toHaveBeenCalledWith(100n);
   });
-  it.each(['hash', 'number', 'time', 'route', 'oracle', 'lag'])('refuses inconsistent or unavailable %s', async (kind) => {
+  it.each(['hash', 'number', 'time', 'route', 'oracle', 'limit', 'lag'])('refuses inconsistent or unavailable %s', async (kind) => {
     const r = reader();
     if (kind === 'hash') r.getBlock.mockResolvedValueOnce({ number: 100n, hash: toHex(2, { size: 32 }), parentHash: hash, timestamp: 10_000n });
     if (kind === 'number') r.getBlock.mockResolvedValueOnce({ number: 101n, hash, parentHash: hash, timestamp: 10_000n });
     if (kind === 'time') r.getBlock.mockResolvedValueOnce({ number: 100n, hash, parentHash: hash, timestamp: -1n });
     if (kind === 'route') r.readRoute.mockResolvedValueOnce({ tier: 99, tierExpiresAt: 11_000n, windowSeconds: 3600n });
     if (kind === 'oracle') r.readOracle.mockResolvedValueOnce('0x00');
+    if (kind === 'limit') r.readLimit.mockRejectedValueOnce(new Error('v3 guardian has no protectionLimit'));
     if (kind === 'lag') r.minimumBlock = () => 101n;
     await expect(readGuardianProtection(r)).rejects.toThrow();
   });

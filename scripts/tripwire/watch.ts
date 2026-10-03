@@ -8,6 +8,12 @@ import type { OperatorStore, WatcherState } from './store.js';
 import { FinalityConflictError } from './finality.js';
 import type { sourceVerifierScopeSchema } from './sourceProof.js';
 import { routePolicySchema, type RoutePolicy } from './settlement.js';
+import type { BaselineSample } from './baseline.js';
+
+/** Recomputes the route baseline each tick from finalized source burns (HIGH-2). */
+export type BaselineProvider = (samples: readonly BaselineSample[], now: number) => Promise<RouteBaseline | null> | RouteBaseline | null;
+/** Explorer lookups are read-only and slow: run this many at once, ahead of scoring. */
+const LOOKUP_CONCURRENCY = 4;
 
 export interface SourceAdapter {
   scope: z.infer<typeof sourceVerifierScopeSchema>;
@@ -23,7 +29,8 @@ export interface WatcherConfig {
   bridge: Hex;
   ingress: LogFeed<BurnEvent>;
   egress: LogFeed<ReleaseEvent>;
-  baseline: RouteBaseline | null;
+  /** A fixed baseline, a provider read on every tick, or null: without one every payout holds. */
+  baseline: RouteBaseline | null | BaselineProvider;
   screening: ScreeningSource;
   contractFacts?: (address: Hex) => Promise<ContractRiskSummary | null>;
   now: () => number;
@@ -31,7 +38,7 @@ export interface WatcherConfig {
   verifySource?: (release: ReleaseEvent, observedBurn: bigint | null) => Promise<SourceEvidence>;
   /** Authenticated source adapters also guard previously accepted proof anchors. */
   sourceAdapter?: SourceAdapter;
-  /** Exact same-asset fee/rounding tolerance. Demo default mirrors the old 1% rule. */
+  /** How far under its proven burn a payout may come (fees, rounding). Default 0: exact. Never over. */
   payoutToleranceBps?: bigint;
   /** Operator-only durable state. Both feeds must support checkpoint/restore. */
   store?: OperatorStore;
@@ -67,8 +74,15 @@ export class Watcher {
   private conflictingReleases = new Set<Hex>();
   private lock: Promise<unknown> = Promise.resolve();
   private quarantine: string | null = null;
+  /** Held work the operator asked to re-check later, by chain-clock second. In memory: a restart re-checks everything. */
+  private snoozed = new Map<Hex, number>();
 
   get quarantineReason(): string | null { return this.quarantine; }
+
+  /** Skip a pending release's (costly) re-verification for `seconds` of chain time; it stays pending and unpaid meanwhile. */
+  snooze(messageId: Hex, seconds: number): void {
+    if (this.pending.has(messageId) && seconds > 0) this.snoozed.set(messageId, this.cfg.now() + seconds); else this.snoozed.delete(messageId);
+  }
 
   constructor(private cfg: WatcherConfig) {
     if (cfg.sourceAdapter && cfg.verifySource) throw new Error('Configure one source verifier.');
@@ -126,6 +140,7 @@ export class Watcher {
       if (this.quarantine) throw new FinalityConflictError('Cannot acknowledge work while the operator is quarantined.');
       const previous = this.snapshot();
       this.pending.delete(messageId);
+      this.snoozed.delete(messageId);
       this.completed.add(messageId);
       try { this.persist(); } catch (error) { this.restore(previous); throw error; }
     });
@@ -159,8 +174,12 @@ export class Watcher {
       }
     }
 
+    const now = this.cfg.now();
+    const releases = [...this.pending.values()].filter((r) => this.quarantine || !((this.snoozed.get(r.messageId) ?? 0) > now));
+    const baseline = await this.baselineNow(now);
+    const facts = await this.lookupRecipients(releases);
     const out: Observation[] = [];
-    for (const release of this.pending.values()) {
+    for (const release of releases) {
       const observedBurn = this.burns.get(release.messageId)?.amount ?? null;
       let source: SourceEvidence;
       try {
@@ -185,18 +204,14 @@ export class Watcher {
         amountUsd: usd(release.amount), timestamp: release.timestamp, from: this.cfg.bridge, to: release.recipient,
         claimedPayoutUsd: usd(release.amount), provenBurnUsd: burned === null ? null : usd(burned),
         backing: burned === null ? undefined : {
-          burned, claimed: release.amount, toleranceBps: this.cfg.payoutToleranceBps ?? 100n,
+          burned, claimed: release.amount, toleranceBps: this.cfg.payoutToleranceBps ?? 0n,
         },
       };
-      let lookupUnavailable = false;
-      let targetContract: ContractRiskSummary | undefined;
-      try {
-        targetContract = this.quarantine ? undefined : (await this.cfg.contractFacts?.(release.recipient)) ?? undefined;
-      } catch {
-        lookupUnavailable = true;
-      }
+      const lookup = this.quarantine ? undefined : facts.get(release.messageId);
+      const lookupUnavailable = lookup === 'unavailable';
+      const targetContract = lookup === 'unavailable' ? undefined : lookup ?? undefined;
       let assessment = scoreTransfer({
-        transfer, baseline: this.cfg.baseline, recent: this.recent,
+        transfer, baseline, recent: this.recent,
         screening: this.cfg.screening, now: this.cfg.now(), targetContract,
       });
       // A recipient lookup failure cannot hide a proven mismatch. Missing source
@@ -218,6 +233,33 @@ export class Watcher {
     })) : out;
   }
 
+  /** The route's baseline for this tick. A provider that fails yields none, so payouts hold. */
+  private async baselineNow(now: number): Promise<RouteBaseline | null> {
+    const configured = this.cfg.baseline;
+    if (typeof configured !== 'function') return configured;
+    if (this.quarantine) return null;
+    const samples = [...this.burns.values()].filter((b) => !this.conflictingBurns.has(b.messageId))
+      .map((b) => ({ amount: b.amount, timestamp: b.timestamp }));
+    try { return await configured(samples, now); } catch { return null; }
+  }
+
+  /** Recipient facts for every release, a few lookups at a time. A failed lookup is recorded, not thrown. */
+  private async lookupRecipients(releases: ReleaseEvent[]): Promise<Map<Hex, ContractRiskSummary | null | 'unavailable'>> {
+    const facts = new Map<Hex, ContractRiskSummary | null | 'unavailable'>();
+    const lookup = this.cfg.contractFacts;
+    if (!lookup || this.quarantine) return facts;
+    let next = 0;
+    const worker = async () => {
+      while (next < releases.length) {
+        const release = releases[next++];
+        try { facts.set(release.messageId, (await lookup(release.recipient)) ?? null); }
+        catch { facts.set(release.messageId, 'unavailable'); }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(LOOKUP_CONCURRENCY, releases.length) }, worker));
+    return facts;
+  }
+
   private snapshot(): WatcherState {
     return {
       ingressCursor: this.cfg.ingress.checkpoint?.() ?? '0', egressCursor: this.cfg.egress.checkpoint?.() ?? '0',
@@ -233,6 +275,7 @@ export class Watcher {
     this.cfg.ingress.restore?.(state.ingressCursor); this.cfg.egress.restore?.(state.egressCursor);
     this.burns = new Map(state.burns.map((b) => [b.messageId, b]));
     this.pending = new Map(state.pending.map((r) => [r.messageId, r]));
+    for (const id of this.snoozed.keys()) if (!this.pending.has(id)) this.snoozed.delete(id);
     this.completed = new Set(state.completed as Hex[]);
     this.conflictingBurns = new Set(state.conflictingBurns as Hex[]);
     this.conflictingReleases = new Set(state.conflictingReleases as Hex[]);

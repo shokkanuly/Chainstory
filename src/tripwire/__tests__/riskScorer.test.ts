@@ -70,8 +70,9 @@ describe('proof/payout mismatch', () => {
     expect(res.signals.find((s) => s.id === 'proof_payout_mismatch')?.deterministic).toBe(true);
   });
 
+  // One-sided (MED-4): a payout may come in under its burn by the tolerance, never over it.
   it.each([
-    [99_000n, 0], [101_000n, 0], [98_999n, 1], [101_001n, 1],
+    [99_000n, 0], [100_000n, 0], [98_999n, 1], [100_001n, 1], [101_000n, 1],
   ])('compares exact backing at the tolerance boundary (%s base units)', (claimed, expected) => {
     const res = score({
       transfer: transfer({ backing: { burned: 100_000n, claimed: BigInt(claimed), toleranceBps: 100n } }),

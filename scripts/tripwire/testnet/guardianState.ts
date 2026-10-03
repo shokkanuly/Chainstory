@@ -6,6 +6,7 @@ interface GuardianStateReader {
   getBlock(args: { blockTag: 'latest' } | { blockNumber: bigint }): Promise<unknown>;
   readRoute(blockNumber: bigint): Promise<unknown>;
   readOracle(blockNumber: bigint): Promise<unknown>;
+  readLimit(blockNumber: bigint): Promise<unknown>;
   /** Do not reconcile against a head behind an already observed write receipt. */
   minimumBlock?(): bigint;
 }
@@ -18,10 +19,11 @@ export async function readGuardianProtection(reader: GuardianStateReader): Promi
   if (head.number < (reader.minimumBlock?.() ?? 0n)) throw new Error('Guardian RPC is behind an observed transaction.');
   const route = routeSchema.parse(await reader.readRoute(head.number));
   const oracle = await reader.readOracle(head.number);
+  const limit = await reader.readLimit(head.number);
   const checked = blockHeaderSchema.parse(await reader.getBlock({ blockNumber: head.number }));
   if (checked.number !== head.number || checked.hash !== head.hash || checked.timestamp !== head.timestamp) {
     throw new Error('Guardian state block changed while reading protection.');
   }
-  return guardianProtectionSchema.parse({ tier: route.tier, expiresAt: route.tierExpiresAt, now: head.timestamp,
+  return guardianProtectionSchema.parse({ tier: route.tier, expiresAt: route.tierExpiresAt, limit, now: head.timestamp,
     configured: route.windowSeconds > 0n, oracle });
 }

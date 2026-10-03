@@ -33,17 +33,29 @@ export const transactionRequestSchema = z.object({
   to: address, data: z.string().regex(/^0x([0-9a-fA-F]{2})*$/), value: decimal,
 }).strict();
 export type TransactionRequest = z.infer<typeof transactionRequestSchema>;
+const rawTransaction = z.string().regex(/^0x([0-9a-fA-F]{2})+$/);
+/** Fee bumps one journaled nonce may take before a human looks at it. */
+export const MAX_REPLACEMENTS = 8;
 export const transactionStateSchema = z.object({
   id: z.string().min(1).max(512), request: transactionRequestSchema,
-  raw: z.string().regex(/^0x([0-9a-fA-F]{2})+$/), hash,
+  raw: rawTransaction, hash,
+  /** Same nonce and call re-signed with higher fees, oldest first. Append-only; journaled before broadcast. */
+  replacements: z.array(z.object({ raw: rawTransaction, hash }).strict()).max(MAX_REPLACEMENTS).optional(),
+  /** The replacement the receipt belongs to; absent when it is the original. */
+  minedHash: hash.optional(),
   status: z.enum(['signed', 'included', 'confirmed', 'reverted']),
   block: decimal.optional(), gas: decimal.optional(),
   blockHash: blockHashSchema.optional(), receiptStatus: z.enum(['success', 'reverted']).optional(),
-  orphanedReceipts: z.array(z.object({ block: decimal, blockHash: blockHashSchema, receiptStatus: z.enum(['success', 'reverted']) })).optional(),
+  orphanedReceipts: z.array(z.object({ block: decimal, blockHash: blockHashSchema, receiptStatus: z.enum(['success', 'reverted']),
+    minedHash: hash.optional() }).strict()).optional(),
 }).strict().refine((v) => v.status === 'signed'
-  ? v.block === undefined && v.gas === undefined && v.blockHash === undefined && v.receiptStatus === undefined
+  ? v.block === undefined && v.gas === undefined && v.blockHash === undefined && v.receiptStatus === undefined && v.minedHash === undefined
   : v.block !== undefined && v.gas !== undefined && (v.status !== 'included' || (v.blockHash !== undefined && v.receiptStatus !== undefined)),
-  'Terminal transaction state requires its receipt.');
+  'Terminal transaction state requires its receipt.')
+  .refine((v) => {
+    const hashes = [v.hash, ...(v.replacements ?? []).map((r) => r.hash)];
+    return new Set(hashes).size === hashes.length && (v.minedHash === undefined || hashes.slice(1).includes(v.minedHash));
+  }, 'Transaction versions must be distinct, and a receipt must belong to one of them.');
 export type TransactionState = z.infer<typeof transactionStateSchema>;
 const encode = (value: unknown) => JSON.stringify(value, (_k, v: unknown) => typeof v === 'bigint' ? v.toString() : v);
 
@@ -156,6 +168,8 @@ export class OperatorStore {
       [state.pending, this.scope.chainId, this.scope.vault, state.egressCursor], [state.history, this.scope.chainId, this.scope.vault, state.egressCursor]] as const) {
       const checkpoint = finalizedCheckpointSchema.parse(JSON.parse(cursor));
       if (checkpoint.chainId !== chainId || checkpoint.address !== address) throw new Error('Finalized checkpoint deployment scope does not match.');
+      // A payout's backing must be final; only release requests may be read at the safe head.
+      if (events === state.burns && checkpoint.policy !== 'finalized') throw new Error('Source events must come from finalized blocks.');
       for (const event of events) {
         if (!event.origin || event.origin.chainId !== chainId || event.origin.address !== address ||
           event.origin.blockNumber < BigInt(checkpoint.from) || event.origin.blockNumber >= BigInt(checkpoint.next)) {
@@ -181,6 +195,13 @@ export class OperatorStore {
     if (previous && (previous.raw !== checked.raw || previous.hash !== checked.hash || encode(previous.request) !== encode(checked.request))) {
       throw new Error('Cannot replace a journaled transaction.');
     }
+    const before = previous?.replacements ?? [], after = checked.replacements ?? [];
+    if (before.length > after.length || before.some((r, i) => r.raw !== after[i].raw || r.hash !== after[i].hash)) {
+      throw new Error('Journaled replacements are append-only.');
+    }
+    if (after.length > before.length && (previous?.status !== 'signed' || checked.status !== 'signed')) {
+      throw new Error('Only a journaled transaction with no known inclusion can be replaced.');
+    }
     if (previous && (previous.status === 'confirmed' || previous.status === 'reverted') && encode(previous) !== encode(checked)) throw new Error('Cannot change a terminal receipt.');
     if (previous?.status === 'included' && checked.status === 'signed') throw new Error('Use explicit reorg reconciliation to reopen an included transaction.');
     this.db.prepare('INSERT INTO transactions VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value')
@@ -194,7 +215,8 @@ export class OperatorStore {
       throw new Error('Only an unfinalized included transaction can be reopened.');
     }
     const state = transactionStateSchema.parse({ ...previous, status: 'signed', block: undefined, gas: undefined, blockHash: undefined, receiptStatus: undefined,
-      orphanedReceipts: [...(previous.orphanedReceipts ?? []), { block: previous.block, blockHash: previous.blockHash, receiptStatus: previous.receiptStatus }] });
+      minedHash: undefined, orphanedReceipts: [...(previous.orphanedReceipts ?? []), { block: previous.block, blockHash: previous.blockHash,
+        receiptStatus: previous.receiptStatus, minedHash: previous.minedHash }] });
     this.db.prepare('UPDATE transactions SET value=? WHERE id=?').run(encode(state), id);
     return state;
   }

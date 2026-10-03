@@ -91,9 +91,10 @@ export function proofPayoutMismatch(
 ): RiskSignal | null {
   if (transfer.backing) {
     const { burned, claimed, toleranceBps } = transfer.backing;
-    const gap = claimed > burned ? claimed - burned : burned - claimed;
-    const matches = burned > 0n && claimed > 0n && toleranceBps >= 0n && toleranceBps <= 10_000n &&
-      gap * 10_000n <= burned * toleranceBps;
+    // One-sided: a payout may come in under its burn (fees, rounding) by the
+    // route's tolerance, and never above it by even one base unit.
+    const matches = burned > 0n && claimed > 0n && claimed <= burned && toleranceBps >= 0n && toleranceBps <= 10_000n &&
+      (burned - claimed) * 10_000n <= burned * toleranceBps;
     return {
       id: 'proof_payout_mismatch', score: matches ? 0 : 1, weight: 0.4,
       deterministic: !matches,

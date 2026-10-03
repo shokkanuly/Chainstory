@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { keccak256, type Hex } from 'viem';
+import { keccak256, parseTransaction, type Hex } from 'viem';
 import { actors } from '../../../src/tripwire/guardianVM.js';
-import { OperatorStore, type TransactionRequest } from '../store.js';
+import { MAX_REPLACEMENTS, OperatorStore, type TransactionRequest } from '../store.js';
 import { DurableSender, type TransactionPort } from '../sender.js';
 
 const cleanups: (() => void)[] = [];
@@ -143,5 +143,108 @@ describe('durable transaction sender', () => {
     const { store, port, sender } = fixture();
     store.saveTransaction({ id: 'review', request, raw, hash: `0x${'0'.repeat(64)}`, status: 'signed' });
     await expect(sender.recover()).rejects.toThrow('does not match'); expect(port.broadcast).not.toHaveBeenCalled();
+  });
+});
+
+/** The same nonce, gas and call, re-signed with both fees multiplied. */
+async function resign(previous: Hex, multiply: (fee: bigint) => bigint, change: Partial<{ nonce: number; data: Hex }> = {}): Promise<Hex> {
+  const tx = parseTransaction(previous);
+  if (tx.type !== 'eip1559' || tx.nonce === undefined) throw new Error('fixture expects EIP-1559');
+  return actors.owner.signTransaction({ chainId: 31337, type: 'eip1559', nonce: change.nonce ?? tx.nonce, gas: tx.gas,
+    maxFeePerGas: multiply(tx.maxFeePerGas ?? 0n), maxPriorityFeePerGas: multiply(tx.maxPriorityFeePerGas ?? 0n),
+    to: tx.to, data: change.data ?? tx.data, value: tx.value ?? 0n });
+}
+
+describe('fee-bumped replacement', () => {
+  const mined = (transactionHash: Hex) => ({ status: 'success' as const, blockNumber: 100n, gasUsed: 21_000n, transactionHash });
+  function stuck(mode: 'local' | 'finalized' = 'local') {
+    const f = fixture(mode);
+    vi.mocked(f.port.waitReceipt).mockRejectedValue(new Error('WaitForTransactionReceiptTimeoutError'));
+    f.port.replace = vi.fn((previous: Hex) => resign(previous, (fee) => fee * 2n));
+    return f;
+  }
+
+  it('journals a re-signed copy with higher fees before broadcasting it, then accepts its receipt', async () => {
+    const { store, port, sender } = stuck();
+    vi.mocked(port.broadcast).mockImplementation(async (bytes) => {
+      // Write-ahead: whatever is broadcast is already in the journal.
+      const journaled = store.transaction('review');
+      expect([journaled?.raw, ...(journaled?.replacements ?? []).map((r) => r.raw)]).toContain(bytes); return keccak256(bytes);
+    });
+    await expect(sender.send('review', request)).rejects.toThrow('fee-bumped');
+    const bumped = store.transaction('review')?.replacements?.[0];
+    if (!bumped) throw new Error('no replacement journaled');
+    expect(parseTransaction(bumped.raw as Hex)).toMatchObject({ nonce: 0, maxFeePerGas: 2n, maxPriorityFeePerGas: 2n, data: request.data });
+    expect(port.broadcast).toHaveBeenLastCalledWith(bumped.raw);
+    // The next recovery waits for the newest version and records which one was mined.
+    vi.mocked(port.waitReceipt).mockResolvedValue(mined(bumped.hash as Hex));
+    expect(await sender.recover()).toMatchObject([{ status: 'confirmed', minedHash: bumped.hash }]);
+    expect(port.prepare).toHaveBeenCalledTimes(1);
+  });
+  it('accepts a receipt for an earlier version that was mined while it waited on a newer one', async () => {
+    const { store, port, sender } = stuck();
+    await expect(sender.send('review', request)).rejects.toThrow('fee-bumped');
+    vi.mocked(port.receipt).mockImplementation(async (h) => h === hash ? mined(hash) : null);
+    const [settled] = await sender.recover();
+    expect(settled).toMatchObject({ status: 'confirmed' }); expect(settled.minedHash).toBeUndefined();
+    expect(store.transaction('review')?.replacements).toHaveLength(1);
+  });
+  it('bumps at once when a node refuses the transaction as underpriced, without waiting', async () => {
+    const { store, port, sender } = stuck();
+    vi.mocked(port.broadcast).mockRejectedValueOnce(new Error('replacement transaction underpriced'));
+    await expect(sender.send('review', request)).rejects.toThrow('fee-bumped');
+    expect(port.waitReceipt).not.toHaveBeenCalled(); expect(store.transaction('review')?.replacements).toHaveLength(1);
+  });
+  it('surfaces an unfunded relayer instead of waiting on a broadcast that never happened', async () => {
+    const { store, port, sender } = stuck();
+    vi.mocked(port.broadcast).mockRejectedValue(Object.assign(new Error('RPC error'), { cause: new Error('insufficient funds for gas * price + value') }));
+    await expect(sender.send('review', request)).rejects.toThrow('cannot pay');
+    expect(port.waitReceipt).not.toHaveBeenCalled(); expect(store.transaction('review')?.status).toBe('signed');
+  });
+  it.each([
+    ['a fee raise under 10%', (p: Hex) => resign(p, (fee) => fee)],
+    ['another nonce', (p: Hex) => resign(p, (fee) => fee * 2n, { nonce: 7 })],
+    ['another call', (p: Hex) => resign(p, (fee) => fee * 2n, { data: '0xabcd' })],
+  ])('refuses a replacement with %s before journaling or broadcasting it', async (_name, replace) => {
+    const { store, port, sender } = stuck(); port.replace = vi.fn(replace);
+    await expect(sender.send('review', request)).rejects.toThrow(/does not match|10%/);
+    expect(store.transaction('review')?.replacements).toBeUndefined(); expect(port.broadcast).toHaveBeenCalledTimes(1);
+  });
+  it(`stops bumping after ${MAX_REPLACEMENTS} replacements and says so`, async () => {
+    const { store, sender } = stuck();
+    await expect(sender.send('review', request)).rejects.toThrow('fee-bumped');
+    for (let i = 1; i < MAX_REPLACEMENTS; i++) await expect(sender.recover()).rejects.toThrow('fee-bumped');
+    await expect(sender.recover()).rejects.toThrow(`after ${MAX_REPLACEMENTS} fee bumps`);
+    expect(store.transaction('review')?.replacements).toHaveLength(MAX_REPLACEMENTS);
+  });
+  it('halts when an RPC claims two versions of one nonce were both mined', async () => {
+    const { port, sender } = stuck();
+    await expect(sender.send('review', request)).rejects.toThrow('fee-bumped');
+    vi.mocked(port.receipt).mockImplementation(async (h) => mined(h));
+    await expect(sender.recover()).rejects.toThrow('two versions');
+  });
+  it('keeps journaled replacements append-only, and only while nothing is mined', async () => {
+    const { store, sender } = stuck();
+    await expect(sender.send('review', request)).rejects.toThrow('fee-bumped');
+    const state = store.transaction('review'); const replacements = state?.replacements;
+    if (!state || !replacements) throw new Error('no replacement journaled');
+    expect(() => store.saveTransaction({ ...state, replacements: [] })).toThrow('append-only');
+    const raw = await resign(replacements[0].raw as Hex, (fee) => fee * 2n);
+    const included = { ...state, status: 'included' as const, receiptStatus: 'success' as const, block: '100', gas: '21000', blockHash: keccak256('0xab') };
+    store.saveTransaction(included);
+    expect(() => store.saveTransaction({ ...included, replacements: [...replacements, { raw, hash: keccak256(raw) }] })).toThrow('no known inclusion');
+  });
+  it('replays the newest version after its unfinalized inclusion is orphaned', async () => {
+    const { store, port, sender } = stuck();
+    await expect(sender.send('review', request)).rejects.toThrow('fee-bumped');
+    const bumped = store.transaction('review')?.replacements?.[0];
+    if (!bumped) throw new Error('no replacement journaled');
+    port.finality = vi.fn().mockResolvedValueOnce('pending').mockResolvedValueOnce('orphaned').mockResolvedValue('finalized');
+    vi.mocked(port.waitReceipt).mockResolvedValue({ ...mined(bumped.hash as Hex), blockHash: keccak256('0xab') });
+    expect((await sender.recover())[0]).toMatchObject({ status: 'included', minedHash: bumped.hash });
+    vi.mocked(port.waitReceipt).mockResolvedValue({ ...mined(bumped.hash as Hex), blockNumber: 101n, blockHash: keccak256('0xcd') });
+    expect((await sender.recover())[0]).toMatchObject({ status: 'confirmed', minedHash: bumped.hash, block: '101' });
+    expect(store.transaction('review')?.orphanedReceipts).toMatchObject([{ block: '100', minedHash: bumped.hash }]);
+    expect(port.broadcast).toHaveBeenLastCalledWith(bumped.raw);
   });
 });

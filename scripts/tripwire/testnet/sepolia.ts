@@ -2,9 +2,14 @@
 //
 // Tripwire on a public testnet (Sepolia): deploy, verify, and run the same
 // watch → attest → guardian loop as the local demo, with transactions a judge
-// can open on the explorer. Operator-side code (ADR-012): it holds the
-// throwaway deployer key, which never leaves .env.tripwire and is never
-// printed. Both ends of the demo bridge live on Sepolia, so one faucet funds it.
+// can open on the explorer. Operator-side code (ADR-012): it holds testnet
+// keys, which never leave .env.tripwire and are never printed. Both ends of
+// the demo bridge live on Sepolia, so one faucet funds it.
+//
+// Roles (ADR-026): an owner Safe administers the guardian, an oracle key signs
+// attestations and reviews and holds no gas money, and two relayer keys pay
+// gas: one for reviews and payouts, one for attestations, so a stuck
+// transaction in one lane never delays the other.
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -14,8 +19,12 @@ import {
   createPublicClient,
   createWalletClient,
   encodeFunctionData,
+  fallback,
   formatEther,
+  getAddress,
   http,
+  isAddress,
+  parseGwei,
   keccak256,
   toHex,
   type Abi,
@@ -66,39 +75,96 @@ function readDotenv(path: string): Record<string, string> {
 }
 
 export interface TestnetConfig {
+  /** Deploys and configures. With separate roles, this is the release relayer. */
   account: PrivateKeyAccount;
-  rpcUrl: string;
+  /** Signs attestations and release reviews (EIP-712). Pays no gas. */
+  oracle: PrivateKeyAccount;
+  /** Pays gas for release reviews and payouts. */
+  relayer: PrivateKeyAccount;
+  /** Pays gas for attestations, on its own nonce sequence. */
+  attestationRelayer: PrivateKeyAccount;
+  /** The Safe that takes guardian ownership after a deployment. Null for the legacy one-key demo. */
+  owner: Hex | null;
+  /** One key plays every role: the legacy demo. Deployments and the durable operator refuse it. */
+  singleKey: boolean;
+  /** Primary first. More than one: a ranked fallback transport. */
+  rpcUrls: string[];
+  /** The most the operator offers per gas, in wei (TRIPWIRE_MAX_FEE_GWEI). */
+  maxFeePerGas: bigint;
   /** Explorer and verification key, from .env; null when absent. */
   etherscanKey: string | null;
   deploymentFile: string;
 }
 
+/** Named role keys in .env.tripwire (ADR-026). */
+export const ROLE_KEYS = {
+  oracle: 'TRIPWIRE_ORACLE_KEY',
+  relayer: 'TRIPWIRE_RELAYER_KEY',
+  attestationRelayer: 'TRIPWIRE_ATTESTATION_RELAYER_KEY',
+} as const;
+const DEFAULT_MAX_FEE_GWEI = '300';
+const keyShaped = (value: string) => /^(0x)?[0-9a-fA-F]{64}$/.test(value);
+const toAccount = (raw: string) => privateKeyToAccount((raw.startsWith('0x') ? raw : `0x${raw}`) as Hex);
+
 /**
- * The deployer key is whatever private-key-shaped value .env.tripwire holds,
- * whatever its variable name. It is used, never printed: only the address it
- * derives is shown.
+ * Keys are used, never printed: only the addresses they derive are shown.
+ *
+ * With any TRIPWIRE_*_KEY role set, every role must be set, each with its own
+ * key, and no other key may sit in the file. Otherwise the file holds exactly
+ * one key under any name: the legacy one-key demo, which only the scripted
+ * demo still accepts.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): TestnetConfig {
   const keyFile = env.TRIPWIRE_ENV_FILE ?? resolve(ROOT, '.env.tripwire');
   const tripwire = readDotenv(keyFile);
-  const keys = Object.values(tripwire).filter((v) => /^(0x)?[0-9a-fA-F]{64}$/.test(v));
-  if (keys.length !== 1) {
-    throw new Error(
-      keys.length === 0
-        ? `No private key found in ${keyFile}. It should hold one line like DEPLOYER_PRIVATE_KEY=0x… (64 hex digits).`
-        : `${keyFile} holds ${keys.length} private keys; keep only the deployer's.`
-    );
+  const roleNames: string[] = Object.values(ROLE_KEYS);
+  const named = (role: keyof typeof ROLE_KEYS) => tripwire[ROLE_KEYS[role]];
+  let roles: Pick<TestnetConfig, 'oracle' | 'relayer' | 'attestationRelayer' | 'owner' | 'singleKey'>;
+  if (roleNames.some((name) => tripwire[name] !== undefined)) {
+    const stray = Object.entries(tripwire).filter(([name, value]) => keyShaped(value) && !roleNames.includes(name)).map(([name]) => name);
+    if (stray.length) throw new Error(`${keyFile}: ${stray.join(', ')} holds a private key outside the roles ${roleNames.join(', ')}. Remove it.`);
+    const missing = roleNames.filter((name) => !keyShaped(tripwire[name] ?? ''));
+    if (missing.length) throw new Error(`${keyFile} is missing ${missing.join(', ')} (64 hex digits each).`);
+    const [oracle, relayer, attestationRelayer] = (['oracle', 'relayer', 'attestationRelayer'] as const).map((role) => toAccount(named(role)));
+    const ownerValue = env.TRIPWIRE_OWNER_SAFE ?? tripwire.TRIPWIRE_OWNER_SAFE;
+    if (ownerValue !== undefined && !isAddress(ownerValue, { strict: false })) throw new Error('TRIPWIRE_OWNER_SAFE is not an address.');
+    const owner = ownerValue === undefined ? null : getAddress(ownerValue);
+    const addresses = [oracle.address, relayer.address, attestationRelayer.address, ...(owner ? [owner] : [])].map((a) => a.toLowerCase());
+    if (new Set(addresses).size !== addresses.length) {
+      throw new Error('The owner Safe, oracle, relayer and attestation relayer must all be different accounts.');
+    }
+    roles = { oracle, relayer, attestationRelayer, owner, singleKey: false };
+  } else {
+    const keys = Object.values(tripwire).filter(keyShaped);
+    if (keys.length !== 1) {
+      throw new Error(
+        keys.length === 0
+          ? `No private key found in ${keyFile}. Set ${roleNames.join(', ')} and TRIPWIRE_OWNER_SAFE (see docs/plans/tripwire-operator.md).`
+          : `${keyFile} holds ${keys.length} unnamed private keys. Name each one by role: ${roleNames.join(', ')}.`
+      );
+    }
+    const only = toAccount(keys[0]);
+    roles = { oracle: only, relayer: only, attestationRelayer: only, owner: null, singleKey: true };
   }
-  const raw = keys[0];
-  const account = privateKeyToAccount((raw.startsWith('0x') ? raw : `0x${raw}`) as Hex);
   const dotenv = readDotenv(resolve(ROOT, '.env'));
   const etherscanKey = env.ETHERSCAN_API_KEY ?? tripwire.ETHERSCAN_API_KEY ?? dotenv.ETHERSCAN_API_KEY ?? null;
+  const urls = rpcUrls(env.SEPOLIA_RPC_URL ?? tripwire.SEPOLIA_RPC_URL, 'https://ethereum-sepolia-rpc.publicnode.com');
+  if (!urls.length) throw new Error('SEPOLIA_RPC_URL is empty.');
+  const gwei = env.TRIPWIRE_MAX_FEE_GWEI ?? tripwire.TRIPWIRE_MAX_FEE_GWEI ?? DEFAULT_MAX_FEE_GWEI;
+  if (!/^[0-9]+(\.[0-9]+)?$/.test(gwei) || parseGwei(gwei) <= 0n) throw new Error('TRIPWIRE_MAX_FEE_GWEI must be a positive number of gwei.');
   return {
-    account,
-    rpcUrl: env.SEPOLIA_RPC_URL ?? tripwire.SEPOLIA_RPC_URL ?? 'https://ethereum-sepolia-rpc.publicnode.com',
+    account: roles.relayer, ...roles, rpcUrls: urls, maxFeePerGas: parseGwei(gwei),
     etherscanKey: etherscanKey && !etherscanKey.includes('your_') ? etherscanKey : null,
     deploymentFile: env.TRIPWIRE_DEPLOYMENT_FILE ?? resolve(import.meta.dirname, 'deployment.sepolia.json'),
   };
+}
+
+/** The durable operator signs with the oracle and pays from two relayers; one key for all of them is refused. */
+export function assertSeparateRoles(cfg: Pick<TestnetConfig, 'singleKey' | 'oracle' | 'relayer' | 'attestationRelayer'>): void {
+  const addresses = [cfg.oracle?.address, cfg.relayer?.address, cfg.attestationRelayer?.address].map((a) => a?.toLowerCase());
+  if (cfg.singleKey || addresses.some((a) => !a) || new Set(addresses).size !== 3) {
+    throw new Error(`One key cannot be oracle and relayer: set ${Object.values(ROLE_KEYS).join(', ')} in .env.tripwire.`);
+  }
 }
 
 export interface Clients {
@@ -107,12 +173,28 @@ export interface Clients {
   chainId: number;
 }
 
+/**
+ * Several RPC URLs fail over in the order given (MED-3): each endpoint gets one
+ * short try per round, then the next; the whole round retries. No background
+ * ranking: its timer never stops, so a finished CLI would never exit.
+ * Every read that matters is still hash-checked, so endpoints cannot be mixed silently.
+ */
+export function rpcTransport(urls: readonly string[], fetchOptions?: { signal: AbortSignal }): Transport {
+  if (!urls.length) throw new Error('No RPC URL configured.');
+  if (urls.length === 1) return http(urls[0], { retryCount: 3, timeout: 30_000, fetchOptions });
+  return fallback(urls.map((url) => http(url, { timeout: 10_000, fetchOptions })), { retryCount: 2 });
+}
+
+/** Comma-separated RPC URLs from one env value. */
+export const rpcUrls = (value: string | undefined, fallbackUrl: string) =>
+  (value ?? fallbackUrl).split(',').map((url) => url.trim()).filter(Boolean);
+
 export async function connect(cfg: TestnetConfig, chain: Chain = sepolia): Promise<Clients> {
-  const transport = http(cfg.rpcUrl, { retryCount: 3, timeout: 30_000 });
+  const transport = rpcTransport(cfg.rpcUrls);
   const pub = createPublicClient({ chain, transport });
   const wallet = createWalletClient({ chain, transport, account: cfg.account });
   const chainId = await pub.getChainId();
-  if (chainId !== chain.id) throw new Error(`RPC ${cfg.rpcUrl} is chain ${chainId}, expected ${chain.id}.`);
+  if (chainId !== chain.id) throw new Error(`RPC is chain ${chainId}, expected ${chain.id}.`);
   return { pub, wallet, chainId };
 }
 
@@ -253,14 +335,19 @@ export class ContractEventFeed<E> implements LogFeed<E> {
     private eventName: string,
     private from: bigint,
     private map: (args: Record<string, unknown>, timestamp: number, origin?: EventOrigin) => E | null,
-    private opts: { finality?: 'finalized' } = {}
+    /**
+     * 'finalized' for anything that backs a payout. 'safe' (the justified head,
+     * one epoch fresher) suits release requests: a reorg past it is caught by
+     * the same hash-linked anchor and quarantines the operator.
+     */
+    private opts: { finality?: 'finalized' | 'safe' } = {}
   ) {
     this.cursor = from;
   }
 
   checkpoint(): string {
     if (!this.opts.finality) return this.cursor.toString();
-    return JSON.stringify({ version: 1, policy: 'finalized', chainId: this.c.chainId,
+    return JSON.stringify({ version: 1, policy: this.opts.finality, chainId: this.c.chainId,
       address: this.address.toLowerCase(), event: this.eventName, from: this.from.toString(), next: this.cursor.toString(),
       anchor: this.anchor ? { number: this.anchor.number.toString(), hash: this.anchor.hash } : null });
   }
@@ -268,7 +355,7 @@ export class ContractEventFeed<E> implements LogFeed<E> {
   restore(cursor: string): void {
     if (this.opts.finality) {
       const c = finalizedCheckpointSchema.parse(JSON.parse(cursor));
-      if (c.chainId !== this.c.chainId || c.address !== this.address.toLowerCase() || c.event !== this.eventName || c.from !== this.from.toString()) {
+      if (c.policy !== this.opts.finality || c.chainId !== this.c.chainId || c.address !== this.address.toLowerCase() || c.event !== this.eventName || c.from !== this.from.toString()) {
         throw new Error('Finalized checkpoint does not match this feed.');
       }
       this.cursor = BigInt(c.next); this.anchor = c.anchor ? { number: BigInt(c.anchor.number), hash: c.anchor.hash } : null;
@@ -309,7 +396,7 @@ export class ContractEventFeed<E> implements LogFeed<E> {
 
   async assertCanonical(): Promise<void> {
     if (!this.opts.finality) return; // Instant mode is only for the scripted demo.
-    const head = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: 'finalized' }));
+    const head = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: this.opts.finality }));
     await this.checkAnchor(head.number);
   }
 
@@ -322,7 +409,8 @@ export class ContractEventFeed<E> implements LogFeed<E> {
   }
 
   private async pollFinalized(): Promise<E[]> {
-    const head = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: 'finalized' }));
+    const tag = this.opts.finality ?? 'finalized';
+    const head = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: tag }));
     await this.checkAnchor(head.number);
     if (head.number < this.cursor) return [];
     // Hash-link every header so a load-balanced RPC cannot mix log blocks
@@ -373,7 +461,7 @@ export class ContractEventFeed<E> implements LogFeed<E> {
       if (!mapped || typeof mapped !== 'object') throw new Error('Finalized feed requires an event object.');
       out.push({ ...mapped, origin });
     }
-    const final = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: 'finalized' }));
+    const final = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: tag }));
     if (final.number < end) throw new Error('Finalized RPC moved behind the queried range.');
     await this.checkAnchor(final.number);
     const checked = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: end }));

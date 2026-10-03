@@ -10,6 +10,7 @@ import { CctpSourceAdapter, cctpProofLocatorSchema, cctpVerifierScope } from '..
 import { blockHashSchema, blockHeaderSchema, FinalityConflictError } from '../finality.js';
 import { OperatorStore } from '../store.js';
 import { independentCctpRpc, verifierUrls } from './cctpOperator.js';
+import { rpcTransport, rpcUrls } from './sepolia.js';
 import demo from './contracts.artifact.js';
 import { assertCctpEscrowBindings } from './cctpBindings.js';
 
@@ -27,8 +28,9 @@ async function main() {
   let store: OperatorStore | undefined;
   try {
     const transport = (url: string) => http(url, { retryCount: 3, timeout: 30_000, fetchOptions: { signal: abort.signal } });
-    const source = createPublicClient({ chain: baseSepolia, transport: transport(process.env.BASE_SEPOLIA_RPC_URL ?? baseSepolia.rpcUrls.default.http[0]) });
-    const destination = createPublicClient({ chain: sepolia, transport: transport(process.env.SEPOLIA_RPC_URL ?? sepolia.rpcUrls.default.http[0]) });
+    // Primary reads fail over across comma-separated URLs (MED-3); proofs still need the independent verifiers below.
+    const source = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrls(process.env.BASE_SEPOLIA_RPC_URL, baseSepolia.rpcUrls.default.http[0]), { signal: abort.signal }) });
+    const destination = createPublicClient({ chain: sepolia, transport: rpcTransport(rpcUrls(process.env.SEPOLIA_RPC_URL, sepolia.rpcUrls.default.http[0]), { signal: abort.signal }) });
     // ADR-022: proofs are read through every independent verifier endpoint configured.
     const quorum = process.env.TRIPWIRE_RPC_QUORUM ? Number(process.env.TRIPWIRE_RPC_QUORUM) : undefined;
     const sourceProofs = independentCctpRpc(source, verifierUrls(process.env.BASE_SEPOLIA_VERIFIER_RPC_URLS)

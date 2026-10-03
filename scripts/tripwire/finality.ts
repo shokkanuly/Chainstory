@@ -9,7 +9,8 @@ export const blockHeaderSchema = z.object({
 });
 const decimal = z.string().regex(/^(0|[1-9][0-9]*)$/);
 export const finalizedCheckpointSchema = z.object({
-  version: z.literal(1), policy: z.literal('finalized'), chainId: z.number().int().positive(),
+  // 'safe' is for destination release requests only (MED-2); source proofs stay 'finalized'.
+  version: z.literal(1), policy: z.enum(['finalized', 'safe']), chainId: z.number().int().positive(),
   address: z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((a) => a.toLowerCase()), event: z.string().min(1),
   from: decimal, next: decimal, anchor: z.object({ number: decimal, hash: blockHashSchema }).nullable(),
 }).strict().refine((c) => BigInt(c.next) >= BigInt(c.from) &&

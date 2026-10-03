@@ -46,6 +46,16 @@ describe('durable operator state', () => {
     }
     expect(store.loadWatcher()?.pending[0].origin?.blockNumber).toBe(1n);
   });
+  it('accepts release requests read at the safe head, but never source events', () => {
+    const { store } = open(undefined, 'finalized');
+    const checkpoint = (address: string, policy: string) => JSON.stringify({ version: 1, policy, chainId: scope.chainId, address,
+      event: 'Event', from: '0', next: '2', anchor: { number: '1', hash: keccak256(toHex('block')) } });
+    const state = { ingressCursor: checkpoint(scope.source, 'finalized'), egressCursor: checkpoint(scope.vault, 'safe'), pending: [],
+      burns: [], completed: [], conflictingBurns: [], conflictingReleases: [], history: [] };
+    store.saveWatcher(state);
+    expect(() => store.saveWatcher({ ...state, ingressCursor: checkpoint(scope.source, 'safe') })).toThrow('finalized blocks');
+    expect(() => store.saveWatcher({ ...state, egressCursor: checkpoint(scope.vault, 'latest') })).toThrow();
+  });
 
   it('persists exact block provenance with events across restart', async () => {
     const { store, path } = open(); const ingress = new MemoryFeed<BurnEvent>(); const egress = new MemoryFeed<ReleaseEvent>();

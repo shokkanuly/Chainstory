@@ -60,13 +60,20 @@ describe('request delay RPC boundary', () => {
   const reader = () => ({ getBlock: vi.fn(async (_args: { blockTag: 'latest' } | { blockNumber: bigint }) => ({
     number: 100n, hash, parentHash: toHex(0, { size: 32 }), timestamp: 1000n })),
     readRelease: vi.fn(async (_block: bigint): Promise<unknown> => [actors.bridge.address, 10n, 1, 1100n, actors.oracle.address, 2n, 2]),
-    readDelay: vi.fn(async (_block: bigint): Promise<unknown> => 2000n), minimumBlock: () => 0n });
+    readDelay: vi.fn(async (_block: bigint): Promise<unknown> => 2000n),
+    readRejectedAt: vi.fn(async (_block: bigint): Promise<unknown> => 0n), rejectionCooldown: 604_800n, minimumBlock: () => 0n });
   it('binds request, delay and clock to one checked block', async () => {
     const r = reader();
-    expect(await readReleasePolicyState(r)).toMatchObject({ amount: 10n, state: 1, nonce: 2n, delay: { now: 1000n, until: 2000n } });
-    expect(r.readRelease).toHaveBeenCalledWith(100n); expect(r.readDelay).toHaveBeenCalledWith(100n);
+    const state = await readReleasePolicyState(r);
+    expect(state).toMatchObject({ amount: 10n, state: 1, nonce: 2n, delay: { now: 1000n, until: 2000n } }); expect(state.rejection).toBeUndefined();
+    expect(r.readRelease).toHaveBeenCalledWith(100n); expect(r.readDelay).toHaveBeenCalledWith(100n); expect(r.readRejectedAt).toHaveBeenCalledWith(100n);
   });
-  it.each(['hash', 'time', 'delay', 'release', 'lag', 'offline'])('refuses invalid %s without treating it as an elapsed delay', async (kind) => {
+  it('reports when a rejected request becomes reviewable again, on the same clock', async () => {
+    const r = reader();
+    r.readRelease.mockResolvedValueOnce([actors.bridge.address, 10n, 3, 0n, actors.oracle.address, 1n, 3]); r.readRejectedAt.mockResolvedValueOnce(900n);
+    expect(await readReleasePolicyState(r)).toMatchObject({ state: 3, rejection: { now: 1000n, until: 900n + 604_800n } });
+  });
+  it.each(['hash', 'time', 'delay', 'release', 'lag', 'offline', 'rejection'])('refuses invalid %s without treating it as an elapsed delay', async (kind) => {
     const r = reader();
     if (kind === 'hash') r.getBlock.mockResolvedValueOnce({ number: 100n, hash: toHex(2, { size: 32 }), parentHash: hash, timestamp: 1000n });
     if (kind === 'time') r.getBlock.mockResolvedValueOnce({ number: 100n, hash, parentHash: hash, timestamp: -1n });
@@ -74,6 +81,7 @@ describe('request delay RPC boundary', () => {
     if (kind === 'release') r.readRelease.mockResolvedValueOnce([actors.bridge.address, 0n, 1, 0n, actors.oracle.address, 2n, 2]);
     if (kind === 'lag') r.minimumBlock = () => 101n;
     if (kind === 'offline') r.readDelay.mockRejectedValueOnce(new Error('offline'));
+    if (kind === 'rejection') r.readRejectedAt.mockResolvedValueOnce(-1n);
     await expect(readReleasePolicyState(r)).rejects.toThrow();
   });
 });
