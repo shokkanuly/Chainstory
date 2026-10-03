@@ -214,6 +214,12 @@ export interface Deployment {
   chainId: number;
   deployer: Hex;
   oracle: Hex;
+  /** The Safe offered guardian ownership (Ownable2Step). Ownership is final once it calls acceptOwnership(). */
+  owner?: Hex;
+  /** Who pays gas for reviews and payouts, and for attestations (ADR-026). */
+  relayers?: { release: Hex; attestation: Hex };
+  /** GUARDIAN_POLICY_VERSION and RELEASE_POLICY_VERSION at deployment. */
+  policy?: { guardian: number; release: number };
   route: string;
   routeId: Hex;
   cap: string;
@@ -223,18 +229,39 @@ export interface Deployment {
 
 /** Rough gas for the whole deploy plus one demo run, for the pre-flight balance check. */
 const GAS_BUDGET = 6_500_000n;
+/** Rough gas for a day of attestations and refreshes. */
+const ATTESTATION_GAS_BUDGET = 1_000_000n;
+
+/**
+ * A deployment needs every role on its own key and a contract, the Safe, as
+ * owner (ADR-026). One hot key as owner, oracle and relayer is what let the
+ * audit's CRIT-1 drain a frozen vault.
+ */
+export function assertDeployRoles(cfg: Pick<TestnetConfig, 'singleKey' | 'oracle' | 'relayer' | 'attestationRelayer' | 'owner'>,
+  ownerCode: Hex | undefined): asserts cfg is typeof cfg & { owner: Hex } {
+  assertSeparateRoles(cfg);
+  if (!cfg.owner) throw new Error('Set TRIPWIRE_OWNER_SAFE to the Safe that will own the guardian.');
+  if (!ownerCode || ownerCode === '0x') {
+    throw new Error(`TRIPWIRE_OWNER_SAFE ${cfg.owner} has no contract code on this chain. Create the Safe first; an EOA owner is refused.`);
+  }
+}
 
 export async function preflight(cfg: TestnetConfig, c: Clients, log: (s: string) => void) {
-  const balance = await c.pub.getBalance({ address: cfg.account.address });
+  assertDeployRoles(cfg, cfg.owner ? await c.pub.getCode({ address: cfg.owner }) : undefined);
   const gasPrice = await c.pub.getGasPrice();
-  const need = GAS_BUDGET * gasPrice;
-  log(`Deployer  ${cfg.account.address}`);
-  log(`Balance   ${formatEther(balance)} ETH · gas price ${Number(gasPrice) / 1e9} gwei · deploy + demo ≈ ${formatEther(need)} ETH`);
-  if (cfg.account.address.toLowerCase() !== EXPECTED_DEPLOYER.toLowerCase()) {
-    log(`Note: this key is not the funded deployer ${EXPECTED_DEPLOYER}.`);
+  log(`Owner     ${cfg.owner} (Safe; accepts guardian ownership after the deploy)`);
+  log(`Oracle    ${cfg.oracle.address} (signs only, needs no ETH)`);
+  for (const [label, account, budget] of [['Relayer', cfg.relayer, GAS_BUDGET], ['Attester', cfg.attestationRelayer, ATTESTATION_GAS_BUDGET]] as const) {
+    const balance = await c.pub.getBalance({ address: account.address });
+    const need = budget * gasPrice;
+    log(`${label.padEnd(9)} ${account.address} · ${formatEther(balance)} ETH, needs about ${formatEther(need)} ETH`);
+    if (balance < need) {
+      throw new Error(`Not enough Sepolia ETH on the ${label.toLowerCase()} ${account.address}: have ${formatEther(balance)}, need about ${formatEther(need)}. Top up from a faucet and rerun.`);
+    }
   }
-  if (balance < need) {
-    throw new Error(`Not enough Sepolia ETH: have ${formatEther(balance)}, need about ${formatEther(need)}. Top up from a faucet and rerun.`);
+  log(`Gas price ${Number(gasPrice) / 1e9} gwei`);
+  if (cfg.relayer.address.toLowerCase() !== EXPECTED_DEPLOYER.toLowerCase()) {
+    log(`Note: the relayer is not the earlier funded deployer ${EXPECTED_DEPLOYER}.`);
   }
 }
 
@@ -256,14 +283,20 @@ async function deployOne(c: Clients, abi: Abi, bytecode: Hex, args: readonly unk
 }
 
 export async function deploy(cfg: TestnetConfig, c: Clients, log: (s: string) => void): Promise<Deployment> {
+  const owner = cfg.owner;
+  assertDeployRoles(cfg, owner ? await c.pub.getCode({ address: owner }) : undefined);
+  if (!owner) throw new Error('Owner Safe is not configured.');
+  // The relayer deploys and configures, and stays owner of the demo token and
+  // vault (it stands in for the bridge's messaging). It never signs reviews or
+  // attestations: those need the oracle key.
   const me = cfg.account.address;
   const startBlock = await c.pub.getBlockNumber();
   log('Deploying:');
   const token = await deployOne(c, demo.DemoUSDC.abi, demo.DemoUSDC.bytecode, [me], log, 'DemoUSDC');
   const bridge = await deployOne(c, demo.MockSourceBridge.abi, demo.MockSourceBridge.bytecode, [], log, 'MockSourceBridge');
-  // The deployer is also the oracle: one throwaway key for the demo. The
-  // guardian lets the owner rotate it (setOracle) to a separate signer.
-  const guardian = await deployOne(c, guardianArtifact.abi, guardianArtifact.bytecode, [me, me], log, 'TripwireGuardian');
+  // The oracle is its own key from block one. Replacing it later takes the
+  // owner Safe and two days' notice (proposeOracle → acceptOracle); disableOracle is instant.
+  const guardian = await deployOne(c, guardianArtifact.abi, guardianArtifact.bytecode, [me, cfg.oracle.address], log, 'TripwireGuardian');
   const vault = await deployOne(
     c,
     demo.ProtectedVault.abi,
@@ -291,11 +324,22 @@ export async function deploy(cfg: TestnetConfig, c: Clients, log: (s: string) =>
   await run(`token.mint(vault, ${VAULT_FUNDING / USDC})`, () =>
     c.wallet.writeContract({ address: token.address, abi: demo.DemoUSDC.abi, functionName: 'mint', args: [vault.address, VAULT_FUNDING] })
   );
+  // Ownable2Step: the deployer stays owner until the Safe accepts, so a typo cannot strand the guardian.
+  await run('guardian.transferOwnership(Safe)', () =>
+    c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'transferOwnership', args: [owner] })
+  );
+  const [guardianPolicy, releasePolicy] = await Promise.all([
+    c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'GUARDIAN_POLICY_VERSION' }),
+    c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'RELEASE_POLICY_VERSION' }),
+  ]);
 
   const deployment: Deployment = {
     chainId: c.chainId,
     deployer: me,
-    oracle: me,
+    oracle: cfg.oracle.address,
+    owner,
+    relayers: { release: cfg.relayer.address, attestation: cfg.attestationRelayer.address },
+    policy: { guardian: Number(guardianPolicy), release: Number(releasePolicy) },
     route: ROUTE_NAME,
     routeId: ROUTE_ID,
     cap: CAP.toString(),
@@ -542,13 +586,26 @@ export async function runTestnetDemo(
   const usage = z.bigint().nonnegative().parse(await c.pub.readContract({ address: guardian.address,
     abi: guardianArtifact.abi, functionName: 'rollingUsage', args: [ROUTE_ID] }));
   if (usage > 0n) throw new Error('This demo route has recent outflows. Wait for its rolling budget to age out before rerunning the demo.');
-  for (const [label, functionName, args] of [
-    ['guardian.resume', 'resume', [ROUTE_ID]],
-    ['guardian.configureRoute', 'configureRoute', [ROUTE_ID, CAP, WINDOW_SECONDS]],
-  ] as const) {
-    const r = await send(c, c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName, args }));
-    if (!r.ok) throw new Error(`${label} failed: ${txLink(r.hash)}`);
-    log(`  reset: ${label.padEnd(24)} ${txLink(r.hash)}`);
+  // A clean route needs no reset. Otherwise only the guardian owner may reset
+  // it: the deployer until the Safe accepts ownership, then the Safe itself.
+  const route = z.object({ cap: z.bigint(), windowSeconds: z.bigint() }).passthrough().parse(await c.pub.readContract({
+    address: guardian.address, abi: guardianArtifact.abi, functionName: 'getRoute', args: [ROUTE_ID] }));
+  const tier = z.number().int().parse(await c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'currentTier', args: [ROUTE_ID] }));
+  const paused = z.boolean().parse(await c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'isPaused', args: [ROUTE_ID] }));
+  if (tier !== ResponseTier.NONE || paused || route.cap !== CAP || route.windowSeconds !== WINDOW_SECONDS) {
+    const owner = z.string().parse(await c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'owner' }));
+    if (owner.toLowerCase() !== cfg.account.address.toLowerCase()) {
+      throw new Error(`The demo route is still protected (${ResponseTier[tier] ?? tier}${paused ? ', paused' : ''}). The owner Safe ${owner} must call ` +
+        `resume(${ROUTE_ID}) on ${guardian.address} before the demo can run again.`);
+    }
+    for (const [label, functionName, args] of [
+      ['guardian.resume', 'resume', [ROUTE_ID]],
+      ['guardian.configureRoute', 'configureRoute', [ROUTE_ID, CAP, WINDOW_SECONDS]],
+    ] as const) {
+      const r = await send(c, c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName, args }));
+      if (!r.ok) throw new Error(`${label} failed: ${txLink(r.hash)}`);
+      log(`  reset: ${label.padEnd(24)} ${txLink(r.hash)}`);
+    }
   }
 
   const from = (await c.pub.getBlockNumber({ cacheTime: 0 })) + 1n;
@@ -559,10 +616,12 @@ export async function runTestnetDemo(
     chainId: c.chainId,
     currentTier: async (routeId) =>
       Number(await c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'currentTier', args: [routeId] })) as ResponseTier,
+    // Anyone may relay a signed attestation; the attestation relayer pays for it.
     submitAttestation: async (a, signature) => {
       const r = await send(
         c,
         c.wallet.writeContract({
+          account: cfg.attestationRelayer,
           address: guardian.address,
           abi: guardianArtifact.abi,
           functionName: 'submitAttestation',
@@ -607,7 +666,7 @@ export async function runTestnetDemo(
       return { status: 'verified', amount: observed };
     },
   });
-  const attestor = new Attestor(cfg.account, port, { now: () => clock });
+  const attestor = new Attestor(cfg.oracle, port, { now: () => clock });
 
   const results: TestnetStep[] = [];
   const runId = Date.now();
@@ -659,7 +718,7 @@ export async function runTestnetDemo(
         recipient: o.release.recipient, amount: o.release.amount, decision: releaseDecision(o), minimumTier: releaseMinimumTier(o),
         validUntil: BigInt(clock + 300), nonce: releaseState[5] + 1n,
       };
-      const signature = await signReleaseReview(cfg.account, vault.address, review, c.chainId);
+      const signature = await signReleaseReview(cfg.oracle, vault.address, review, c.chainId);
       const reviewed = await send(c, c.wallet.writeContract({
         address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'reviewRelease',
         args: [review.messageId, review.decision, review.minimumTier, review.validUntil, review.nonce, signature],

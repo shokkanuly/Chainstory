@@ -5,8 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseGwei, parseTransaction, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { sepolia } from 'viem/chains';
+import guardianArtifact from '../../../src/tripwire/guardian.artifact.js';
 import { relayerPort } from '../testnet/operator.js';
-import { assertSeparateRoles, loadConfig, rpcTransport, type Clients } from '../testnet/sepolia.js';
+import { assertDeployRoles, assertSeparateRoles, deploy, loadConfig, rpcTransport, runTestnetDemo, CAP, WINDOW_SECONDS,
+  type Clients, type Deployment, type TestnetConfig } from '../testnet/sepolia.js';
 
 const key = (byte: string) => `0x${byte.repeat(32)}` as Hex;
 const relayer = privateKeyToAccount(key('22'));
@@ -92,5 +94,72 @@ describe('key roles (ADR-026)', () => {
     ['a zero fee ceiling', [...roles, 'TRIPWIRE_MAX_FEE_GWEI=0'], 'positive number'],
   ])('refuses %s', (_name, lines, message) => {
     expect(() => load(lines)).toThrow(message);
+  });
+});
+
+describe('deployment roles (ADR-026, CRIT-1)', () => {
+  const [oracle, attester] = [privateKeyToAccount(key('11')), privateKeyToAccount(key('33'))];
+  const safe = `0x${'5a'.repeat(20)}` as Hex;
+  const roles = (patch: Partial<TestnetConfig> = {}) => ({ account: relayer, oracle, relayer, attestationRelayer: attester, owner: safe,
+    singleKey: false, rpcUrls: ['https://rpc.example'], maxFeePerGas: parseGwei('300'), etherscanKey: null,
+    deploymentFile: join(mkdtempSync(join(tmpdir(), 'tripwire-deploy-')), 'deployment.json'), ...patch }) as TestnetConfig;
+  const safeCode = '0x6080' as Hex;
+
+  it.each([
+    ['one key for every role', { singleKey: true, oracle: relayer, attestationRelayer: relayer }, safeCode, 'One key cannot be oracle and relayer'],
+    ['no owner Safe', { owner: null }, safeCode, 'TRIPWIRE_OWNER_SAFE'],
+    ['an EOA owner', {}, '0x' as Hex, 'no contract code'],
+  ])('refuses %s', (_name, patch, code, message) => {
+    expect(() => assertDeployRoles(roles(patch as Partial<TestnetConfig>), code)).toThrow(message);
+  });
+
+  function chain(code: Hex) {
+    let n = 0;
+    const address = () => `0x${(++n).toString(16).padStart(40, '0')}` as Hex;
+    const pub = {
+      getCode: vi.fn(async () => code), getBlockNumber: vi.fn(async () => 100n),
+      waitForTransactionReceipt: vi.fn(async () => ({ status: 'success', contractAddress: address(), gasUsed: 1n, blockNumber: 1n })),
+      getTransaction: vi.fn(async () => ({ input: '0x00' })),
+      readContract: vi.fn(async () => 4n),
+    };
+    const wallet = { deployContract: vi.fn(async (_request: unknown) => `0x${'d'.repeat(64)}`), writeContract: vi.fn(async (_request: unknown) => `0x${'e'.repeat(64)}`) };
+    return { c: { chainId: 11155111, pub, wallet } as unknown as Clients, pub, wallet };
+  }
+  it('deploys the guardian with the oracle key as oracle, then offers ownership to the Safe', async () => {
+    const f = chain(safeCode); const cfg = roles();
+    const d = await deploy(cfg, f.c, () => undefined);
+    const guardianDeploy = f.wallet.deployContract.mock.calls.map((call) => call[0] as unknown as { bytecode: Hex; args: unknown[] })
+      .find((call) => call.bytecode === guardianArtifact.bytecode);
+    expect(guardianDeploy?.args).toEqual([relayer.address, oracle.address]);
+    const writes = f.wallet.writeContract.mock.calls.map((call) => call[0] as unknown as { functionName: string; args: unknown[] });
+    expect(writes.at(-1)).toMatchObject({ functionName: 'transferOwnership', args: [safe] });
+    expect(d).toMatchObject({ deployer: relayer.address, oracle: oracle.address, owner: safe,
+      relayers: { release: relayer.address, attestation: attester.address }, policy: { guardian: 4, release: 4 } });
+  });
+  it('sends nothing when the owner is not a contract', async () => {
+    const f = chain('0x');
+    await expect(deploy(roles(), f.c, () => undefined)).rejects.toThrow('no contract code');
+    expect(f.wallet.deployContract).not.toHaveBeenCalled(); expect(f.wallet.writeContract).not.toHaveBeenCalled();
+  });
+
+  function demoChain(owner: Hex, tier: number) {
+    const readContract = vi.fn(async ({ functionName }: { functionName: string }) => ({
+      GUARDIAN_POLICY_VERSION: 4n, RELEASE_POLICY_VERSION: 4n, isProtected: true, MAX_REVIEW_TTL: 600n, rollingUsage: 0n,
+      getRoute: { cap: CAP, windowSeconds: WINDOW_SECONDS }, currentTier: tier, isPaused: tier === 3, owner,
+    } as Record<string, unknown>)[functionName]);
+    const writeContract = vi.fn(async () => { throw new Error('stop after the reset decision'); });
+    const contract = { address: `0x${'c'.repeat(40)}` as Hex };
+    const d = { contracts: { TripwireGuardian: contract, ProtectedVault: contract, MockSourceBridge: contract, DrainProxy: contract } } as unknown as Deployment;
+    return { c: { chainId: 11155111, pub: { readContract }, wallet: { writeContract } } as unknown as Clients, d, writeContract };
+  }
+  it('asks the owner Safe to resume a protected demo route instead of resetting it', async () => {
+    const f = demoChain(safe, 3);
+    await expect(runTestnetDemo(roles(), f.c, f.d, { contractFacts: async () => null })).rejects.toThrow(`owner Safe ${safe} must call resume`);
+    expect(f.writeContract).not.toHaveBeenCalled();
+  });
+  it('lets the deployer reset its own route until the Safe accepts ownership', async () => {
+    const f = demoChain(relayer.address, 2);
+    await expect(runTestnetDemo(roles(), f.c, f.d, { contractFacts: async () => null })).rejects.toThrow('stop after the reset decision');
+    expect(f.writeContract).toHaveBeenCalledWith(expect.objectContaining({ functionName: 'resume' }));
   });
 });
