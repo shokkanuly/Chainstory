@@ -77,9 +77,9 @@ of settlement — not another security dashboard.
 | Priority | Work | Acceptance |
 | :--- | :--- | :--- |
 | P0 | External review of guardian, vault, escrow and quorum | Findings resolved or accepted in an ADR |
-| P0 | Fresh policy-v3 deployment with a 2-of-3 quorum on testnet | Verified sources; operator refuses v2; quorum rotation exercised on-chain |
+| P0 | Fresh policy-v4 deployment with separate keys and an owner Safe on testnet ([runbook](tripwire-operator.md#redeploy-policy-v4-to-sepolia)) | Verified sources; operator refuses v3; Safe accepts ownership; a 2-day oracle rotation exercised on-chain |
 | P1 | Networked attestor members | Each member runs its own watcher and RPC set, on separate infrastructure, and signs over a transport; no co-located keys |
 | P1 | Quorum over `eth_getLogs` discovery, not only proofs | Event feeds read through the same agreement rule |
-| P1 | Real route baselines and evidence versions | Reproducible scoring, measured false holds and latency |
+| P1 | Evidence versions and measured baselines | Rolling baselines exist (ADR-027); still to do: reproducible scoring versions, measured false holds and latency on a real route |
 | P2 | Consensus light-client finality instead of RPC `finalized` | Proofs checked against sync-committee signatures |
 | Pilot | Observe-only run on one real route | Honest traffic and attack fixtures quantify detection, false holds and added latency |

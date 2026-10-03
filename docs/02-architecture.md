@@ -160,3 +160,13 @@ signatures, while reassessing risk/source health/protection. Immutable policy-v2
 markers and route grants are checked before opening the signing lifecycle;
 release review domain version is 2. Existing deployment-bound persistence and
 read-only browser boundaries remain. See [policy/rollout](plans/tripwire-route-policy.md).
+
+ADR-024 to ADR-027 (policy v4, the October audit) bound the owner and the oracle on
+chain: two days' notice to replace the oracle and an instant kill switch, no cap raise
+under protection, a 72-hour oracle span, cumulative DELAY, and a REJECT that holds for
+7 days instead of stranding escrowed funds. Off-chain, the operator runs two journals
+and two relayers (reviews and payouts; attestations), so one stuck transaction can no
+longer hold back a FREEZE; the sender journals fee-bumped same-nonce replacements
+before broadcasting them. The oracle key only signs. The watcher computes a rolling
+baseline from finalized source burns and reads release requests at the `safe` head;
+source evidence stays finalized. Browser and proxy boundaries are unchanged.

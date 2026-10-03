@@ -12,10 +12,11 @@ a deployment of the current gated vault. No deployment was performed in this mil
 | :--- | :--- |
 | `scripts/tripwire/store.ts` | Node's built-in SQLite, WAL/FULL, deployment/schema validation and one-process lease |
 | `scripts/tripwire/watch.ts` | Checkpoint both feeds with ingested events before returning assessments; retain exact request history and conflicts |
-| `scripts/tripwire/sender.ts` | Validate and save signed bytes before broadcast; reconcile receipts/rebroadcast the same transaction after restart |
+| `scripts/tripwire/sender.ts` | Validate and save signed bytes before broadcast; reconcile receipts after restart; journal and broadcast a fee-bumped same-nonce replacement when a transaction is not mined (ADR-026) |
+| `scripts/tripwire/baseline.ts` | Rolling route baseline from finalized source burns (ADR-027) |
 | `scripts/tripwire/operator.ts` | Apply protection, review, retry holds/delays, acknowledge only confirmed terminal outcomes |
 | `scripts/tripwire/attest.ts`, `testnet/guardianState.ts` | Reconcile chain-bound tier/expiry/oracle and refresh justified protection before expiry |
-| `scripts/tripwire/testnet/operator.ts` | Sepolia RPC, local signing, gated-vault binding checks and durable guardian/review/execution sends |
+| `scripts/tripwire/testnet/operator.ts` | Sepolia RPC, oracle signing, two relayer lanes (reviews/payouts, attestations), fee policy, gated-vault binding checks |
 
 Feeds expose `checkpoint()` and `restore(cursor)` in addition to `poll()`.
 A durable watcher refuses a feed without those methods. Both cursors, burns,
@@ -25,21 +26,24 @@ The standalone operator covers at most 64 finalized blocks per poll, verifying
 every header and parent link (up to 8 concurrent lookups). The instant scripted
 demo retains its 2,000-block cap. RPC/decode failure leaves the range retryable.
 Amounts are bigint in memory and canonical decimal strings on disk. Behavioral USD
-heuristics still use the existing approximate demo pricing; a real price/baseline
-adapter is not part of this change.
+heuristics still use the existing approximate demo pricing ($1 per token). Since
+policy v4 the route baseline is rolling: computed each tick from finalized source
+burns (ADR-027). Release requests are read at the `safe` head; source events stay finalized.
 
 Acknowledgement is asynchronous and serialized with polling. Callers must await it.
 A HOLD review, a failed transaction or a guardian-delayed payout is not completion.
-The durable runner only removes a request after matching on-chain EXECUTED or
-REJECTED state at a hash-checked finalized block. On restart it checks durable
+The durable runner only removes a request after matching on-chain EXECUTED state at a
+hash-checked finalized block. A REJECTED request stays queued through its 7-day hold
+(ADR-025). On restart it checks durable
 source/destination anchors before recovering signed work. Review/risk protection
 may proceed after canonical inclusion so their short TTL remains usable.
 
 ## Run
 
 Use Node 22.13 or newer (Node 24 recommended); no new npm packages are needed.
-Configure `.env.tripwire` as for the existing Sepolia scripts and select the deployment
-with `TRIPWIRE_DEPLOYMENT_FILE` if necessary. Use only a throwaway testnet key.
+Configure `.env.tripwire` with one key per role (ADR-026; see `.env.example`) and select
+the deployment with `TRIPWIRE_DEPLOYMENT_FILE` if necessary. Use only throwaway testnet keys.
+The operator refuses a file holding one key for every role.
 
 ```bash
 npm run tripwire:operator:sepolia              # one poll; no route reset
@@ -60,17 +64,62 @@ and it recovers transactions already journaled by this operator. `createRpcOpera
 accepts explicit source-verifier, baseline and contract-facts adapters for integration;
 those must be independently validated before allowing a real payout.
 
-RPC/timeouts or disk errors stop the run with its queue preserved. Rerunning against
-the same state reconciles the original transaction hash. No new nonce is allocated
-while an earlier signed transaction has no known canonical inclusion. Already-known/nonce-too-low responses
-alone do not prove success: the sender needs the original receipt. Reverted receipts
-are stored and subsequent payout attempts require a new assessment/review.
+RPC/timeouts or disk errors stop a single run with its queue preserved; `--watch` logs
+them and backs off. Rerunning against the same state reconciles every journaled version
+of a transaction. No new nonce is allocated in a lane while an earlier signed transaction
+there has no known canonical inclusion. Already-known/nonce-too-low responses alone do
+not prove success: the sender needs a receipt for one of its journaled versions. Reverted
+receipts are stored and subsequent payout attempts require a new assessment/review.
+A REJECT is a 7-day hold (ADR-025): the request stays queued and is reopened only by
+fresh evidence that passes every check.
 
 Keep the database, WAL/SHM and lease together on a local filesystem. Do not rename,
 delete or edit them while the operator runs. Files are ignored by Git; database and
 lease are mode 0600. A signed raw transaction is authorization material even though
 it contains no private key. Stop the operator before taking a SQLite backup; use
 SQLite's backup API or checkpoint and copy the database with its sidecars.
+
+### Keys, lanes and fees (ADR-026)
+
+| Role | Variable | Does | Needs ETH |
+| :--- | :--- | :--- | :--- |
+| Owner | `TRIPWIRE_OWNER_SAFE` | A Safe. Owns the guardian: route config, resume, re-arm, kill switch, oracle rotation (2 days) | Its own signers pay |
+| Oracle | `TRIPWIRE_ORACLE_KEY` | Signs attestations and release reviews (EIP-712). Sends nothing | No |
+| Relayer | `TRIPWIRE_RELAYER_KEY` | Deploys; pays for reviews and payouts; owns the demo token and vault | Yes |
+| Attestation relayer | `TRIPWIRE_ATTESTATION_RELAYER_KEY` | Pays for attestations on its own nonce lane | Yes |
+
+Each relayer has its own journal: `<state>.sqlite` for reviews and payouts,
+`<state>.attestations.sqlite` for attestations. A review stuck at a low fee holds back
+other reviews and payouts (one nonce at a time per lane) but never an attestation.
+New transactions offer twice the base fee plus the tip and 20% more gas than estimated.
+A transaction not mined within 60 seconds, or refused as underpriced, is re-signed with
+the same nonce and at least 10% higher fees, journaled, then broadcast, up to 8 times.
+`TRIPWIRE_MAX_FEE_GWEI` (default 300) caps every fee: above it nothing new is signed and
+a pending transaction is not bumped further. An unfunded relayer is reported at once.
+
+`SEPOLIA_RPC_URL` may list several URLs, comma-separated; they fail over in order.
+Failed ticks back off from 10 seconds to 5 minutes; a finality quarantine still stops
+the process. `TRIPWIRE_BASELINE_HOURS` sets the rolling baseline window (default 24).
+
+### Redeploy policy v4 to Sepolia
+
+The contracts in `deployment.sepolia.json` predate policy v4; the operator and the demo
+refuse them. A redeploy needs the four role variables above, Sepolia ETH on both
+relayers (the deploy prints how much) and a Safe on Sepolia (create one at app.safe.global).
+
+```bash
+# .env.tripwire (git-ignored): TRIPWIRE_ORACLE_KEY, TRIPWIRE_RELAYER_KEY,
+# TRIPWIRE_ATTESTATION_RELAYER_KEY, TRIPWIRE_OWNER_SAFE, optionally SEPOLIA_RPC_URL
+npm run tripwire:deploy            # refuses one key or an EOA owner; writes deployment.sepolia.json
+# In the Safe: call acceptOwnership() on the guardian (the deploy prints the calldata)
+npm run tripwire:verify            # needs ETHERSCAN_API_KEY
+npm run tripwire:demo:sepolia      # first run needs no owner action
+npm run tripwire:operator:sepolia -- --watch
+git add scripts/tripwire/testnet/deployment.sepolia.json   # commit the new addresses
+```
+
+After the Safe accepts, a rerun of the demo on a protected route asks the Safe to call
+`resume(routeId)`; the relayer can no longer reset it.
 
 ## Verified and deferred
 
