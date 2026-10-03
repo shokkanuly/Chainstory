@@ -52,6 +52,35 @@ They connect at three points, in this priority order:
 
 ## Status board (keep in sync with 05-roadmap)
 
+**Active work: Tripwire hardening.** The first milestone adds a signed per-release
+execution gate and retryable observations. The second adds durable operator state,
+signed transaction recovery and HOLD/delay retries. The third adds finalized
+RPC observations, receipt reorg recovery and durable quarantine
+([runbook](plans/tripwire-operator.md)).
+The fourth adds a [CCTP v2 USDC post-mint escrow adapter](plans/tripwire-cctp.md),
+durable source/settlement/nonce claims and a read-only receipt audit command.
+The fifth adds self-owned `CctpEscrow`: an authenticated Circle mint and immutable
+PENDING request are atomic; the operator verifies both in the settlement receipt.
+External review, fresh deployment and the live transfer pilot remain pending.
+The sixth adds continuous refresh of freshly justified pending risk before the
+guardian's 24-hour expiry, with chain-state reconciliation and the existing outbox.
+The seventh scopes reporter permissions to routes, removes fixed-window boundary
+bursts and gives large delayed requests individual clocks. This immutable policy
+v2 needs a fresh reviewed deployment; [limits and rollout](plans/tripwire-route-policy.md).
+The eighth closes the settlement-firewall brief's remaining gaps: the guardian and
+vault accept a k-of-n `TripwireQuorum` as their oracle (policy v3; its members still
+run in one process), source proofs are read through independent RPC providers that
+must agree, and one proof-first verdict with named checks and a tighten-only route
+policy decides every release ([build map](plans/tripwire-settlement-firewall.md), ADR-021–023).
+The ninth remediates the October audit (policy v4, ADR-024–027): oracle replacement
+takes two days and a kill switch is instant, the oracle alone holds a route at most
+72 hours, DELAY counts split payouts, a REJECT is a 7-day hold rather than stranded
+funds, keys are split by role with separate nonce lanes and fee-bumped replacement,
+and the live operator computes a rolling baseline.
+See [the plan](plans/tripwire-hardening.md)
+for implemented behavior, remaining P0 work and the old Sepolia deployment boundary.
+The wallet/Solana phase table below describes the earlier project work.
+
 | Phase | Name | Status |
 |-------|------|--------|
 | 0 | Foundation: chain-agnostic seams + characterization tests | ☑ completed |

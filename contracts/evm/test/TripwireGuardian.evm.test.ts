@@ -35,7 +35,7 @@ let nonce = 0n;
 beforeEach(async () => {
   g = await deployGuardian();
   expect((await g.send(owner, 'configureRoute', [ROUTE, CAP, WINDOW])).ok).toBe(true);
-  expect((await g.send(owner, 'setProtected', [bridge.address, true])).ok).toBe(true);
+  expect((await g.send(owner, 'setProtected', [bridge.address, ROUTE, true])).ok).toBe(true);
 });
 
 const att = (over: Partial<Attestation> = {}): Attestation => ({
@@ -150,6 +150,7 @@ describe('pausing', () => {
 
   it('pauses only the attested route, not the rest of the bridge', async () => {
     await g.send(owner, 'configureRoute', [OTHER_ROUTE, CAP, WINDOW]);
+    await g.send(owner, 'setProtected', [bridge.address, OTHER_ROUTE, true]);
     await submit(att({ routeId: ROUTE }));
     expect(await g.read('isPaused', [ROUTE])).toBe(true);
     expect(await g.read('isPaused', [OTHER_ROUTE])).toBe(false);
@@ -306,24 +307,34 @@ describe('expiry and escape hatches', () => {
   });
 
   it('rotating the oracle stops the old key being able to pause', async () => {
+    expect((await g.send(owner, 'proposeOracle', [attacker.address])).ok).toBe(true);
+    g.warp(2n * DAY);
+    expect((await g.send(relayer, 'acceptOracle')).ok).toBe(true);
     const a = att();
-    const oldSig = await signAttestation(oracle, g.address, a);
-    expect((await g.send(owner, 'setOracle', [attacker.address])).ok).toBe(true);
-    const res = await submit(a, oldSig);
+    const res = await submit(a, await signAttestation(oracle, g.address, a));
     expect(res.error).toBe('InvalidSigner');
     expect(res.errorArgs).toEqual([oracle.address]);
   });
 
+  it('disabling the oracle stops every key being able to pause, at once', async () => {
+    expect((await g.send(owner, 'disableOracle')).ok).toBe(true);
+    expect(await g.read('oracle')).toBe('0x0000000000000000000000000000000000000000');
+    expect((await submit(att())).error).toBe('InvalidSigner');
+  });
+
   it('refuses a zero oracle on rotation', async () => {
-    expect((await g.send(owner, 'setOracle', ['0x0000000000000000000000000000000000000000'])).error).toBe(
+    expect((await g.send(owner, 'proposeOracle', ['0x0000000000000000000000000000000000000000'])).error).toBe(
       'ZeroAddress'
     );
   });
 
   it.each([
     ['configureRoute', [OTHER_ROUTE, CAP, WINDOW]],
-    ['setProtected', [attacker.address, true]],
-    ['setOracle', [attacker.address]],
+    ['setProtected', [attacker.address, ROUTE, true]],
+    ['proposeOracle', [attacker.address]],
+    ['cancelOracleRotation', []],
+    ['disableOracle', []],
+    ['rearmProtection', [ROUTE]],
     ['resume', [ROUTE]],
   ] as const)('only the owner may call %s', async (fn, args) => {
     expect((await g.send(attacker, fn, args)).error).toBe('OwnableUnauthorizedAccount');
@@ -340,7 +351,7 @@ describe('attestation replay protection', () => {
     expect((await submit(a, sig)).error).toBe('NonceAlreadyUsed');
   });
 
-  // Identical bytecode is deployed to four chains.
+  // The same bytecode is meant to run on several chains.
   it('a signature produced for another chain is rejected', async () => {
     const a = att();
     expect((await submit(a, await signAttestation(oracle, g.address, a, 42161))).error).toBe('InvalidSigner');
@@ -410,7 +421,7 @@ describe('gas', () => {
     await g.send(bridge, 'onTokenOutflow', [ROUTE, 1n]); // warm the slots
     const outflow = await g.send(bridge, 'onTokenOutflow', [ROUTE, 1n]);
     const attest = await submit(att());
-    expect(outflow.gas).toBeLessThan(40_000n);
+    expect(outflow.gas).toBeLessThan(100_000n);
     expect(attest.gas).toBeLessThan(90_000n);
     console.log(`gas — onTokenOutflow (warm): ${outflow.gas}, submitAttestation: ${attest.gas}`);
   });

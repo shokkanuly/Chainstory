@@ -63,6 +63,12 @@ export interface CallResult {
   gas: bigint;
 }
 
+/** Another contract deployed into the same local chain (for integration tests and demos). */
+export interface VMContract {
+  address: Hex;
+  abi: Abi;
+}
+
 export class GuardianVM {
   /** Seconds since epoch, applied to every subsequent block. */
   now: bigint;
@@ -93,9 +99,18 @@ export class GuardianVM {
     this.now = start;
   }
 
+  /**
+   * `oracle` may be an address, or a function that deploys the oracle contract
+   * (a TripwireQuorum) into this chain first and returns its address — the
+   * guardian then starts with it, as a real deployment does, instead of
+   * rotating to it through the 2-day `proposeOracle` / `acceptOracle` notice.
+   */
   static async deploy(
     artifact: GuardianArtifact,
-    { start = 1_780_000_000n, oracle = actors.oracle.address }: { start?: bigint; oracle?: Hex } = {}
+    { start = 1_780_000_000n, oracle = actors.oracle.address }: {
+      start?: bigint;
+      oracle?: Hex | ((chain: GuardianVM) => Promise<Hex>);
+    } = {}
   ): Promise<GuardianVM> {
     const common = new Common({ chain: Mainnet, hardfork: Hardfork.Cancun });
     const vm = await createVM({ common });
@@ -103,9 +118,10 @@ export class GuardianVM {
       await vm.stateManager.putAccount(new Address(hexToBytes(a.address)), new Account(0n, 10n ** 21n));
     }
     const g = new GuardianVM(vm, common, artifact.abi, start);
+    const oracleAddress = typeof oracle === 'function' ? await oracle(g) : oracle;
     const res = await g.raw(
       actors.owner,
-      encodeDeployData({ abi: artifact.abi, bytecode: artifact.bytecode, args: [actors.owner.address, oracle] }),
+      encodeDeployData({ abi: artifact.abi, bytecode: artifact.bytecode, args: [actors.owner.address, oracleAddress] }),
       undefined
     );
     // ethereumjs reports `createdAddress` even when the constructor reverts, so
@@ -137,10 +153,10 @@ export class GuardianVM {
     return runTx(this.vm, { tx, block: this.block(), skipBalance: true });
   }
 
-  private decode(bytes: Uint8Array) {
+  private decode(bytes: Uint8Array, abi: Abi = this.abi) {
     if (bytes.length < 4) return undefined;
     try {
-      const d = decodeErrorResult({ abi: this.abi, data: bytesToHex(bytes) as Hex });
+      const d = decodeErrorResult({ abi, data: bytesToHex(bytes) as Hex });
       return { name: d.errorName, args: d.args };
     } catch {
       return { name: `unknown(${bytesToHex(bytes.slice(0, 4))})`, args: [] as readonly unknown[] };
@@ -148,32 +164,55 @@ export class GuardianVM {
   }
 
   send(from: PrivateKeyAccount, functionName: string, args: readonly unknown[] = []): Promise<CallResult> {
-    return this.exclusive(() => this.sendNow(from, functionName, args));
+    return this.sendContract({ address: this.address, abi: this.abi }, from, functionName, args);
   }
 
-  private async sendNow(from: PrivateKeyAccount, functionName: string, args: readonly unknown[]): Promise<CallResult> {
-    const res = await this.raw(from, encodeFunctionData({ abi: this.abi, functionName, args }), this.address);
+  deployContract(artifact: GuardianArtifact, args: readonly unknown[], from = actors.owner): Promise<VMContract> {
+    return this.exclusive(async () => {
+      const res = await this.raw(from, encodeDeployData({ ...artifact, args }), undefined);
+      if (res.execResult.exceptionError || !res.createdAddress) {
+        throw new Error(`Contract deployment reverted: ${this.decode(res.execResult.returnValue, artifact.abi)?.name ?? 'unknown'}`);
+      }
+      return { address: res.createdAddress.toString() as Hex, abi: artifact.abi };
+    });
+  }
+
+  sendContract(contract: VMContract, from: PrivateKeyAccount, functionName: string, args: readonly unknown[] = []): Promise<CallResult> {
+    return this.exclusive(() => this.sendNow(contract, from, functionName, args));
+  }
+
+  private async sendNow(contract: VMContract, from: PrivateKeyAccount, functionName: string, args: readonly unknown[]): Promise<CallResult> {
+    const res = await this.raw(from, encodeFunctionData({ abi: contract.abi, functionName, args }), contract.address);
     const failed = res.execResult.exceptionError !== undefined;
-    const decoded = failed ? this.decode(res.execResult.returnValue) : undefined;
+    const decoded = failed ? this.decode(res.execResult.returnValue, [...contract.abi, ...this.abi]) : undefined;
     return { ok: !failed, error: decoded?.name, errorArgs: decoded?.args, gas: res.totalGasSpent };
   }
 
   read<T = unknown>(functionName: string, args: readonly unknown[] = []): Promise<T> {
-    return this.exclusive(() => this.readNow<T>(functionName, args));
+    return this.readContract<T>({ address: this.address, abi: this.abi }, functionName, args);
   }
 
-  private async readNow<T>(functionName: string, args: readonly unknown[]): Promise<T> {
-    const r = await this.vm.evm.runCall({
-      to: new Address(hexToBytes(this.address)),
-      caller: new Address(hexToBytes(actors.owner.address)),
-      data: hexToBytes(encodeFunctionData({ abi: this.abi, functionName, args })),
-      block: this.block(),
-    });
-    return decodeFunctionResult({
-      abi: this.abi,
-      functionName,
-      data: bytesToHex(r.execResult.returnValue) as Hex,
-    }) as T;
+  readContract<T = unknown>(contract: VMContract, functionName: string, args: readonly unknown[] = []): Promise<T> {
+    return this.exclusive(() => this.readNow<T>(contract, functionName, args));
+  }
+
+  private async readNow<T>(contract: VMContract, functionName: string, args: readonly unknown[]): Promise<T> {
+    // runCall changes the caller's nonce even for a view. A simulated read must
+    // not leave those changes behind before the next signed transaction.
+    await this.vm.stateManager.checkpoint();
+    try {
+      const r = await this.vm.evm.runCall({
+        to: new Address(hexToBytes(contract.address)),
+        caller: new Address(hexToBytes(actors.owner.address)),
+        data: hexToBytes(encodeFunctionData({ abi: contract.abi, functionName, args })),
+        block: this.block(),
+      });
+      return decodeFunctionResult({
+        abi: contract.abi, functionName, data: bytesToHex(r.execResult.returnValue) as Hex,
+      }) as T;
+    } finally {
+      await this.vm.stateManager.revert();
+    }
   }
 
   warp(seconds: number | bigint) {

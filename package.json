@@ -16,6 +16,8 @@
     "tripwire:demo:local": "tsx scripts/tripwire/demoLocal.ts",
     "tripwire:deploy": "tsx scripts/tripwire/testnet/deploy.ts",
     "tripwire:verify": "tsx scripts/tripwire/testnet/verify.ts",
+    "tripwire:operator:sepolia": "tsx scripts/tripwire/testnet/runOperator.ts",
+    "tripwire:cctp:verify": "tsx scripts/tripwire/testnet/verifyCctp.ts",
     "tripwire:demo:sepolia": "tsx scripts/tripwire/testnet/demo.ts"
   },
   "dependencies": {

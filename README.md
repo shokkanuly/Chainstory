@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Solidity-0.8.37-363636?logo=solidity&logoColor=white" alt="Solidity" />
   <img src="https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/viem-2.56-FFC517" alt="viem" />
-  <img src="https://img.shields.io/badge/tests-303_passing-brightgreen" alt="303 tests passing" />
+  <img src="https://img.shields.io/badge/tests-665_passing-brightgreen" alt="665 tests passing" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
 </p>
 
@@ -43,6 +43,45 @@ Retold's contract checks to do it. The rest of this README is about Tripwire;
 Retold's full documentation is in [docs/chainstory.md](docs/chainstory.md).
 
 ## Tripwire
+
+**A pre-execution settlement firewall.** Cross-chain systems can authenticate a
+message and still allow an economically invalid outcome. Tripwire sits in front
+of destination settlement and asks one question before money is minted or
+released: *can an independent system prove the source event actually happened?*
+
+```
+source burn / lock  →  bridge message  →  TRIPWIRE: verify source + invariants + policy  →  ALLOW / THROTTLE / DELAY / FREEZE  →  settle
+```
+
+| Build focus | In the code |
+| :--- | :--- |
+| Pre-execution hook | The vault pays only after a fresh, payout-bound ALLOW and a guardian check; the CCTP escrow creates requests only from an authenticated mint |
+| Deterministic invariants, proof first | `settlementVerdict`: a failed source/backing proof rejects and freezes; risk signals can only hold |
+| Independent verification | Finalized reads, reorg quarantine, and source proofs read through independent RPC providers that must agree |
+| Programmable policy | Per-route rolling caps and request delay on-chain; tighten-only size limit and hold line off-chain |
+| Safe, scoped enforcement | Per-route tiers that escalate only, expire in 24 h and stop at 72 h unless a human re-arms; the oracle can never move funds |
+| Trust model | Owner Safe, oracle and relayers are separate keys; replacing the oracle takes two days' notice, switching it off is instant. A k-of-n `TripwireQuorum` is accepted on-chain, but the operator still signs with one oracle key |
+
+Build map, status and open work: [docs/plans/tripwire-settlement-firewall.md](docs/plans/tripwire-settlement-firewall.md).
+
+**Release hardening (local, 2026-09-30):** the latest `ProtectedVault` requires a
+fresh signed review for each payout. Pending, unavailable and held requests cannot
+execute; invalid requests remain rejected after route protection expires. The local
+demo now runs the actual gated vault as well as the guardian. See the
+[hardening plan](docs/plans/tripwire-hardening.md) for the trust boundary and remaining
+work. The operator now
+has durable state, a signed transaction journal, HOLD/delay recovery, finalized RPC
+observations, reorg handling and continuous protection refresh while fresh pending
+risk persists; see its
+[runbook](docs/plans/tripwire-operator.md). Route-scoped reporters, conservative
+rolling caps and per-request DELAY are implemented locally in immutable policy v2;
+[limits and fresh-deployment requirements](docs/plans/tripwire-route-policy.md).
+The [CCTP v2 USDC adapter](docs/plans/tripwire-cctp.md) verifies finalized burns and
+minted escrow backing on Base Sepolia → Ethereum Sepolia, with durable replay claims
+and a read-only audit command. `CctpEscrow` now creates immutable pending requests
+only from an authenticated Circle mint in the same transaction, for the exact
+net amount and hook beneficiary. Its fixtures are synthetic; external review,
+fresh deployment and the live pilot remain pending.
 
 On 18 April 2026, $292M left Kelp DAO's bridge. Not over hours — in **a single
 release**. Verus lost $11.58M the same way in May, Syscoin ~$10M in June.
@@ -74,6 +113,11 @@ a breaker acts before execution or it does not act at all.
 
 ## Live on Sepolia
 
+The addresses and results below record the **previous deployment**. Its vault has
+no per-release review gate. No redeployment has been performed for the hardening
+change; the current Sepolia demo scripts detect the old vault and stop before
+sending transactions. A fresh deployment is required to run the current loop.
+
 The same loop runs on a public testnet: a scripted attack, a watcher that scores
 each payout before it executes, a signed attestation, and the guardian's tier
 changing on-chain. Every contract but the attacker's is verified on Etherscan.
@@ -93,8 +137,8 @@ lists to see each attestation and each blocked payout.
 | :--- | :--- | ---: | :--- |
 | 0 | Three ordinary payouts, each backed by a burn: all paid | 0.00 | NONE |
 | 1 | A payout to the attacker's contract: fresh, unverified, upgradeable | 0.65 | **THROTTLE** — cap halved, still paid |
-| 2 | A 900,000 payout to the same contract, 10× the route's usual size | 0.85 | **DELAY** — held (`OutflowDelayed`); an honest 40,000 payout in the same minute is paid |
-| 3 | A forged 11,580,000 payout with no burn behind it | 1.00 | **FREEZE** — blocked (`RoutePaused`) |
+| 2 | A 900,000 payout to the same contract, 10× the route's usual size | 0.85 | **DELAY** — held (`ReleaseDelayed`); an honest 40,000 payout in the same minute is paid |
+| 3 | A forged 11,580,000 payout with no burn behind it | 1.00 | **FREEZE + REJECT** — terminally blocked (`ReleaseRejected`) |
 
 Reproduce it: `npm run tripwire:demo:local` runs the same four steps against
 the real bytecode in a local EVM, no keys needed.
@@ -167,25 +211,40 @@ against **no verifiable burn at all**.
 - **The replays are reconstructions** of what each attack looked like to the
   bridge — no real transaction hashes. Every sourced fact and every assumption
   is listed separately on the page.
-- **Testnet only, and a demo bridge.** Both ends of the bridge are on Sepolia,
-  the attack is scripted, and the route's baseline is a fixed demo profile
-  rather than one computed from live history.
-- **One signer.** The attestation key is the single point of trust (on the
-  testnet it is also the deployer). Threshold signing (2-of-3) is the roadmap
-  answer; the owner can rotate the oracle key today.
+- **Testnet only, and a demo bridge.** Both ends of the bridge are on Sepolia
+  and the attack is scripted. The scripted demo scores against a fixed baseline
+  profile; the durable operator computes a rolling one from finalized source burns.
+- **One oracle key.** Owner, oracle and relayers are separate keys (ADR-026), and
+  the owner cannot swap the oracle without two days' public notice (ADR-024). The
+  guardian and vault already accept a k-of-n `TripwireQuorum`, but its members do
+  not yet run on separate machines, so the live operator signs with one key.
+- **The Sepolia contracts are pre-v4.** They were deployed with one key for every
+  role, and the current operator and demo refuse them. Redeploying needs the role
+  keys and a Safe ([runbook](docs/plans/tripwire-operator.md#redeploy-policy-v4-to-sepolia)).
 
 ## Proof it works
 
 | Check | Result |
 | :--- | :--- |
-| Guardian executed in a real EVM | 53 / 53 tests |
-| Each tier property broken on purpose (`npm run test:mutants`) | 14 / 14 mutants caught |
+| Guardian executed in a real EVM | 57 / 57 tests |
+| Audit findings reproduced, then fixed: CRIT-1/2, HIGH-1/3, MED-1 (`auditRegression*.test.ts`) | 15 tests |
 | Oracle and contract agree at every tier boundary (64/65, 84/85, 94/95) | 12 cross-layer tests |
 | Incident replays, end to end | 41 tests |
 | Watch → attest → guardian loop, tier asserted after each step | 6 tests |
+| Signed release gate: field/domain binding, replay/order, expiry, key rotation, terminal rejection, required protection | 23 tests |
+| Watcher retry, missing/conflicting source data, deduplication and acknowledgement | 11 tests |
+| RPC/decode cursor recovery, bounded catch-up and old-deployment refusal | 4 tests |
+| Durable state, SIGKILL, transaction inclusion/finality recovery and HOLD/delay queue | 49 tests |
+| Finalized log/provenance, canonical headers/checkpoints, receipt finality and signing guard | 21 tests |
+| CCTP v2 USDC: exact escrow backing, identity/fee binding, replay, durable claims and quarantine | 45 tests |
+| Authenticated CCTP escrow: atomic net mint/credit, self-ownership, rollback, receipt identity and deployment bindings | 74 tests |
+| Protection refresh: expiry/restart, chain clock, concurrent calls, key rotation, stale risk and RPC/quarantine failures | 28 tests |
+| Route isolation, rolling caps, request delay and historical review policy | 42 tests |
+| Guardian, release-review, quorum and CCTP guards broken on purpose (`npm run test:mutants`) | 62 / 62 mutants caught |
+| Audit remediation (policy v4): oracle rotation, span, REJECT hold, relayer lanes, fee bumping, key roles, rolling baseline, safe-head feeds | 81 new tests (665 → 746) |
 | Check before you sign, incl. "nothing reachable from /check can sign" | 40 tests |
-| Gas: check an outflow · accept an attestation | 36.7k · 84.5k |
-| Total | **303 tests passing** |
+| Gas: check an outflow · accept an attestation | 79.0k · 88.3k |
+| Total | **746 tests passing** |
 
 The dashboard runs the exact contract bytecode the tests run, and a test fails
 if they ever differ.
@@ -197,7 +256,7 @@ git clone https://github.com/shokkanuly/Chainstory.git
 cd Chainstory
 npm install
 npm run dev                    # Retold at /app and /check, Tripwire at /tripwire
-npm test                       # 303 tests
+npm test                       # 609 tests
 npm run tripwire:demo:local    # the four-step attack, in a local EVM
 ```
 
@@ -218,17 +277,17 @@ No API keys needed for the Tripwire replay or the local demo. Retold needs an `E
 | [`api/`](api/), [`server/`](server/) | Retold's API proxy — keeps explorer keys server-side |
 
 Tripwire's oracle reuses Retold's contract checks (verification, age,
-upgradeability) to score the contract a payout goes to. Using Retold's indexing
-to build live route baselines is next.
+upgradeability) to score the contract a payout goes to. The durable operator
+builds each route's baseline from its finalized source burns (ADR-027).
 
 ## Built vs roadmap
 
 | | Built and tested | Roadmap |
 | :--- | :--- | :--- |
 | Retold | Wallet stories, draft Form 8949, approvals, contract risk, Check before you sign, opt-in AI wording | Solana analysis in the app (adapters exist, not wired in) |
-| Tripwire oracle | Five rules, graduated tiers, `indeterminate` when blind | Baselines from live history; a trained model |
-| Guardian | THROTTLE / DELAY / FREEZE, escalate-only, 24 h expiry, on Sepolia | Mainnet; a Solana (Anchor) guardian |
-| Operations | Watcher and single-signer attestor, local and on Sepolia | 2-of-3 threshold signing; a relayer / mempool hook |
+| Tripwire oracle | Five rules, graduated tiers, `indeterminate` when blind, rolling baseline from finalized burns | A trained model |
+| Guardian | THROTTLE / DELAY / FREEZE, escalate-only, 24 h expiry, 72 h oracle span, time-locked oracle rotation; an older version on Sepolia | Policy v4 on Sepolia; mainnet; a Solana (Anchor) guardian |
+| Operations | Durable watcher/transaction journal, finalized RPC guards, separate key roles and nonce lanes, fee-bumped replacement, RPC failover, authenticated CCTP v2 USDC escrow tested locally | External review/deployment; live CCTP pilot; quorum members on separate machines |
 | Further ideas | — | zkML proofs of the score (EZKL), a sentinel network, bounties for reporters |
 
 ## Sources

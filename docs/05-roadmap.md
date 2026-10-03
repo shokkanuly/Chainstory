@@ -6,6 +6,31 @@ Update the status table in `docs/README.md` and the checkboxes here as work land
 
 ## Hackathon build (September 2026) — status
 
+### Active Tripwire work — 2026-10-02
+
+The current project focus is Tripwire. [Hardening plan](plans/tripwire-hardening.md)
+supersedes the hackathon scope for new work; the legacy wallet/Solana phases below
+remain historical context.
+
+| Milestone | Status |
+| :--- | :--- |
+| Signed per-release execution gate, retryable source/recipient observations and event cursor recovery | Implemented locally; see hardening plan for validation and trust boundaries |
+| Durable operator state, signed transaction journal and HOLD/delay recovery | Implemented locally; [operator runbook](plans/tripwire-operator.md); no live deployment |
+| Ethereum/Sepolia finalized observations, receipt reorg recovery and durable quarantine | Implemented locally; ADR-016; no live deployment |
+| CCTP v2 Standard USDC adapter, Base Sepolia → Ethereum Sepolia | Implemented locally; [escrow/runbook](plans/tripwire-cctp.md), ADR-017; synthetic fixtures, live pilot pending |
+| Authenticated CCTP mint → immutable pending escrow release | Implemented locally; ADR-018; self-owned escrow, exact net mint, atomic rollback and authenticated operator policy; external review/deployment pending |
+| Continuous refresh of justified route protection | Implemented locally; ADR-019; chain-bound expiry/clock/oracle reconciliation, renewed pending assessments and existing durable outbox; live operation pending |
+| Route-scoped guardian reporters, conservative rolling cap and per-request DELAY | Implemented locally; ADR-020; [policy/rollout](plans/tripwire-route-policy.md); fresh policy-v2 deployment and external review pending |
+| Threshold attestation: k-of-n `TripwireQuorum` as the guardian/vault oracle | Implemented locally; ADR-021; policy v3; [build map](plans/tripwire-settlement-firewall.md); networked members and deployment pending |
+| Independent multi-RPC verification of source proofs | Implemented locally; ADR-022; quorum agreement, dissent holds, finalized conflict quarantines; light-client finality pending |
+| Proof-first settlement verdict and tighten-only route policy | Implemented locally; ADR-023; named proof/safety checks, per-route size limit and hold line |
+| Audit remediation, policy v4: time-locked oracle rotation and kill switch, no cap raise under protection, 72-hour oracle span, cumulative DELAY | Implemented locally 2026-10-02; ADR-024; audit PoCs inverted in `auditRegression.evm.test.ts`; 62/62 mutants caught |
+| REJECT as a 7-day hold that fresh evidence can reopen (CctpEscrow funds never stranded) | Implemented locally; ADR-025; contract and operator |
+| Separate key roles (owner Safe, oracle, two relayers), separate nonce lanes, fee-bumped replacement | Implemented locally; ADR-026; deploy and operator refuse one key |
+| Rolling baseline, safe-head release requests, exact one-sided backing, RPC failover, backoff | Implemented locally; ADR-027 |
+| Live deployment of the release-gated vault | Not deployed. The Sepolia contracts in `deployment.sepolia.json` are pre-v4 and the operator refuses them. Redeploy with the role keys and a Safe: [operator runbook](plans/tripwire-operator.md#redeploy-policy-v4-to-sepolia) |
+| Independent quorum members (k-of-n signing on separate machines) | Not started: the contract enforces k-of-n, but the operator signs with one oracle key and the local quorum runs in one process |
+
 Tripwire and Check before you sign, planned in [plans/tripwire-hackathon.md](plans/tripwire-hackathon.md) (each stage's result is recorded there).
 
 | Stage | What | Status |

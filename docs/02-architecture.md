@@ -119,3 +119,54 @@ The EVM explorer and Gemini keys sit behind the server-side proxy (ADR-013); oth
 
 Add a chain → new adapter + registry entries (playbook in `08`). Add a protocol → decoder + registry entry + fixture.
 Add a story category → `domain` enum + template + tax mapping decision (taxable / income / non-taxable) in one change.
+
+
+## Tripwire operator persistence (ADR-015)
+
+The operator under `scripts/tripwire/` uses a local SQLite store for atomic
+feed checkpoints, pending release work and a signed transaction outbox. The
+browser and stateless proxy runtimes do not import or access it. One process
+owns a deployment-bound state file; recovery reuses original signed transaction
+bytes and reconciles terminal vault states. HOLD/delay work remains queued.
+See the [operator runbook](plans/tripwire-operator.md) for scope, recovery and
+the outstanding finality/source-verification boundaries.
+
+
+ADR-016 adds hash-bound finalized RPC checkpoints and a signed/included/finalized
+transaction lifecycle. The operator checks anchors before recovery and publication;
+only finalized terminal vault state completes a job. An unfinalized receipt reorg
+reuses its original signed bytes, while a finalized-history conflict persists a
+quarantine. This is provider-trusting Ethereum/Sepolia policy, not a consensus
+light client or a substitute for independent bridge-message authentication.
+
+ADR-017 adds the CCTP v2 USDC post-mint source adapter. Pure EVM codecs/verified
+protocol facts live in `src/chains/evm/`; receipts, proof claims, signing guards and
+the read-only audit CLI remain in `scripts/tripwire/`. Durable source and settlement
+identities/nonce claims bind a finalized burn to the exact escrow payout. The
+operator factory is explicit; no CCTP signing/relaying enters the browser or proxies.
+See the [CCTP runbook](plans/tripwire-cctp.md) for policy and remaining trust boundaries.
+
+ADR-019 adds protection refresh inside the existing operator tick. Guardian
+tier/expiry/oracle and chain time are read from one hash-checked latest state
+block, bounded below by observed write receipts. Source evidence stays finalized.
+Fresh pending assessments may renew a matching active tier near expiry; stale
+decisions are not persisted as permanent risk flags. Existing queue/outbox recovery
+and quarantine apply to refresh signatures and transactions as well.
+
+ADR-020 scopes guardian callers by route, uses a bounded conservative rolling
+budget and adds a sticky per-message delay to ProtectedVault/CctpEscrow. The
+operator binds request delay to chain time and waits without repeated ALLOW
+signatures, while reassessing risk/source health/protection. Immutable policy-v2
+markers and route grants are checked before opening the signing lifecycle;
+release review domain version is 2. Existing deployment-bound persistence and
+read-only browser boundaries remain. See [policy/rollout](plans/tripwire-route-policy.md).
+
+ADR-024 to ADR-027 (policy v4, the October audit) bound the owner and the oracle on
+chain: two days' notice to replace the oracle and an instant kill switch, no cap raise
+under protection, a 72-hour oracle span, cumulative DELAY, and a REJECT that holds for
+7 days instead of stranding escrowed funds. Off-chain, the operator runs two journals
+and two relayers (reviews and payouts; attestations), so one stuck transaction can no
+longer hold back a FREEZE; the sender journals fee-bumped same-nonce replacements
+before broadcasting them. The oracle key only signs. The watcher computes a rolling
+baseline from finalized source burns and reads release requests at the `safe` head;
+source evidence stays finalized. Browser and proxy boundaries are unchanged.

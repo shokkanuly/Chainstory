@@ -2,9 +2,14 @@
 //
 // Tripwire on a public testnet (Sepolia): deploy, verify, and run the same
 // watch → attest → guardian loop as the local demo, with transactions a judge
-// can open on the explorer. Operator-side code (ADR-012): it holds the
-// throwaway deployer key, which never leaves .env.tripwire and is never
-// printed. Both ends of the demo bridge live on Sepolia, so one faucet funds it.
+// can open on the explorer. Operator-side code (ADR-012): it holds testnet
+// keys, which never leave .env.tripwire and are never printed. Both ends of
+// the demo bridge live on Sepolia, so one faucet funds it.
+//
+// Roles (ADR-026): an owner Safe administers the guardian, an oracle key signs
+// attestations and reviews and holds no gas money, and two relayer keys pay
+// gas: one for reviews and payouts, one for attestations, so a stuck
+// transaction in one lane never delays the other.
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -14,8 +19,12 @@ import {
   createPublicClient,
   createWalletClient,
   encodeFunctionData,
+  fallback,
   formatEther,
+  getAddress,
   http,
+  isAddress,
+  parseGwei,
   keccak256,
   toHex,
   type Abi,
@@ -34,9 +43,13 @@ import type { ContractRiskSummary, RouteBaseline } from '../../../src/tripwire/t
 import { FLAG_LIST_NAME, lookupFlaggedAddress } from '../../../src/services/preventiveScamScanner.js';
 import { ATTACK_STEPS, DRAIN_CONTRACT, USDC } from '../attack.js';
 import { Attestor, type AttestationOutcome, type GuardianPort } from '../attest.js';
-import type { BurnEvent, LogFeed, ReleaseEvent } from '../events.js';
+import { burnEventSchema, releaseEventSchema, type BurnEvent, type LogFeed, type ReleaseEvent, type EventOrigin } from '../events.js';
 import { Watcher } from '../watch.js';
+import { z } from 'zod';
+import { blockHeaderSchema, blockHashSchema, finalizedCheckpointSchema, FinalityConflictError } from '../finality.js';
+import { releaseDecision, releaseMinimumTier, signReleaseReview, type ReleaseReview } from '../review.js';
 import demo from './contracts.artifact.js';
+import { assertProtectionPolicy } from './protectionPolicy.js';
 
 export const ROOT = resolve(import.meta.dirname, '../../..');
 export const EXPLORER = 'https://sepolia.etherscan.io';
@@ -62,39 +75,96 @@ function readDotenv(path: string): Record<string, string> {
 }
 
 export interface TestnetConfig {
+  /** Deploys and configures. With separate roles, this is the release relayer. */
   account: PrivateKeyAccount;
-  rpcUrl: string;
+  /** Signs attestations and release reviews (EIP-712). Pays no gas. */
+  oracle: PrivateKeyAccount;
+  /** Pays gas for release reviews and payouts. */
+  relayer: PrivateKeyAccount;
+  /** Pays gas for attestations, on its own nonce sequence. */
+  attestationRelayer: PrivateKeyAccount;
+  /** The Safe that takes guardian ownership after a deployment. Null for the legacy one-key demo. */
+  owner: Hex | null;
+  /** One key plays every role: the legacy demo. Deployments and the durable operator refuse it. */
+  singleKey: boolean;
+  /** Primary first. More than one: a ranked fallback transport. */
+  rpcUrls: string[];
+  /** The most the operator offers per gas, in wei (TRIPWIRE_MAX_FEE_GWEI). */
+  maxFeePerGas: bigint;
   /** Explorer and verification key, from .env; null when absent. */
   etherscanKey: string | null;
   deploymentFile: string;
 }
 
+/** Named role keys in .env.tripwire (ADR-026). */
+export const ROLE_KEYS = {
+  oracle: 'TRIPWIRE_ORACLE_KEY',
+  relayer: 'TRIPWIRE_RELAYER_KEY',
+  attestationRelayer: 'TRIPWIRE_ATTESTATION_RELAYER_KEY',
+} as const;
+const DEFAULT_MAX_FEE_GWEI = '300';
+const keyShaped = (value: string) => /^(0x)?[0-9a-fA-F]{64}$/.test(value);
+const toAccount = (raw: string) => privateKeyToAccount((raw.startsWith('0x') ? raw : `0x${raw}`) as Hex);
+
 /**
- * The deployer key is whatever private-key-shaped value .env.tripwire holds,
- * whatever its variable name. It is used, never printed: only the address it
- * derives is shown.
+ * Keys are used, never printed: only the addresses they derive are shown.
+ *
+ * With any TRIPWIRE_*_KEY role set, every role must be set, each with its own
+ * key, and no other key may sit in the file. Otherwise the file holds exactly
+ * one key under any name: the legacy one-key demo, which only the scripted
+ * demo still accepts.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): TestnetConfig {
   const keyFile = env.TRIPWIRE_ENV_FILE ?? resolve(ROOT, '.env.tripwire');
   const tripwire = readDotenv(keyFile);
-  const keys = Object.values(tripwire).filter((v) => /^(0x)?[0-9a-fA-F]{64}$/.test(v));
-  if (keys.length !== 1) {
-    throw new Error(
-      keys.length === 0
-        ? `No private key found in ${keyFile}. It should hold one line like DEPLOYER_PRIVATE_KEY=0x… (64 hex digits).`
-        : `${keyFile} holds ${keys.length} private keys; keep only the deployer's.`
-    );
+  const roleNames: string[] = Object.values(ROLE_KEYS);
+  const named = (role: keyof typeof ROLE_KEYS) => tripwire[ROLE_KEYS[role]];
+  let roles: Pick<TestnetConfig, 'oracle' | 'relayer' | 'attestationRelayer' | 'owner' | 'singleKey'>;
+  if (roleNames.some((name) => tripwire[name] !== undefined)) {
+    const stray = Object.entries(tripwire).filter(([name, value]) => keyShaped(value) && !roleNames.includes(name)).map(([name]) => name);
+    if (stray.length) throw new Error(`${keyFile}: ${stray.join(', ')} holds a private key outside the roles ${roleNames.join(', ')}. Remove it.`);
+    const missing = roleNames.filter((name) => !keyShaped(tripwire[name] ?? ''));
+    if (missing.length) throw new Error(`${keyFile} is missing ${missing.join(', ')} (64 hex digits each).`);
+    const [oracle, relayer, attestationRelayer] = (['oracle', 'relayer', 'attestationRelayer'] as const).map((role) => toAccount(named(role)));
+    const ownerValue = env.TRIPWIRE_OWNER_SAFE ?? tripwire.TRIPWIRE_OWNER_SAFE;
+    if (ownerValue !== undefined && !isAddress(ownerValue, { strict: false })) throw new Error('TRIPWIRE_OWNER_SAFE is not an address.');
+    const owner = ownerValue === undefined ? null : getAddress(ownerValue);
+    const addresses = [oracle.address, relayer.address, attestationRelayer.address, ...(owner ? [owner] : [])].map((a) => a.toLowerCase());
+    if (new Set(addresses).size !== addresses.length) {
+      throw new Error('The owner Safe, oracle, relayer and attestation relayer must all be different accounts.');
+    }
+    roles = { oracle, relayer, attestationRelayer, owner, singleKey: false };
+  } else {
+    const keys = Object.values(tripwire).filter(keyShaped);
+    if (keys.length !== 1) {
+      throw new Error(
+        keys.length === 0
+          ? `No private key found in ${keyFile}. Set ${roleNames.join(', ')} and TRIPWIRE_OWNER_SAFE (see docs/plans/tripwire-operator.md).`
+          : `${keyFile} holds ${keys.length} unnamed private keys. Name each one by role: ${roleNames.join(', ')}.`
+      );
+    }
+    const only = toAccount(keys[0]);
+    roles = { oracle: only, relayer: only, attestationRelayer: only, owner: null, singleKey: true };
   }
-  const raw = keys[0];
-  const account = privateKeyToAccount((raw.startsWith('0x') ? raw : `0x${raw}`) as Hex);
   const dotenv = readDotenv(resolve(ROOT, '.env'));
   const etherscanKey = env.ETHERSCAN_API_KEY ?? tripwire.ETHERSCAN_API_KEY ?? dotenv.ETHERSCAN_API_KEY ?? null;
+  const urls = rpcUrls(env.SEPOLIA_RPC_URL ?? tripwire.SEPOLIA_RPC_URL, 'https://ethereum-sepolia-rpc.publicnode.com');
+  if (!urls.length) throw new Error('SEPOLIA_RPC_URL is empty.');
+  const gwei = env.TRIPWIRE_MAX_FEE_GWEI ?? tripwire.TRIPWIRE_MAX_FEE_GWEI ?? DEFAULT_MAX_FEE_GWEI;
+  if (!/^[0-9]+(\.[0-9]+)?$/.test(gwei) || parseGwei(gwei) <= 0n) throw new Error('TRIPWIRE_MAX_FEE_GWEI must be a positive number of gwei.');
   return {
-    account,
-    rpcUrl: env.SEPOLIA_RPC_URL ?? tripwire.SEPOLIA_RPC_URL ?? 'https://ethereum-sepolia-rpc.publicnode.com',
+    account: roles.relayer, ...roles, rpcUrls: urls, maxFeePerGas: parseGwei(gwei),
     etherscanKey: etherscanKey && !etherscanKey.includes('your_') ? etherscanKey : null,
     deploymentFile: env.TRIPWIRE_DEPLOYMENT_FILE ?? resolve(import.meta.dirname, 'deployment.sepolia.json'),
   };
+}
+
+/** The durable operator signs with the oracle and pays from two relayers; one key for all of them is refused. */
+export function assertSeparateRoles(cfg: Pick<TestnetConfig, 'singleKey' | 'oracle' | 'relayer' | 'attestationRelayer'>): void {
+  const addresses = [cfg.oracle?.address, cfg.relayer?.address, cfg.attestationRelayer?.address].map((a) => a?.toLowerCase());
+  if (cfg.singleKey || addresses.some((a) => !a) || new Set(addresses).size !== 3) {
+    throw new Error(`One key cannot be oracle and relayer: set ${Object.values(ROLE_KEYS).join(', ')} in .env.tripwire.`);
+  }
 }
 
 export interface Clients {
@@ -103,12 +173,28 @@ export interface Clients {
   chainId: number;
 }
 
+/**
+ * Several RPC URLs fail over in the order given (MED-3): each endpoint gets one
+ * short try per round, then the next; the whole round retries. No background
+ * ranking: its timer never stops, so a finished CLI would never exit.
+ * Every read that matters is still hash-checked, so endpoints cannot be mixed silently.
+ */
+export function rpcTransport(urls: readonly string[], fetchOptions?: { signal: AbortSignal }): Transport {
+  if (!urls.length) throw new Error('No RPC URL configured.');
+  if (urls.length === 1) return http(urls[0], { retryCount: 3, timeout: 30_000, fetchOptions });
+  return fallback(urls.map((url) => http(url, { timeout: 10_000, fetchOptions })), { retryCount: 2 });
+}
+
+/** Comma-separated RPC URLs from one env value. */
+export const rpcUrls = (value: string | undefined, fallbackUrl: string) =>
+  (value ?? fallbackUrl).split(',').map((url) => url.trim()).filter(Boolean);
+
 export async function connect(cfg: TestnetConfig, chain: Chain = sepolia): Promise<Clients> {
-  const transport = http(cfg.rpcUrl, { retryCount: 3, timeout: 30_000 });
+  const transport = rpcTransport(cfg.rpcUrls);
   const pub = createPublicClient({ chain, transport });
   const wallet = createWalletClient({ chain, transport, account: cfg.account });
   const chainId = await pub.getChainId();
-  if (chainId !== chain.id) throw new Error(`RPC ${cfg.rpcUrl} is chain ${chainId}, expected ${chain.id}.`);
+  if (chainId !== chain.id) throw new Error(`RPC is chain ${chainId}, expected ${chain.id}.`);
   return { pub, wallet, chainId };
 }
 
@@ -128,6 +214,12 @@ export interface Deployment {
   chainId: number;
   deployer: Hex;
   oracle: Hex;
+  /** The Safe offered guardian ownership (Ownable2Step). Ownership is final once it calls acceptOwnership(). */
+  owner?: Hex;
+  /** Who pays gas for reviews and payouts, and for attestations (ADR-026). */
+  relayers?: { release: Hex; attestation: Hex };
+  /** GUARDIAN_POLICY_VERSION and RELEASE_POLICY_VERSION at deployment. */
+  policy?: { guardian: number; release: number };
   route: string;
   routeId: Hex;
   cap: string;
@@ -137,18 +229,39 @@ export interface Deployment {
 
 /** Rough gas for the whole deploy plus one demo run, for the pre-flight balance check. */
 const GAS_BUDGET = 6_500_000n;
+/** Rough gas for a day of attestations and refreshes. */
+const ATTESTATION_GAS_BUDGET = 1_000_000n;
+
+/**
+ * A deployment needs every role on its own key and a contract, the Safe, as
+ * owner (ADR-026). One hot key as owner, oracle and relayer is what let the
+ * audit's CRIT-1 drain a frozen vault.
+ */
+export function assertDeployRoles(cfg: Pick<TestnetConfig, 'singleKey' | 'oracle' | 'relayer' | 'attestationRelayer' | 'owner'>,
+  ownerCode: Hex | undefined): asserts cfg is typeof cfg & { owner: Hex } {
+  assertSeparateRoles(cfg);
+  if (!cfg.owner) throw new Error('Set TRIPWIRE_OWNER_SAFE to the Safe that will own the guardian.');
+  if (!ownerCode || ownerCode === '0x') {
+    throw new Error(`TRIPWIRE_OWNER_SAFE ${cfg.owner} has no contract code on this chain. Create the Safe first; an EOA owner is refused.`);
+  }
+}
 
 export async function preflight(cfg: TestnetConfig, c: Clients, log: (s: string) => void) {
-  const balance = await c.pub.getBalance({ address: cfg.account.address });
+  assertDeployRoles(cfg, cfg.owner ? await c.pub.getCode({ address: cfg.owner }) : undefined);
   const gasPrice = await c.pub.getGasPrice();
-  const need = GAS_BUDGET * gasPrice;
-  log(`Deployer  ${cfg.account.address}`);
-  log(`Balance   ${formatEther(balance)} ETH · gas price ${Number(gasPrice) / 1e9} gwei · deploy + demo ≈ ${formatEther(need)} ETH`);
-  if (cfg.account.address.toLowerCase() !== EXPECTED_DEPLOYER.toLowerCase()) {
-    log(`Note: this key is not the funded deployer ${EXPECTED_DEPLOYER}.`);
+  log(`Owner     ${cfg.owner} (Safe; accepts guardian ownership after the deploy)`);
+  log(`Oracle    ${cfg.oracle.address} (signs only, needs no ETH)`);
+  for (const [label, account, budget] of [['Relayer', cfg.relayer, GAS_BUDGET], ['Attester', cfg.attestationRelayer, ATTESTATION_GAS_BUDGET]] as const) {
+    const balance = await c.pub.getBalance({ address: account.address });
+    const need = budget * gasPrice;
+    log(`${label.padEnd(9)} ${account.address} · ${formatEther(balance)} ETH, needs about ${formatEther(need)} ETH`);
+    if (balance < need) {
+      throw new Error(`Not enough Sepolia ETH on the ${label.toLowerCase()} ${account.address}: have ${formatEther(balance)}, need about ${formatEther(need)}. Top up from a faucet and rerun.`);
+    }
   }
-  if (balance < need) {
-    throw new Error(`Not enough Sepolia ETH: have ${formatEther(balance)}, need about ${formatEther(need)}. Top up from a faucet and rerun.`);
+  log(`Gas price ${Number(gasPrice) / 1e9} gwei`);
+  if (cfg.relayer.address.toLowerCase() !== EXPECTED_DEPLOYER.toLowerCase()) {
+    log(`Note: the relayer is not the earlier funded deployer ${EXPECTED_DEPLOYER}.`);
   }
 }
 
@@ -170,14 +283,20 @@ async function deployOne(c: Clients, abi: Abi, bytecode: Hex, args: readonly unk
 }
 
 export async function deploy(cfg: TestnetConfig, c: Clients, log: (s: string) => void): Promise<Deployment> {
+  const owner = cfg.owner;
+  assertDeployRoles(cfg, owner ? await c.pub.getCode({ address: owner }) : undefined);
+  if (!owner) throw new Error('Owner Safe is not configured.');
+  // The relayer deploys and configures, and stays owner of the demo token and
+  // vault (it stands in for the bridge's messaging). It never signs reviews or
+  // attestations: those need the oracle key.
   const me = cfg.account.address;
   const startBlock = await c.pub.getBlockNumber();
   log('Deploying:');
   const token = await deployOne(c, demo.DemoUSDC.abi, demo.DemoUSDC.bytecode, [me], log, 'DemoUSDC');
   const bridge = await deployOne(c, demo.MockSourceBridge.abi, demo.MockSourceBridge.bytecode, [], log, 'MockSourceBridge');
-  // The deployer is also the oracle: one throwaway key for the demo. The
-  // guardian lets the owner rotate it (setOracle) to a separate signer.
-  const guardian = await deployOne(c, guardianArtifact.abi, guardianArtifact.bytecode, [me, me], log, 'TripwireGuardian');
+  // The oracle is its own key from block one. Replacing it later takes the
+  // owner Safe and two days' notice (proposeOracle → acceptOracle); disableOracle is instant.
+  const guardian = await deployOne(c, guardianArtifact.abi, guardianArtifact.bytecode, [me, cfg.oracle.address], log, 'TripwireGuardian');
   const vault = await deployOne(
     c,
     demo.ProtectedVault.abi,
@@ -200,16 +319,27 @@ export async function deploy(cfg: TestnetConfig, c: Clients, log: (s: string) =>
     c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'configureRoute', args: [ROUTE_ID, CAP, WINDOW_SECONDS] })
   );
   await run('guardian.setProtected(vault)', () =>
-    c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'setProtected', args: [vault.address, true] })
+    c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'setProtected', args: [vault.address, ROUTE_ID, true] })
   );
   await run(`token.mint(vault, ${VAULT_FUNDING / USDC})`, () =>
     c.wallet.writeContract({ address: token.address, abi: demo.DemoUSDC.abi, functionName: 'mint', args: [vault.address, VAULT_FUNDING] })
   );
+  // Ownable2Step: the deployer stays owner until the Safe accepts, so a typo cannot strand the guardian.
+  await run('guardian.transferOwnership(Safe)', () =>
+    c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'transferOwnership', args: [owner] })
+  );
+  const [guardianPolicy, releasePolicy] = await Promise.all([
+    c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'GUARDIAN_POLICY_VERSION' }),
+    c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'RELEASE_POLICY_VERSION' }),
+  ]);
 
   const deployment: Deployment = {
     chainId: c.chainId,
     deployer: me,
-    oracle: me,
+    oracle: cfg.oracle.address,
+    owner,
+    relayers: { release: cfg.relayer.address, attestation: cfg.attestationRelayer.address },
+    policy: { guardian: Number(guardianPolicy), release: Number(releasePolicy) },
     route: ROUTE_NAME,
     routeId: ROUTE_ID,
     cap: CAP.toString(),
@@ -237,25 +367,55 @@ export function readDeployment(cfg: TestnetConfig): Deployment {
 // --- the demo -------------------------------------------------------------------
 
 /** eth_getLogs with a block cursor: the testnet counterpart of MemoryFeed. */
-class ContractEventFeed<E> implements LogFeed<E> {
+export class ContractEventFeed<E> implements LogFeed<E> {
   private cursor: bigint;
   private times = new Map<bigint, number>();
+  private anchor: { number: bigint; hash: Hex } | null = null;
 
   constructor(
-    private c: Clients,
+    private c: Pick<Clients, 'pub' | 'chainId'>,
     private address: Hex,
     private abi: Abi,
     private eventName: string,
-    from: bigint,
-    private map: (args: Record<string, unknown>, timestamp: number) => E
+    private from: bigint,
+    private map: (args: Record<string, unknown>, timestamp: number, origin?: EventOrigin) => E | null,
+    /**
+     * 'finalized' for anything that backs a payout. 'safe' (the justified head,
+     * one epoch fresher) suits release requests: a reorg past it is caught by
+     * the same hash-linked anchor and quarantines the operator.
+     */
+    private opts: { finality?: 'finalized' | 'safe' } = {}
   ) {
     this.cursor = from;
   }
 
+  checkpoint(): string {
+    if (!this.opts.finality) return this.cursor.toString();
+    return JSON.stringify({ version: 1, policy: this.opts.finality, chainId: this.c.chainId,
+      address: this.address.toLowerCase(), event: this.eventName, from: this.from.toString(), next: this.cursor.toString(),
+      anchor: this.anchor ? { number: this.anchor.number.toString(), hash: this.anchor.hash } : null });
+  }
+
+  restore(cursor: string): void {
+    if (this.opts.finality) {
+      const c = finalizedCheckpointSchema.parse(JSON.parse(cursor));
+      if (c.policy !== this.opts.finality || c.chainId !== this.c.chainId || c.address !== this.address.toLowerCase() || c.event !== this.eventName || c.from !== this.from.toString()) {
+        throw new Error('Finalized checkpoint does not match this feed.');
+      }
+      this.cursor = BigInt(c.next); this.anchor = c.anchor ? { number: BigInt(c.anchor.number), hash: c.anchor.hash } : null;
+      this.times.clear(); return;
+    }
+    if (!/^(0|[1-9][0-9]*)$/.test(cursor)) throw new Error('Invalid block checkpoint.');
+    this.cursor = BigInt(cursor);
+    this.times.clear();
+  }
+
   async poll(): Promise<E[]> {
+    if (this.opts.finality) return this.pollFinalized();
     // Uncached: viem otherwise serves a block number up to 4 s old, and the
     // logs of the transactions just confirmed would fall outside the range.
-    const latest = await this.c.pub.getBlockNumber({ cacheTime: 0 });
+    const head = await this.c.pub.getBlockNumber({ cacheTime: 0 });
+    const latest = head < this.cursor + 1999n ? head : this.cursor + 1999n;
     if (latest < this.cursor) return [];
     const logs = await this.c.pub.getContractEvents({
       address: this.address,
@@ -264,13 +424,93 @@ class ContractEventFeed<E> implements LogFeed<E> {
       fromBlock: this.cursor,
       toBlock: latest,
     });
-    this.cursor = latest + 1n;
     const out: E[] = [];
     for (const l of logs) {
       const bn = l.blockNumber ?? latest;
       if (!this.times.has(bn)) this.times.set(bn, Number((await this.c.pub.getBlock({ blockNumber: bn })).timestamp));
-      out.push(this.map((l as unknown as { args: Record<string, unknown> }).args, this.times.get(bn) ?? 0));
+      const mapped = this.map((l as unknown as { args: Record<string, unknown> }).args, this.times.get(bn) ?? 0);
+      if (mapped !== null) out.push(mapped);
     }
+    // Commit only after every RPC lookup and decode has succeeded. Otherwise
+    // the next poll must retry this range rather than silently losing its logs.
+    this.cursor = latest + 1n;
+    this.times.clear();
+    return out;
+  }
+
+  async assertCanonical(): Promise<void> {
+    if (!this.opts.finality) return; // Instant mode is only for the scripted demo.
+    const head = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: this.opts.finality }));
+    await this.checkAnchor(head.number);
+  }
+
+  private async checkAnchor(finalizedNumber: bigint): Promise<void> {
+    if (!this.anchor) return;
+    if (finalizedNumber < this.anchor.number) throw new Error('Finalized RPC is behind the committed checkpoint; retry another healthy endpoint.');
+    const block = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: this.anchor.number }));
+    if (block.number !== this.anchor.number) throw new Error('RPC returned the wrong checkpoint block.');
+    if (block.hash !== this.anchor.hash) throw new FinalityConflictError('A committed finalized block changed; operator reconciliation is required.');
+  }
+
+  private async pollFinalized(): Promise<E[]> {
+    const tag = this.opts.finality ?? 'finalized';
+    const head = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: tag }));
+    await this.checkAnchor(head.number);
+    if (head.number < this.cursor) return [];
+    // Hash-link every header so a load-balanced RPC cannot mix log blocks
+    // from one fork with an endpoint from another. Bound this work to 64 blocks.
+    const end = head.number < this.cursor + 63n ? head.number : this.cursor + 63n;
+    const endpoint = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: end }));
+    if (endpoint.number !== end || (end === head.number && endpoint.hash !== head.hash)) throw new Error('RPC finalized endpoint is inconsistent.');
+    const headers = new Map<bigint, z.infer<typeof blockHeaderSchema>>();
+    let previousHash = this.anchor?.hash;
+    if (!previousHash && this.cursor > 0n) {
+      const parent = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: this.cursor - 1n }));
+      if (parent.number !== this.cursor - 1n) throw new Error('RPC returned the wrong range parent.');
+      previousHash = parent.hash;
+    }
+    for (let start = this.cursor; start <= end; start += 8n) {
+      const numbers = Array.from({ length: Number((end - start + 1n) < 8n ? end - start + 1n : 8n) }, (_, i) => start + BigInt(i));
+      const batch = await Promise.all(numbers.map(async (number) => {
+        const header = number === end ? endpoint : blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: number }));
+        if (header.number !== number) throw new Error('RPC returned the wrong range block.');
+        return header;
+      }));
+      for (const header of batch) {
+        if (previousHash && header.parentHash !== previousHash) throw new Error('RPC range headers are not one canonical chain.');
+        headers.set(header.number, header); previousHash = header.hash;
+      }
+    }
+    const logSchema = z.object({
+      address: z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((a) => a.toLowerCase()),
+      blockNumber: z.bigint().min(this.cursor).max(end), blockHash: blockHashSchema, transactionHash: blockHashSchema,
+      logIndex: z.number().int().nonnegative(), removed: z.literal(false), args: z.record(z.string(), z.unknown()),
+    });
+    const logs = z.array(logSchema).parse(await this.c.pub.getContractEvents({ address: this.address, abi: this.abi,
+      eventName: this.eventName, fromBlock: this.cursor, toBlock: end, strict: true }));
+    logs.sort((a, b) => a.blockNumber === b.blockNumber ? a.logIndex - b.logIndex : a.blockNumber < b.blockNumber ? -1 : 1);
+    const identities = new Set<string>(); const out: E[] = [];
+    for (const log of logs) {
+      const identity = `${log.blockHash}/${log.logIndex}`;
+      if (log.address !== this.address.toLowerCase() || identities.has(identity)) throw new Error('Unexpected contract or duplicate log identity.');
+      identities.add(identity);
+      const header = headers.get(log.blockNumber);
+      if (!header) throw new Error('Log has no validated range header.');
+      if (header.number !== log.blockNumber || header.hash !== log.blockHash) throw new Error('Log block hash does not match the canonical block.');
+      headers.set(log.blockNumber, header);
+      const origin = { chainId: this.c.chainId, address: this.address.toLowerCase() as Hex,
+        blockNumber: log.blockNumber, blockHash: log.blockHash, transactionHash: log.transactionHash, logIndex: log.logIndex };
+      const mapped = this.map(log.args, Number(header.timestamp), origin);
+      if (mapped === null) continue; // Unrelated/unsupported protocol messages cannot stall this route.
+      if (!mapped || typeof mapped !== 'object') throw new Error('Finalized feed requires an event object.');
+      out.push({ ...mapped, origin });
+    }
+    const final = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: tag }));
+    if (final.number < end) throw new Error('Finalized RPC moved behind the queried range.');
+    await this.checkAnchor(final.number);
+    const checked = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: end }));
+    if (checked.number !== end || checked.hash !== endpoint.hash) throw new Error('Canonical endpoint changed while fetching logs.');
+    this.cursor = end + 1n; this.anchor = { number: end, hash: endpoint.hash };
     return out;
   }
 }
@@ -301,12 +541,12 @@ const BASELINE_TEMPLATE: Omit<RouteBaseline, 'computedAt'> = {
 export interface TestnetPayout {
   recipient: Hex;
   amount: bigint;
-  burned: bigint;
+  burned: bigint | null;
   score: number | null;
   verdict: string;
   reasons: string[];
   attestation: AttestationOutcome;
-  txs: { burn?: Hex; request: Hex; attest?: Hex; execute: Hex };
+  txs: { burn?: Hex; request: Hex; attest?: Hex; review: Hex; execute: Hex };
   executed: boolean;
   blockedBy?: string;
 }
@@ -329,17 +569,43 @@ export async function runTestnetDemo(
 ): Promise<TestnetStep[]> {
   const { TripwireGuardian: guardian, ProtectedVault: vault, MockSourceBridge: bridge, DrainProxy: drain } = d.contracts;
   const log = opts.log ?? (() => undefined);
+  // Old deployed vaults lack the execution gate. Fail before sending reset or payout transactions.
+  try {
+    await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'MAX_REVIEW_TTL' });
+    await assertProtectionPolicy({
+      guardianVersion: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'GUARDIAN_POLICY_VERSION' }),
+      releaseVersion: () => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'RELEASE_POLICY_VERSION' }),
+      routePermission: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'isProtected', args: [vault.address, ROUTE_ID] }),
+    });
+  } catch {
+    throw new Error('This deployment has no release-review gate or current protection policy (or its RPC is unavailable). Deploy the current demo contracts before running it.');
+  }
 
-  // Every run starts from a clean route. A tier set by an earlier run lasts
-  // 24 hours, and the hour's outflow total carries over; the owner's resume
-  // and a fresh configureRoute clear both.
-  for (const [label, functionName, args] of [
-    ['guardian.resume', 'resume', [ROUTE_ID]],
-    ['guardian.configureRoute', 'configureRoute', [ROUTE_ID, CAP, WINDOW_SECONDS]],
-  ] as const) {
-    const r = await send(c, c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName, args }));
-    if (!r.ok) throw new Error(`${label} failed: ${txLink(r.hash)}`);
-    log(`  reset: ${label.padEnd(24)} ${txLink(r.hash)}`);
+  // Configuration/resume cannot erase rolling spend. Refuse a repeat demo
+  // before reset transactions; wait for prior usage to age out naturally.
+  const usage = z.bigint().nonnegative().parse(await c.pub.readContract({ address: guardian.address,
+    abi: guardianArtifact.abi, functionName: 'rollingUsage', args: [ROUTE_ID] }));
+  if (usage > 0n) throw new Error('This demo route has recent outflows. Wait for its rolling budget to age out before rerunning the demo.');
+  // A clean route needs no reset. Otherwise only the guardian owner may reset
+  // it: the deployer until the Safe accepts ownership, then the Safe itself.
+  const route = z.object({ cap: z.bigint(), windowSeconds: z.bigint() }).passthrough().parse(await c.pub.readContract({
+    address: guardian.address, abi: guardianArtifact.abi, functionName: 'getRoute', args: [ROUTE_ID] }));
+  const tier = z.number().int().parse(await c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'currentTier', args: [ROUTE_ID] }));
+  const paused = z.boolean().parse(await c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'isPaused', args: [ROUTE_ID] }));
+  if (tier !== ResponseTier.NONE || paused || route.cap !== CAP || route.windowSeconds !== WINDOW_SECONDS) {
+    const owner = z.string().parse(await c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'owner' }));
+    if (owner.toLowerCase() !== cfg.account.address.toLowerCase()) {
+      throw new Error(`The demo route is still protected (${ResponseTier[tier] ?? tier}${paused ? ', paused' : ''}). The owner Safe ${owner} must call ` +
+        `resume(${ROUTE_ID}) on ${guardian.address} before the demo can run again.`);
+    }
+    for (const [label, functionName, args] of [
+      ['guardian.resume', 'resume', [ROUTE_ID]],
+      ['guardian.configureRoute', 'configureRoute', [ROUTE_ID, CAP, WINDOW_SECONDS]],
+    ] as const) {
+      const r = await send(c, c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName, args }));
+      if (!r.ok) throw new Error(`${label} failed: ${txLink(r.hash)}`);
+      log(`  reset: ${label.padEnd(24)} ${txLink(r.hash)}`);
+    }
   }
 
   const from = (await c.pub.getBlockNumber({ cacheTime: 0 })) + 1n;
@@ -350,10 +616,12 @@ export async function runTestnetDemo(
     chainId: c.chainId,
     currentTier: async (routeId) =>
       Number(await c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'currentTier', args: [routeId] })) as ResponseTier,
+    // Anyone may relay a signed attestation; the attestation relayer pays for it.
     submitAttestation: async (a, signature) => {
       const r = await send(
         c,
         c.wallet.writeContract({
+          account: cfg.attestationRelayer,
           address: guardian.address,
           abi: guardianArtifact.abi,
           functionName: 'submitAttestation',
@@ -364,21 +632,22 @@ export async function runTestnetDemo(
     },
   };
 
+  const expectedDemoBurns = new Map<Hex, bigint>();
   const watcher = new Watcher({
     route: ROUTE_NAME,
     chain: 'ethereum',
     token: 'tdUSDC',
     decimals: 6,
     bridge: vault.address,
-    ingress: new ContractEventFeed<BurnEvent>(c, bridge.address, demo.MockSourceBridge.abi, 'Burned', from, (a, t) => ({
-      messageId: a.messageId as Hex,
-      amount: a.amount as bigint,
+    ingress: new ContractEventFeed<BurnEvent>(c, bridge.address, demo.MockSourceBridge.abi, 'Burned', from, (a, t) => burnEventSchema.parse({
+      messageId: a.messageId,
+      amount: a.amount,
       timestamp: t,
     })),
-    egress: new ContractEventFeed<ReleaseEvent>(c, vault.address, demo.ProtectedVault.abi, 'ReleaseRequested', from, (a, t) => ({
-      messageId: a.messageId as Hex,
-      recipient: a.to as Hex,
-      amount: a.amount as bigint,
+    egress: new ContractEventFeed<ReleaseEvent>(c, vault.address, demo.ProtectedVault.abi, 'ReleaseRequested', from, (a, t) => releaseEventSchema.parse({
+      messageId: a.messageId,
+      recipient: a.to,
+      amount: a.amount,
       timestamp: t,
     })),
     baseline: { ...BASELINE_TEMPLATE, computedAt: clock - 300 },
@@ -388,8 +657,16 @@ export async function runTestnetDemo(
     },
     contractFacts: opts.contractFacts,
     now: () => clock,
+    // The scripted source fixture, not an independent live-bridge proof.
+    verifySource: async (release, observed) => {
+      const expected = expectedDemoBurns.get(release.messageId);
+      if (expected === undefined) return { status: 'unavailable', reason: 'Message is outside this scripted demo.' };
+      if (expected === 0n) return { status: 'invalid', reason: 'Scripted unbacked release: no source transaction was created.' };
+      if (observed === null) return { status: 'pending', reason: 'RPC has not returned the confirmed demo source event yet.' };
+      return { status: 'verified', amount: observed };
+    },
   });
-  const attestor = new Attestor(cfg.account, port, { now: () => clock });
+  const attestor = new Attestor(cfg.oracle, port, { now: () => clock });
 
   const results: TestnetStep[] = [];
   const runId = Date.now();
@@ -399,6 +676,7 @@ export async function runTestnetDemo(
     const txs = new Map<Hex, { burn?: Hex; request: Hex }>();
     for (const p of step.payouts) {
       const messageId = keccak256(toHex(`tripwire-sepolia-${runId}-${++seq}`));
+      expectedDemoBurns.set(messageId, p.burned);
       let burn: Hex | undefined;
       if (p.burned > 0n) {
         burn = (await send(c, c.wallet.writeContract({ address: bridge.address, abi: demo.MockSourceBridge.abi, functionName: 'burn', args: [messageId, p.burned] }))).hash;
@@ -414,20 +692,38 @@ export async function runTestnetDemo(
     // 2. The watcher sees them, scores each before it executes; the attestor acts.
     // A load-balanced RPC can answer from a node a block behind the receipt,
     // so keep polling, up to 30 s, until the watcher has seen every release.
-    const observations: Awaited<ReturnType<Watcher['tick']>> = [];
-    for (let attempt = 0; observations.length < step.payouts.length && attempt < 10; attempt++) {
+    const seen = new Map<Hex, Awaited<ReturnType<Watcher['tick']>>[number]>();
+    for (let attempt = 0; seen.size < step.payouts.length && attempt < 10; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 3000));
       clock = Number((await c.pub.getBlock()).timestamp);
-      observations.push(...(await watcher.tick()));
+      for (const observation of await watcher.tick()) {
+        if (txs.has(observation.release.messageId) && observation.assessment.score !== null) seen.set(observation.release.messageId, observation);
+      }
     }
-    if (observations.length !== step.payouts.length) {
-      throw new Error(`The watcher saw ${observations.length} of ${step.payouts.length} releases after 30 s; the RPC is lagging. Rerun the demo.`);
+    if (seen.size !== step.payouts.length) {
+      throw new Error(`The watcher assessed ${seen.size} of ${step.payouts.length} releases after 30 s; pending releases remain gated. Check RPC/explorer availability.`);
     }
 
     const payouts: TestnetPayout[] = [];
-    for (const o of observations) {
+    for (const o of seen.values()) {
       clock = Number((await c.pub.getBlock()).timestamp);
       const attestation = await attestor.handle(ROUTE_ID, o.assessment);
+      if (attestation.action === 'rejected' || attestation.action === 'unavailable') throw new Error('Risk attestation failed or unavailable; release remains pending.');
+      clock = Number((await c.pub.getBlock()).timestamp);
+      const releaseState = await c.pub.readContract({
+        address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'releases', args: [o.release.messageId],
+      }) as readonly [Hex, bigint, number, bigint, Hex, bigint, number];
+      const review: ReleaseReview = {
+        messageId: o.release.messageId, routeId: ROUTE_ID, token: d.contracts.DemoUSDC.address,
+        recipient: o.release.recipient, amount: o.release.amount, decision: releaseDecision(o), minimumTier: releaseMinimumTier(o),
+        validUntil: BigInt(clock + 300), nonce: releaseState[5] + 1n,
+      };
+      const signature = await signReleaseReview(cfg.oracle, vault.address, review, c.chainId);
+      const reviewed = await send(c, c.wallet.writeContract({
+        address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'reviewRelease',
+        args: [review.messageId, review.decision, review.minimumTier, review.validUntil, review.nonce, signature],
+      }));
+      if (!reviewed.ok) throw new Error(`Release review failed: ${txLink(reviewed.hash)}. Payout was not submitted.`);
 
       // 3. The vault pays out, through the guardian. A blocked payout is sent
       //    anyway, with a fixed gas limit, so the revert is on-chain for anyone to open.
@@ -450,6 +746,7 @@ export async function runTestnetDemo(
           ...(blockedBy ? { gas: 300_000n } : {}),
         })
       );
+      await watcher.acknowledge(o.release.messageId);
 
       const t = txs.get(o.release.messageId);
       payouts.push({
@@ -463,7 +760,8 @@ export async function runTestnetDemo(
         txs: {
           burn: t?.burn,
           request: t?.request ?? ('0x' as Hex),
-          attest: attestation.action !== 'skipped' ? attestation.result.txHash : undefined,
+          attest: attestation.action === 'submitted' ? attestation.result.txHash : undefined,
+          review: reviewed.hash,
           execute: exec.hash,
         },
         executed: exec.ok,
