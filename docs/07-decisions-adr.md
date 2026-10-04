@@ -192,6 +192,8 @@ Keys are server environment variables (`ETHERSCAN_API_KEY`, `GEMINI_API_KEY`), n
 **Compatibility:** `GUARDIAN_POLICY_VERSION` is 4 and `assertProtectionPolicy` refuses 3 ("instant-rotation guardian"). The EIP-712 domain is unchanged. Fresh deployment and reconciliation as in ADR-020.
 **Validation:** `contracts/evm/test/auditRegression.evm.test.ts` inverts the audit's contract PoCs (14 tests), plus rotation, kill-switch, span and split-payout tests; 62/62 contract mutants caught, 14 of them new. Runtime: guardian 9,510 bytes; accepting an attestation costs 88.3k gas (84.5k before: the span start is one more storage write), a warm outflow check 79.0k as before.
 
+**Addendum, 2026-10-04 (integration review):** `disableOracle` now also cancels a pending rotation. Before, a rotation proposed earlier survived the kill switch and anyone could accept it once its notice ended, quietly re-enabling a key the owner had just switched off. Re-enabling now always takes a fresh `proposeOracle` and the full two days. `GUARDIAN_POLICY_VERSION` stays 4: nothing the operator relies on changed. The Sepolia guardian deployed on 2026-10-03 predates this; its owner Safe must batch `cancelOracleRotation` with `disableOracle` if a rotation is ever pending. Guarded by a new test and mutant ("kill switch: a pending rotation survives it").
+
 ### ADR-025 — A REJECT is a seven-day hold, not an end
 **Status:** Implemented locally 2026-10-02 under the same instruction as ADR-024 (CRIT-2).
 **Context:** REJECTED was terminal and `CctpEscrow` has no rescue path, by design. One wrong REJECT (an adapter bug, a misconfiguration, a compromised oracle) stranded fully backed, Circle-minted USDC for good; the PoC showed a later ALLOW failing and the beneficiary at zero.

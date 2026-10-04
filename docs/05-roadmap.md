@@ -24,7 +24,7 @@ remain historical context.
 | Threshold attestation: k-of-n `TripwireQuorum` as the guardian/vault oracle | Implemented locally; ADR-021; policy v3; [build map](plans/tripwire-settlement-firewall.md); networked members and deployment pending |
 | Independent multi-RPC verification of source proofs | Implemented locally; ADR-022; quorum agreement, dissent holds, finalized conflict quarantines; light-client finality pending |
 | Proof-first settlement verdict and tighten-only route policy | Implemented locally; ADR-023; named proof/safety checks, per-route size limit and hold line |
-| Audit remediation, policy v4: time-locked oracle rotation and kill switch, no cap raise under protection, 72-hour oracle span, cumulative DELAY | Implemented locally 2026-10-02; ADR-024; audit PoCs inverted in `auditRegression.evm.test.ts`; 62/62 mutants caught |
+| Audit remediation, policy v4: time-locked oracle rotation and kill switch, no cap raise under protection, 72-hour oracle span, cumulative DELAY | Implemented 2026-10-02; ADR-024; audit PoCs inverted in `auditRegression.evm.test.ts`. Integration review of all contributors' branches 2026-10-04: no test or exported function lost; the kill switch now also cancels a pending rotation (ADR-024 addendum); 63/63 mutants caught, 749 tests |
 | REJECT as a 7-day hold that fresh evidence can reopen (CctpEscrow funds never stranded) | Implemented locally; ADR-025; contract and operator |
 | Separate key roles (owner Safe, oracle, two relayers), separate nonce lanes, fee-bumped replacement | Implemented locally; ADR-026; deploy and operator refuse one key |
 | Rolling baseline, safe-head release requests, exact one-sided backing, RPC failover, backoff | Implemented locally; ADR-027 |

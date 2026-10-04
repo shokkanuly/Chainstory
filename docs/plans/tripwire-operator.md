@@ -121,6 +121,12 @@ git add scripts/tripwire/testnet/deployment.sepolia.json   # commit the new addr
 After the Safe accepts, a rerun of the demo on a protected route asks the Safe to call
 `resume(routeId)`; the relayer can no longer reset it.
 
+**Kill switch on the 2026-10-03 deployment.** That guardian predates the fix that makes
+`disableOracle` cancel a pending rotation (ADR-024 addendum). If a rotation is pending
+when you switch the oracle off, put `cancelOracleRotation()` and `disableOracle()` in one
+Safe batch; otherwise anyone could accept the pending oracle once its notice ends. Today
+`pendingOracle()` is the zero address, so nothing is pending.
+
 ## Verified and deferred
 
 Tests include real child-process SIGKILL before/after SQLite commit, injected disk

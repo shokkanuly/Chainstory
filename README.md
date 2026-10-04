@@ -20,8 +20,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-746_passing-brightgreen" alt="746 tests passing" />
-  <img src="https://img.shields.io/badge/mutation_tests-62%2F62_caught-brightgreen" alt="62 of 62 mutants caught" />
+  <img src="https://img.shields.io/badge/tests-749_passing-brightgreen" alt="749 tests passing" />
+  <img src="https://img.shields.io/badge/mutation_tests-63%2F63_caught-brightgreen" alt="63 of 63 mutants caught" />
   <img src="https://img.shields.io/badge/Sepolia-policy_v4_live-6f42c1" alt="Policy v4 live on Sepolia" />
   <img src="https://img.shields.io/badge/owner-Safe_multisig-12ff80" alt="Owned by a Safe" />
   <img src="https://img.shields.io/badge/Solidity-0.8.37-363636?logo=solidity&logoColor=white" alt="Solidity 0.8.37" />
@@ -36,12 +36,12 @@
 | | |
 | :--- | :--- |
 | **$313.6M → $0** | Three real 2026 bridge exploits (Kelp DAO, Verus, Syscoin) replayed through Tripwire: every drain is stopped before execution |
-| **746 tests, 51 suites** | Contracts run in a real EVM, the operator is killed mid-write with SIGKILL, RPCs lie, blocks reorg, and the gas spikes |
-| **62 / 62 mutants caught** | Every safety rule in the contracts is deliberately broken by a script, and a test catches each break |
-| **10 audit findings fixed** | We audited our own code, proved every finding with a failing exploit test, fixed it, and kept the exploit as a regression test |
+| **749 tests, 51 suites** | Contracts run in a real EVM, the operator is killed mid-write with SIGKILL, RPCs lie, blocks reorg, and the gas spikes |
+| **63 / 63 mutants caught** | Every safety rule in the contracts is deliberately broken by a script, and a test catches each break |
+| **11 findings fixed** | We audited our own code, then the merged work of all three contributors; every finding was proven with a failing test, fixed, and kept as a regression test |
 | **Live on Sepolia** | Policy v4, every contract verified on Etherscan, the guardian owned by a Safe; the live attack ran NONE → THROTTLE → DELAY → FREEZE |
 | **27 decision records** | Every security trade-off is written down in [docs/07-decisions-adr.md](docs/07-decisions-adr.md): context, decision, limits and tests |
-| **5 contracts, 916 lines of Solidity** | Small enough to read in one sitting; guardian runtime 9,510 bytes, escrow 10,358 bytes (EIP-170 limit 24,576) |
+| **5 contracts, 916 lines of Solidity** | Small enough to read in one sitting; guardian runtime 9,599 bytes, escrow 10,358 bytes (EIP-170 limit 24,576) |
 
 ## Two products, one idea
 
@@ -199,9 +199,10 @@ The fixes ship as **policy v4** ([ADR-024 to ADR-027](docs/07-decisions-adr.md))
 | **MED-3** | A single RPC endpoint | One URL, no failover | Ordered failover across several RPC URLs |
 | **MED-4** | A 1% over-claim passed the backing check | Symmetric tolerance | **Exact, one-sided** check: a payout may never exceed its burn by one base unit |
 | **MED-5** | Docs presented k-of-n signing as live | Code review | Claims aligned with the code; see [Honest limits](#honest-limits) |
+| **INT-1** | Found when the three contributors' branches were reviewed together: the kill switch did not cancel a pending oracle rotation, so anyone could accept it once its notice ended and quietly undo the switch | Test and mutant: accepting after `disableOracle` must fail | `disableOracle` now cancels any pending rotation; re-enabling always takes a fresh proposal and the full two days |
 
-Every contract change is also covered by the mutation suite: **62 deliberately
-broken versions of the contracts, 62 caught**, 14 of them added for policy v4.
+Every contract change is also covered by the mutation suite: **63 deliberately
+broken versions of the contracts, 63 caught**, 15 of them added since policy v4.
 
 ## Live on Sepolia (policy v4)
 
@@ -235,14 +236,16 @@ lists to see each attestation and each blocked payout.
 | 3 | A forged 11,580,000 payout with no burn behind it | 1.00 | **FREEZE + REJECT**: blocked (`ReleaseRejected`) |
 
 The route is now frozen, and only the owner Safe can lift it early: exactly the
-point of the new key model. The previous single-key deployment
+point of the new key model. This guardian was deployed before the INT-1 kill-switch
+fix; until a redeploy, its Safe batches `cancelOracleRotation` with `disableOracle`
+if a rotation is ever pending ([runbook](docs/plans/tripwire-operator.md#redeploy-policy-v4-to-sepolia)). The previous single-key deployment
 ([`0x6d01…b61f`](https://sepolia.etherscan.io/address/0x6d01c906fa1615791641e17aca615f53885db61f)) is retired; the v4 operator and demo refuse it.
 
 ## Proof it works
 
 | Check | Result |
 | :--- | :--- |
-| Guardian executed in a real EVM | 57 / 57 tests |
+| Guardian executed in a real EVM | 58 / 58 tests |
 | Audit findings reproduced, then fixed: CRIT-1/2, HIGH-1/3, MED-1 | 15 regression tests |
 | Oracle and contract agree at every tier boundary (64/65, 84/85, 94/95) | 12 cross-layer tests |
 | Incident replays, end to end | 41 tests |
@@ -257,10 +260,11 @@ point of the new key model. The previous single-key deployment
 | Protection refresh: expiry/restart, chain clock, concurrent calls, key rotation, 72 h span, stale risk and RPC/quarantine failures | 28 tests |
 | Route isolation, rolling caps, request delay and historical review policy | 42 tests |
 | Policy v4: oracle rotation, REJECT hold, relayer lanes, fee bumping, key roles, rolling baseline, safe-head feeds | 81 new tests (665 → 746) |
+| Integration review of all branches: kill switch cancels a pending rotation, a landed rotation never honours old allowances, the attestor stops after a rotation | 3 tests |
 | Check before you sign, incl. "nothing reachable from /check can sign" | 40 tests |
-| Guardian, release-review, quorum and CCTP rules broken on purpose (`npm run test:mutants`) | **62 / 62 mutants caught** |
+| Guardian, release-review, quorum and CCTP rules broken on purpose (`npm run test:mutants`) | **63 / 63 mutants caught** |
 | Gas: check an outflow · accept an attestation | 79.0k · 88.3k |
-| **Total** | **746 tests passing** |
+| **Total** | **749 tests passing** |
 
 ## Honest limits
 
@@ -289,8 +293,8 @@ git clone https://github.com/shokkanuly/Chainstory.git
 cd Chainstory
 npm install
 npm run dev                    # Retold at /app and /check, Tripwire at /tripwire
-npm test                       # 746 tests
-npm run test:mutants           # 62 broken contract variants, each must be caught
+npm test                       # 749 tests
+npm run test:mutants           # 63 broken contract variants, each must be caught
 npm run demo:attack            # the four-step attack against real bytecode in a local EVM, ~2 s
 ```
 

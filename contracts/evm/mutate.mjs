@@ -44,6 +44,7 @@ const M = [
  ['rotation: notice period skipped', 'if (block.timestamp < pendingOracleAt) revert RotationNotReady(pendingOracleAt);', ''],
  ['rotation: anyone proposes an oracle', 'function proposeOracle(address next) external onlyOwner', 'function proposeOracle(address next) external'],
  ['kill switch: disable leaves the oracle in place', 'oracle = address(0);', ''],
+ ['kill switch: a pending rotation survives it', 'emit OracleRotationCancelled(pendingOracle);\n            pendingOracle = address(0);', 'emit OracleRotationCancelled(pendingOracle);'],
  ['protection: cap raised during a tier', 'if (r.windowSeconds != 0 && cap > r.cap && currentTier(routeId) != Tier.NONE) revert RaiseDuringProtection(routeId);', ''],
  ['span: refreshes extend past 72 hours', 'if (until > limit) until = limit;', ''],
  ['span: no cooldown between spans', '+ MAX_ORACLE_PROTECTION + PROTECTION_COOLDOWN', '+ MAX_ORACLE_PROTECTION'],

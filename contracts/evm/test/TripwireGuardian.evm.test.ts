@@ -322,6 +322,18 @@ describe('expiry and escape hatches', () => {
     expect((await submit(att())).error).toBe('InvalidSigner');
   });
 
+  it('the kill switch also cancels a pending rotation, so nobody can undo it when the notice ends', async () => {
+    expect((await g.send(owner, 'proposeOracle', [attacker.address])).ok).toBe(true);
+    expect((await g.send(owner, 'disableOracle')).ok).toBe(true);
+    expect(await g.read('pendingOracle')).toBe('0x0000000000000000000000000000000000000000');
+    g.warp(2n * DAY);
+    expect((await g.send(attacker, 'acceptOracle')).error).toBe('NoPendingOracle');
+    expect(await g.read('oracle')).toBe('0x0000000000000000000000000000000000000000');
+    // Re-enabling takes a fresh proposal and the full notice again.
+    expect((await g.send(owner, 'proposeOracle', [relayer.address])).ok).toBe(true);
+    expect((await g.send(attacker, 'acceptOracle')).error).toBe('RotationNotReady');
+  });
+
   it('refuses a zero oracle on rotation', async () => {
     expect((await g.send(owner, 'proposeOracle', ['0x0000000000000000000000000000000000000000'])).error).toBe(
       'ZeroAddress'
