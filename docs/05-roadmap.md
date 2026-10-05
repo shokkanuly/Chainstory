@@ -41,7 +41,7 @@ Tripwire and Check before you sign, planned in [plans/tripwire-hackathon.md](pla
 | 3 | Watcher → attestor → guardian loop, locally, tier asserted per step | ✅ |
 | 4 | Sepolia: deployed, source verified, live demo NONE → THROTTLE → DELAY → FREEZE | ✅ |
 | 5 | Check before you sign at `/check`; nothing reachable from it can sign | ✅ |
-| 6 | README scope table, this status, ADR-013, video script | ✅ (video to record) |
+| 6 | README scope table, this status, ADR-013, video script; Colosseum answers checked against the code ([submission_pack/COLOSSEUM_FORM.md](submission_pack/COLOSSEUM_FORM.md)), submission links point at the v4 guardian | ✅ (video to record) |
 | 7 | Motion and readability pass: live silk hero, decode motion across site and platform ([design-motion.md](design-motion.md)) | ✅ |
 
 - [x] stage 0  - [x] stage 1  - [x] stage 2  - [x] stage 3  - [x] stage 4  - [x] stage 5  - [x] stage 6 docs  - [ ] video recorded  - [x] stage 7 motion
