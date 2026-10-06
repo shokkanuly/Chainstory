@@ -160,3 +160,50 @@ signatures, while reassessing risk/source health/protection. Immutable policy-v2
 markers and route grants are checked before opening the signing lifecycle;
 release review domain version is 2. Existing deployment-bound persistence and
 read-only browser boundaries remain. See [policy/rollout](plans/tripwire-route-policy.md).
+
+ADR-024 adds keyless, receipt-backed initial deployment acceptance alongside the
+existing unsigned planner/preflight. All four creation/configuration transactions
+must match the package and reach canonical finality before exact code and initial
+mutable state/history are accepted at one stable snapshot. The constructor policy
+hash codec remains pure in `src/chains/evm/`; RPC provenance, bounded grant history
+and local public JSON reports stay under operator scripts. This introduces no
+wallet sender, browser keys, server state or deployment/burn automation. See the
+[initial deployment runbook](plans/tripwire-deployment-acceptance.md).
+
+
+ADR-029 extends the standalone SQLite journal with an optional versioned discovery
+index: both scoped finalized event checkpoints and all retained operation hints
+commit atomically under the existing process lease. Startup validates untrusted
+stored state; resumes recheck canonical history and process bounded increments.
+Hints are separate from authenticated source claims, and full current receipt
+verification remains mandatory. Public metadata v2 exposes cumulative coverage,
+new scan windows and backlog to the display-only operations adapter. Browser and
+proxy runtimes have no database access, wallet sender or new persistence service.
+
+
+ADR-030 extracts the existing CLI tick into a sequential keyless worker with
+cancellable polling and capped outage backoff. The CLI owns clients/signals and
+the existing SQLite lease, while discovery/audit remain its evidence ports.
+Scope/capacity/storage failures stop; finalized conflicts quarantine. Public
+watch snapshots are atomically published local files with optional capture-time
+worker metadata. Browser/proxies still have no polling backend, key access or
+execution permission; process supervision remains separate.
+
+ADR-031 adds a read-only native public-directory source in the operations UI.
+Its sequential, cancellable browser controller accepts generic display snapshots;
+EVM schema parsing remains in the adapter. Validated successful scope becomes an
+optional continuity token, not publisher authentication. Only selected top-level
+completed report files are read, under entry/body limits. Handles/data remain in
+page memory; there is no new backend, upload, browser database or filesystem writer.
+Unsupported browsers keep manual import. Native picker end-to-end refresh remains
+unverified by automation; see the operations runbook for the concrete limitation.
+
+
+ADR-032 adds optional bounded archival after the standalone observer's public
+snapshot publication. The browser and publisher share a pure filename timestamp
+codec in `src/domain/reportFiles.ts`; it expresses no protocol or chain evidence.
+The local filesystem helper moves only older completed public files into an
+archive via flushed exclusive hard links, identity/collision checks and bounded
+batches. Failure stops publication scheduling without rolling back committed
+journal/proof state; retry keeps the same scoped journal. No browser writer,
+server storage, private-file reader, signing path or discovery pruning is added.

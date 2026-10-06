@@ -6,7 +6,7 @@ Update the status table in `docs/README.md` and the checkboxes here as work land
 
 ## Hackathon build (September 2026) — status
 
-### Active Tripwire work — 2026-10-01
+### Active Tripwire work — 2026-10-06
 
 The current project focus is Tripwire. [Hardening plan](plans/tripwire-hardening.md)
 supersedes the hackathon scope for new work; the legacy wallet/Solana phases below
@@ -22,6 +22,21 @@ remain historical context.
 | Continuous refresh of justified route protection | Implemented locally; ADR-019; chain-bound expiry/clock/oracle reconciliation, renewed pending assessments and existing durable outbox; live operation pending |
 | Route-scoped guardian reporters, conservative rolling cap and per-request DELAY | Implemented locally; ADR-020; [policy/rollout](plans/tripwire-route-policy.md); fresh policy-v2 deployment and external review pending |
 | Live deployment of the release-gated vault | Not deployed; old Sepolia vault is incompatible with current demo scripts |
+| CCTP pilot observer and unsigned deployment package | Implemented locally; [pilot runbook](plans/tripwire-pilot.md); finalized evidence/state reporting, restart-safe claims and separate local role wallets; public deployment/transfer pending |
+| Scorer input safety and outage recovery | Implemented locally; unavailable screening, invalid route statistics/USD/history/clock/config cannot clear; one screening snapshot; exact mismatch evidence remains blocking; [contract](plans/tripwire-hardening.md#scorer-input-safety--2026-10-05) |
+| Product v1 policy, recovery and partner discovery | [Specification and P0 backlog](plans/tripwire-product.md) recorded; [interview/pilot kit](plans/tripwire-partners.md) prepared; shadow-policy separation, external review and customer pilot pending |
+| Customer execution policy and funded destination returns | Implemented locally in `CctpPaymentEscrow`; [contract/runbook](plans/tripwire-payment-policy.md), ADR-021; new review format, customer/source/recovery bindings and exact accounting; public deployment and external review pending |
+| Customer payment RPC operator, manifest v3 and return reconciliation | Implemented locally; [runbook](plans/tripwire-payment-operator.md), ADR-022; checked policy snapshots, exact receipt/operation proofs, format-3 signing, persistent returned outcomes and same-byte crash recovery; 812 tests; real public receipts/pilot pending |
+| Exact product runtime acceptance and keyless deployment readiness | Implemented; [preflight/runbook](plans/tripwire-testnet-readiness.md), ADR-023; 833 tests; live read-only snapshot and fresh unsigned v3 package prepared; three gas accounts/source USDC empty, deployment/transfer/review pending |
+| Receipt-backed initial product deployment acceptance | Implemented; [acceptance/runbook](plans/tripwire-deployment-acceptance.md), ADR-024; exact initcode/configuration receipts, finalized runtime/policy/accounting and complete sole-grant history; 889 tests; live keyless check is pending with four missing transactions |
+| First Standard payment unsigned preparation | Implemented; [runbook](plans/tripwire-first-payment.md), ADR-025; live deployment/policy checks, Standard minimum fee, exact allowance/reset, reserved burn nonce and one simulated unsigned step; 950 tests; actual run blocked by four missing deployment transactions, no burn sent |
+| Customer read-only operations viewer | Implemented at `/tripwire/operations`; [runbook](plans/tripwire-operations.md), ADR-026; public funding/customer observer import, holds/returns/receipt anchors, search/filter and stale/error states; 996 tests; no live service or payment authorization |
+| Listed customer credit lifecycle receipts and timing | Implemented locally; [operations runbook](plans/tripwire-operations.md), ADR-027; canonical burn/mint times and bounded payout/return/request receipt history, exact block-time durations and explicit missing-history states; 1,056 tests; no public payment or complete treasury discovery |
+| Bounded automatic customer operation discovery | Implemented in the keyless one-shot observer; [runbook](plans/tripwire-operations.md), ADR-028; finalized range coverage, automatic source/mint locators, full existing receipt audit and separate unmatched/conflict hints; 1,112 tests at ADR-028; persistent discovery added below, live service pending |
+| Durable customer operation discovery | Implemented locally in the keyless observer; [runbook](plans/tripwire-operations.md#persistent-discovery-and-restart-recovery-adr-029), ADR-029; atomic hint/cursor storage, canonical restart rechecks, bounded catch-up/backlog and fresh receipt audit; 1,167 tests, build/typechecks and lint pass; watch added below; expanded retention and live pilot pending |
+| Continuous keyless customer observer | Implemented locally; [runbook](plans/tripwire-operations.md#continuous-keyless-observer-adr-030), ADR-030; sequential durable discovery, bounded catch-up, outage backoff, terminal stops, abort/restart and atomic public snapshots; 1,229 tests, build/typechecks and lint pass; public deployment and supervision/alerts pending; local folder refresh added below |
+| Local browser public-folder refresh | Implemented locally; [runbook](plans/tripwire-operations.md#automatic-local-report-folder-updates-adr-031), ADR-031; sequential read-only updates, no older-file fallback, scope/clock/bounds/cancellation guards; 1,257 tests, build/typechecks and lint pass; native folder selection/refresh end-to-end unverified because its dialog is inaccessible to automation; hosted service pending |
+| Bounded public observer report archival | Implemented locally; [runbook](plans/tripwire-operations.md#bounded-archival-of-public-reports-adr-032), ADR-032; optional keep count, reversible flushed archival, 100-file batches, same-inode crash recovery and unchanged journal; 1,294 tests, build/typechecks and lint pass; disk usage, discovery retention, supervision and public deployment remain separate |
 
 Tripwire and Check before you sign, planned in [plans/tripwire-hackathon.md](plans/tripwire-hackathon.md) (each stage's result is recorded there).
 

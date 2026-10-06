@@ -241,21 +241,30 @@ export function readDeployment(cfg: TestnetConfig): Deployment {
 // --- the demo -------------------------------------------------------------------
 
 /** eth_getLogs with a block cursor: the testnet counterpart of MemoryFeed. */
+export interface EventFeedClient {
+  chainId: number;
+  pub: {
+    getBlock(args: { blockTag: 'finalized' } | { blockNumber: bigint }): Promise<unknown>;
+    getBlockNumber(args: { cacheTime: number }): Promise<bigint>;
+    getContractEvents(args: { address: Hex; abi: Abi; eventName: string; fromBlock: bigint; toBlock: bigint; strict?: boolean }): Promise<unknown>;
+  };
+}
 export class ContractEventFeed<E> implements LogFeed<E> {
   private cursor: bigint;
   private times = new Map<bigint, number>();
   private anchor: { number: bigint; hash: Hex } | null = null;
 
   constructor(
-    private c: Pick<Clients, 'pub' | 'chainId'>,
+    private c: EventFeedClient,
     private address: Hex,
     private abi: Abi,
     private eventName: string,
     private from: bigint,
     private map: (args: Record<string, unknown>, timestamp: number, origin?: EventOrigin) => E | null,
-    private opts: { finality?: 'finalized' } = {}
+    private opts: { finality?: 'finalized'; until?: bigint } = {}
   ) {
     this.cursor = from;
+    if (opts.until !== undefined && (!opts.finality || opts.until < from)) throw new Error('Bounded feeds require a valid finalized range.');
   }
 
   checkpoint(): string {
@@ -286,18 +295,19 @@ export class ContractEventFeed<E> implements LogFeed<E> {
     const head = await this.c.pub.getBlockNumber({ cacheTime: 0 });
     const latest = head < this.cursor + 1999n ? head : this.cursor + 1999n;
     if (latest < this.cursor) return [];
-    const logs = await this.c.pub.getContractEvents({
+    const rawLogs = await this.c.pub.getContractEvents({
       address: this.address,
       abi: this.abi,
       eventName: this.eventName,
       fromBlock: this.cursor,
       toBlock: latest,
     });
+    const logs = z.array(z.object({ blockNumber: z.bigint().nullable().optional(), args: z.record(z.string(), z.unknown()) })).parse(rawLogs);
     const out: E[] = [];
     for (const l of logs) {
       const bn = l.blockNumber ?? latest;
-      if (!this.times.has(bn)) this.times.set(bn, Number((await this.c.pub.getBlock({ blockNumber: bn })).timestamp));
-      const mapped = this.map((l as unknown as { args: Record<string, unknown> }).args, this.times.get(bn) ?? 0);
+      if (!this.times.has(bn)) this.times.set(bn, Number(z.object({ timestamp: z.bigint().nonnegative().max(BigInt(Number.MAX_SAFE_INTEGER)) }).parse(await this.c.pub.getBlock({ blockNumber: bn })).timestamp));
+      const mapped = this.map(l.args, this.times.get(bn) ?? 0);
       if (mapped !== null) out.push(mapped);
     }
     // Commit only after every RPC lookup and decode has succeeded. Otherwise
@@ -324,10 +334,11 @@ export class ContractEventFeed<E> implements LogFeed<E> {
   private async pollFinalized(): Promise<E[]> {
     const head = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: 'finalized' }));
     await this.checkAnchor(head.number);
-    if (head.number < this.cursor) return [];
+    const ceiling = this.opts.until !== undefined && this.opts.until < head.number ? this.opts.until : head.number;
+    if (ceiling < this.cursor) return [];
     // Hash-link every header so a load-balanced RPC cannot mix log blocks
     // from one fork with an endpoint from another. Bound this work to 64 blocks.
-    const end = head.number < this.cursor + 63n ? head.number : this.cursor + 63n;
+    const end = ceiling < this.cursor + 63n ? ceiling : this.cursor + 63n;
     const endpoint = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: end }));
     if (endpoint.number !== end || (end === head.number && endpoint.hash !== head.hash)) throw new Error('RPC finalized endpoint is inconsistent.');
     const headers = new Map<bigint, z.infer<typeof blockHeaderSchema>>();
@@ -443,6 +454,7 @@ export async function runTestnetDemo(
     await assertProtectionPolicy({
       guardianVersion: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'GUARDIAN_POLICY_VERSION' }),
       releaseVersion: () => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'RELEASE_POLICY_VERSION' }),
+      reviewFormat: () => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'REVIEW_FORMAT_VERSION' }),
       routePermission: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'isProtected', args: [vault.address, ROUTE_ID] }),
     });
   } catch {

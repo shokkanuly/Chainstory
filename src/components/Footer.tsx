@@ -18,7 +18,7 @@ export default function Footer() {
             <Logo size={26} />
           </a>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            Read any wallet. Protect every bridge. Retold and Tripwire are read-only: nothing to connect, nothing to sign.
+            Wallet analysis and synthetic Tripwire replay. No wallet connection or public-chain transactions.
           </p>
         </div>
         <nav className="flex flex-wrap gap-x-6 gap-y-2 font-mono text-[12px] uppercase tracking-[0.12em]">
@@ -31,7 +31,7 @@ export default function Footer() {
       </div>
       <div className="mx-auto max-w-7xl border-t border-border px-4 py-5 text-[11px] leading-relaxed text-muted-foreground sm:px-6 lg:px-8">
         © 2026 Retold · Tripwire · MIT. Retold’s tax output is a draft Form 8949 estimate to review with a qualified tax
-        professional, not tax advice. Tripwire is not yet deployed to a live chain.
+        professional, not tax advice. The current CCTP escrow pilot has not been deployed or externally audited.
       </div>
     </footer>
   )

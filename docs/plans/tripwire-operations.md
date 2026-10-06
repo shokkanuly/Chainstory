@@ -1,0 +1,476 @@
+# Read-only testnet operations viewer
+
+Implemented 2026-10-06, ADR-026. Open `/tripwire/operations` through the link on
+the incident replay. The page inspects public JSON snapshots. It does not connect
+a wallet, call a transaction sender, sign, approve, request a return or query live
+payment status from a chain. ADR-031 adds local public-folder refresh below. A validated file is **not** independently authenticated evidence.
+
+## Before deployment
+
+Generate a fresh keyless report:
+
+```sh
+npm run tripwire:cctp:preflight -- payment-config.json new-readiness.json
+```
+
+Import that JSON. The viewer shows source USDC, per-network ETH balances/roles,
+funding blockers, predicted contract addresses, snapshot blocks and remaining
+pilot gates. Predicted addresses are explicitly pending deployment. Even passed
+funding checks do not establish deployment acceptance or sufficient gas for all
+future actions. It does not show fabricated payments when the report lists none.
+
+## After deployment
+
+With accepted deployment, actual manifest-v3 proof locators and the existing
+standalone keyless observer, export one public snapshot into a new file:
+
+```sh
+npm run tripwire:cctp:observe -- manifest.json observer.sqlite --report=new-payments.json
+```
+
+The report includes explicit manifest/deployment scope and, for currently verified
+customer backing only, a public projection of the existing stored proof: source
+and destination receipt hashes/block anchors, operation ID, source-intent policy
+hash and fixed return recipient. Cached proof is not exported as current evidence
+when receipt verification is unavailable. No signing keys enter the report.
+`--report` cannot be combined with `--watch`, repeated or empty; files are created
+exclusively and never overwritten. Existing streaming observer behavior remains
+available without this flag. Startup failure before a snapshot produces no file;
+poll failures can produce an unavailable/quarantined snapshot.
+
+Use a separate observer journal, as in the [operator runbook](tripwire-payment-operator.md).
+Do not delete or change scope to clear a quarantine. Import the new report to see
+listed payments, search by address/payment/operation ID, filter states, and expand
+reasons, policy versions, operation/recipient/return data and reported burn/mint
+receipt links. Links are derived from supported testnet explorer configuration,
+never arbitrary imported URLs. A mint receipt is not a payout receipt.
+
+Rejected funded credit remains distinct from returned credit. A return request
+and its maturity are separate from a confirmed return. Maturity is displayed from
+the recorded chain state; a local clock never advances a payment to paid/returned.
+HOLD, unavailable input or rejection creates no browser execution permission.
+The observer still supplies no behavioral ALLOW; policy separation is pending.
+
+## Receipt-backed listed-credit timeline (ADR-027)
+
+Fresh observer reports optionally include `lifecycle` version 1 per currently
+verified customer credit. Read canonical source burn and destination mint block
+times from the authenticated proof anchors. For a return request or terminal
+state, scan the compiled payment contract's `ReturnRequested`, `ReleaseExecuted`
+and `CreditReturned` events from mint inclusion through the common finalized head.
+Use 2,000-block pages, at most 128,000 blocks inclusive and 1,000 selected logs per
+payment. Older history beyond that bound is explicitly unavailable; no unbounded
+RPC scan or guessed terminal hash. The public reader filters the exact payment ID.
+
+Validate each selected event against its successful receipt, exact contract/ID,
+amount and payout/fixed-return recipient, non-removed unique log position, block
+anchor, finalized range and monotonic destination clock. Check inclusion and
+provenance of every receipt log; detect omitted same-payment events in a selected
+receipt. Return request maturity must equal its block timestamp plus immutable
+recovery delay and the current credit's returnAt. A return cannot precede maturity
+or its request. Recheck all claimed block hashes/clocks after receipt reads;
+authenticated backing conflicts propagate into the existing quarantine path.
+RPC honesty/completeness remains a trust assumption, not consensus verification.
+
+Terminal getter state alone cannot supply a payout/return transaction or duration.
+Missing/inconsistent current history yields `lifecycle.status=unavailable`; no
+cached completion is substituted. Existing verified backing and reported getter
+state remain distinguishable from this independent history failure. Older
+reports without the optional field remain readable with an explicit missing-data
+message. The browser cross-checks lifecycle anchors/order/clock/maturity/outcome
+against the report's proof, finalized head and payment state, but does not
+authenticate the file or query receipts itself.
+
+Expanded payments show burn, funded escrow, optional customer return request and
+actual payout/return milestones with trusted testnet explorer links. Derive
+exact bigint seconds separately for burn inclusion → mint inclusion, and mint
+inclusion → terminal inclusion (or finalized snapshot for still-outstanding
+credit, including rejection). Reverse cross-chain clocks suppress settlement
+duration instead of clamping or taking an absolute difference. These are block
+inclusion intervals: they do not measure finality waiting, first risk assessment,
+review/acknowledgement time or operator response latency. They cover listed,
+already authenticated credits, not burned-but-unminted transfers or treasury-wide
+exposure. No milestone advances solely because the user's wall clock moves.
+
+## Automatic operation discovery (ADR-028)
+
+For an empty customer manifest v3, the existing keyless observer can build proof
+locators automatically instead of requiring manual transaction hash pairing:
+
+```sh
+npm run tripwire:cctp:observe -- empty-manifest.json observer.sqlite --discover=SOURCE_START_BLOCK:DESTINATION_START_BLOCK --report=new-discovered-payments.json
+```
+
+Replace both start-block placeholders with actual decimal block numbers. Each
+range ends at its independently captured finalized head and must contain 1–4,096
+blocks. Start from the source payment/deployment evidence or a deliberately
+selected recent interval; record omitted earlier history. This is a bounded
+one-shot observation: `--discover` cannot be repeated or combined with `--watch`,
+legacy manifests or existing manual requests. Runtime/binding acceptance occurs
+before scanning; the subsequent audit rechecks current deployment/state.
+
+Reuse the existing finalized `ContractEventFeed` with an optional upper bound,
+64-block pages, linked canonical headers, unique non-removed event provenance and
+stable range anchors. Adding a read bound does not change old execution checkpoints
+or advance them on failed pages. Its RPC boundary now uses a small structural
+reader interface rather than assuming identical viem transaction types for both
+chains; legacy instant-demo input also receives schema validation.
+
+Scan supported `MessageSent` payment hooks on the configured source transmitter
+and `PaymentCreditBound` on the accepted destination escrow. Match the committed
+operation ID, fixed return beneficiary and intent-policy hash. Build original
+source log index/hash and destination mint hash as hints only. Every candidate
+still passes the existing complete source/deposit/mint/credit receipt verifier;
+matching events never authorize payment or establish authenticated backing. No
+Circle API, new protocol format, dependency, sender or private key is introduced.
+
+Multiple source/destination hints for an operation are ambiguous and are never
+arbitrarily paired. Preserve unmatched destination hints with reasons and source
+hints with no match in the scanned destination interval. A source-only hint is
+not proof of an unminted balance: its missing match could be outside the range,
+unsupported, absent or unavailable. Limit each side to 100 candidate events;
+failed/lagging/malformed/inconsistent ranges produce no partial successful
+report. Stop sibling scans on failure, honor cancellation, and recheck both range
+anchors after the receipt audit. A changed committed finalized scan anchor uses
+the observer's persistent quarantine path.
+
+The public report's optional `discovery` version 1 records exact coverage,
+candidate/paired counts, pending source hints, unmatched destination hints and
+conflicting operation IDs. The viewer validates ranges, counts, proof bounds and
+relationships to audited rows; it displays gaps separately with trusted explorer
+links. Metrics for audited payments do not include unmatched hints as confirmed
+funds. Missing older history and a zero-row interval never establish zero treasury
+exposure. Existing manual observer/operator workflows remain supported.
+
+## Persistent discovery and restart recovery (ADR-029)
+
+For the same empty manifest v3, opt into a durable hint index:
+
+```sh
+npm run tripwire:cctp:observe -- empty-manifest.json observer.sqlite --discover-resume=SOURCE_START_BLOCK:DESTINATION_START_BLOCK --report=new-resumed-payments.json
+```
+
+Use the same state file, manifest bindings and original decimal start blocks on
+subsequent runs; choose a new export filename. The observer fingerprints the
+normalized empty manifest and refuses changed bindings or initial bounds. Existing
+`--discover` remains a bounded one-shot search without this index. Both discovery
+flags are mutually exclusive; only `--discover-resume` also supports `--watch`
+through the continuous observer below.
+Signing operator/manual locator workflows remain unchanged.
+
+The existing deployment-scoped SQLite store and exclusive process lease now keep
+one separately versioned `discovery` row. It contains BOTH finalized feed
+checkpoints, cumulative covered ranges and all source/destination hints. JSON
+bigint values, header/checkpoint agreement, provenance, event/contract scope,
+unique log positions and consistent block/transaction identities are validated
+before use. This is a local operator journal, never a browser/backend database or
+an authenticated proof cache. Optional index schema v1 does not migrate/reset
+existing SQLite schema-v3 proof claims or signed work.
+
+Before resuming, recheck both committed anchors and every retained hint block,
+including source-only operations and idle networks. Restore the original feed
+checkpoint and scan from its next block. Limit each run to 4,096 new blocks per
+chain using existing 64-block linked-header pages. A longer finalized backlog is
+processed in consecutive runs without skipping blocks; report both covered
+endpoints and captured finalized tips. Cumulative history may exceed 4,096 blocks.
+A network with no new finalized blocks performs canonical rechecks without
+replaying event queries. Initial omitted history remains omitted and explicit.
+
+Source-only and destination-only hints persist and can match across runs. A later
+duplicate operation remains ambiguous across restarts; no arbitrary pairing or
+silent deletion is allowed. Every paired candidate undergoes the full existing
+receipt/deployment/payment-state audit on EVERY run, including an idle restart.
+Unavailable current receipts suppress reported authenticated proof even when a
+previous proof claim exists. Search hints do not establish an unminted balance.
+
+After scanning and auditing, recheck captured covered/tip hashes and clocks plus
+retained history. Commit both cursors and hints atomically, then export. Errors or
+cancellation before commit leave the old index intact; a crash before commit
+replays the range. If export fails after commit, repeat the same command with a
+new filename: the committed index persists and receipts are audited again.
+Current receipt-unavailable/invalid rows may be reported and indexed as hints;
+they never become cached approval evidence. A finalized-history conflict persists
+quarantine through the existing observer path; a quarantined journal cannot
+advance. Do not delete/change filenames to bypass quarantine or retained claims.
+
+Retain at most 100 hints per chain for this bounded pilot. Capacity failure does
+not advance cursors or silently prune terminal/pending/conflicting operations.
+Larger retention, archival and operator reconciliation need a separate design;
+this is not an unlimited production indexer. Changed bindings/starts also need
+explicit reconciliation rather than an automatic journal reset.
+
+Public optional `discovery` version 2 uses `persistent-finalized-hints`, retains
+cumulative coverage/counts/gaps, and adds `incremental`: whether this is a resume,
+each new scan start and both captured finalized tip headers. The viewer validates
+new windows, idle boundaries, tip/covered-header relationships and destination
+alignment with the audit snapshot. It shows newly searched blocks and exact
+bigint remaining-block counts separately from accumulated coverage. A backlog is
+also an explicit observer blocker. Imports remain unauthenticated display files.
+Automatic signing, source-only accounting and complete treasury exposure remain
+separate work. ADR-031 adds browser polling of public local files below.
+
+## Continuous keyless observer (ADR-030)
+
+After product deployment acceptance, start a foreground worker process:
+
+```sh
+npm run tripwire:cctp:observe -- empty-manifest.json observer.sqlite --discover-resume=SOURCE_START_BLOCK:DESTINATION_START_BLOCK --watch --interval=10 --reports=public-reports
+```
+
+Use the same empty manifest, scoped SQLite file and original start blocks as a
+one-shot persistent search. The new combination extends the existing CLI, not a
+second polling service. `--discover` remains one-shot; `--report=new.json` is
+one-shot only. Optional `--reports=directory` requires watch mode. Each completed
+watch attempt emits one NDJSON record; when a report directory is supplied it also
+creates a distinct public JSON snapshot. Keep stdout suitable for a local process
+supervisor; provider errors/URLs/keys are never included in public failure reasons.
+
+The CLI accepts product runtime/bindings and opens the existing exclusive journal
+lease BEFORE starting its loop. Startup failure, missing contracts, wrong scope,
+quarantine or an already-owned journal exits without entering polling. Startup
+RPC outages require a process restart; automatic retries apply after acceptance.
+The CLI owns the lease and releases it in `finally`, including cancellation,
+terminal observation failure and publication failure. No daemon installation,
+OS supervisor, hosted API, alert delivery or background Codex automation is added.
+
+Run the existing audit/discovery logic through one tested sequential worker.
+Complete discovery, fresh receipt/state audit, canonical rechecks, atomic index
+commit and snapshot publication before scheduling another tick. Wait the chosen
+5–300 second interval AFTER the previous tick/export finishes; slow checks do not
+overlap, accumulate timers or start concurrent scans. Every idle tick still
+rechecks saved history and current receipts. Long backlogs are consumed in
+consecutive scheduled increments of at most 4,096 new blocks per chain, without
+cursor jumps. Per-payment unavailable evidence stays unavailable in a successful
+scan report; the next regular check retries its receipt/state reads.
+
+On a recoverable thrown RPC/audit failure, publish a new unavailable snapshot with
+no payment rows. Retain the last committed index, retry after the configured
+interval, then double the delay for consecutive failures up to 300 seconds.
+A successful scan resets the failure counter and returns to the normal interval.
+A lagging finalized head behind committed history is retryable; do not reset its
+cursor. Operation ambiguity is reported with explicit gaps while other candidates
+are audited; it never chooses a duplicate automatically.
+
+Stop, publish a terminal failure and require reconciliation for changed/malformed
+manifest scope, wrong chain/initial bounds, unreadable/failed journal updates or
+100-retained-hints-per-chain capacity exhaustion. The discovery reader preserves
+the first failure when sibling scans cancel, so a capacity/finality error cannot
+be disguised as a transient cancellation. A changed finalized receipt/history or
+captured discovery snapshot persists quarantine and stops retries. Restarts cannot
+clear quarantine. Manual watch mode may reload request locators, but its deployment
+and immutable customer scope remain fixed. Mutable customer policy is reread.
+
+SIGINT/SIGTERM cancel RPC via the shared AbortSignal and wake scheduled waits.
+The worker starts no new tick and emits no partial success after cancellation.
+Canonical source claims already committed during an audit remain immutable; no
+rollback, wallet action or funds movement is implied. A successful index commit
+can precede an export failure; in that case exit, fix publication, and restart
+against the SAME journal to audit again. Never treat disk errors as RPC retries.
+
+Public exports use an exclusive same-directory temporary file, mode 0600, flush
+it, and publish with an atomic non-overwriting hard link. Failed writes remove
+only their own temporary file. A crash can leave `.partial-*` files; completed
+public reports are the `.json` filenames. Neither existing snapshots nor journals
+are replaced/deleted. New report directories use mode 0700; existing directory
+permissions are the caller's responsibility. Export requires a filesystem with
+hard-link support. Without `--keep-reports`, snapshots continue to accumulate without automatic
+archival/deletion. ADR-032 adds reversible public-file archival below; total disk
+usage still grows and requires operator planning.
+
+Watch reports add optional public `worker` schema v1: process-local attempt,
+consecutive failure count, configured interval, planned next delay and
+`scheduled`/`retrying`/`stopped` state. These counters reset when a new process
+starts; SQLite search cursors and proof claims persist. The viewer validates
+state/count/delay relationships and consistency with success/unavailable/quarantine.
+It displays the schedule AS REPORTED AT CAPTURE. An imported file does not follow
+process health live, promise a future tick or independently prove liveness. Stale
+and failed imports cannot preserve previous payment rows as current evidence.
+
+## Automatic local report-folder updates (ADR-031)
+
+On `/tripwire/operations`, choose **Follow public report folder**, then select the
+separate public directory used by `--watch --reports=public-reports`. Choose a
+folder containing ONLY public observer snapshots, not a wallet/config/journal
+folder. The native directory picker requests **read** access only and requires a
+button click. Availability depends on a supporting browser and secure context;
+unsupported browsers show a disabled folder control and retain manual import.
+See [the browser API and permission model](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access).
+
+While the page remains open, enumerate the selected directory and read the newest
+completed `observation-TIMESTAMP-UUID.json` body. Do not recurse into subfolders,
+open unrelated files, read `.partial-*` publications or send files to a server.
+Select the greatest numeric publication timestamp, not enumeration order or a
+UUID tie-break. If the newest timestamps tie, clear the snapshot and await a later
+publication. Filename order is a publisher convention, not authenticated evidence.
+
+Finish each read before waiting five seconds for the next check; slow reads do
+not overlap. Browser background throttling can delay checks. Read at most 2,000
+entries and one report body per pass, with the existing 2 MB/schema/1,000-row
+boundary. At capacity, clear displayed data and require a smaller public directory;
+the browser performs no archival/deletion. The optional standalone observer
+archival below keeps that top level bounded during normal operation. Retain only current report text and
+continuity metadata in page memory. Reload/navigation, manual import, clear or
+**Disconnect folder** cancels queued work and suppresses late reads; reconnect
+explicitly after reload. Handles are not stored in IndexedDB/localStorage.
+
+A new unavailable/quarantined report replaces the whole payment snapshot, including
+old rows, coverage and receipt anchors. A malformed/oversized latest file, missing
+latest file, native read/permission failure or backwards publication/capture clock
+clears previous data instead of falling back to an older success. Remember the
+newest filename even when validation fails, so deleting that invalid file cannot
+bring back old successful statuses. Folder checks continue and can recover on a
+later valid report. Redact native error details/paths. Never update report capture
+time just because the folder was checked; existing stale/future flags remain.
+
+Pin the first successful report's validated manifest-version/vault/guardian/operator
+scope and synthetic marker for that connection; refuse a changed successful scope.
+Failure envelopes contain no deployment scope and remain unauthenticated. They
+clear rows but cannot change the pinned successful scope. Use a dedicated directory
+per observer deployment; reconnect deliberately when changing scope or resolving
+clock/publication-order issues. Neither folder permission, recent exports nor a
+scheduled worker field proves process liveness or authorizes a payment.
+
+The browser source controller lives next to its page and imports generic domain
+snapshot types; existing EVM schema parsing stays in `src/chains/evm/operations.ts`.
+This follows the existing `src/pages` UI layout rather than introducing `src/app`.
+No filesystem writer, database access, HTTP endpoint, dependency or signer is added.
+
+## Bounded archival of public reports (ADR-032)
+
+For extended local observation, add `--keep-reports=500` to the existing watch
+command:
+
+```sh
+npm run tripwire:cctp:observe -- empty-manifest.json observer.sqlite --discover-resume=SOURCE_START_BLOCK:DESTINATION_START_BLOCK --watch --interval=10 --reports=public-reports --keep-reports=500
+```
+
+The flag requires watch directory output and a canonical integer from 10 through
+1,000. It is optional: omitting it preserves append-only top-level publication.
+Use a dedicated public directory owned by one observer writer. It must be a real
+directory, not a symlink. New public/archive directories use mode 0700; existing
+permissions remain the operator's responsibility. The browser needs read access
+only; archival runs in the standalone local process, never in browser/proxies.
+
+After successfully publishing the new complete JSON file, enumerate up to 10,000
+top-level entries. Validate candidate names through the same pure bigint timestamp
+codec as the browser. Open no JSON bodies, unrelated/private/configuration/journal
+files or subdirectories. Refuse report-shaped symlinks or directories. Keep the
+newest requested number by numeric publication time, all files tied at its boundary,
+and the just-published file even if the local clock rolled backwards. Never make
+an ambiguous newest group look unique by archiving its peers. If these exceptions
+would retain more than 1,001 files, stop for publication reconciliation.
+
+Plan older completed reports into the `archive/` subdirectory. Check every planned
+name collision before moving any file: an existing different inode is a conflict,
+even if its bytes happen to match. Refuse an archive path that is a symlink or a
+file. Recheck source identity/size/modification time before changing links. Create
+an exclusive same-filesystem hard link, verify its identity, flush the file and
+archive directory, then remove only the original top-level link and flush that
+directory. No archive entry is overwritten and no report data is intentionally
+purged. A crash/failure may leave both copies; a retry recognizes only the same
+inode and safely finishes that move. Concurrent local directory tampering is
+outside the dedicated single-writer assumption.
+
+Move at most 100 files per completed observation. Existing backlog is processed
+in consecutive ticks; an initially oversized folder can take several ticks to
+fall below the browser's 2,000-entry limit. In normal operation, one new report
+requires at most one older move. Synchronous local filesystem work can delay the
+next tick; the worker still does not overlap checks. The helper reports moved,
+retained and remaining candidate counts locally without altering observer evidence.
+Total archive storage remains unbounded: this is reversible organization, not
+space reclamation, encryption or a tamper-evident evidence store. Directory flush
+and hard-link support are required; real filesystem checks here ran on macOS.
+
+A publication can succeed before archival fails. Such a failure stops the worker
+through the existing publication failure path, instead of retrying it as an RPC
+outage or sending a transaction. Already moved reports stay archived, the new
+report remains readable, and committed discovery/proof claims remain intact.
+Fix the local storage conflict and restart with the SAME journal/manifest/initial
+blocks. Do not reset quarantine or proof history. A captured `scheduled` worker
+field cannot certify that the process survived its later archive step.
+
+The browser continues to inspect the newest top-level snapshot and does not
+recurse into the archive. Inspect an archived public report by manual import;
+never copy old files back to the top level to manufacture a fresh status. Native
+folder selection/refresh end-to-end remains unverified by automation as recorded
+under ADR-031. The discovery journal's 100-hints-per-chain cap is unchanged.
+
+## File and freshness boundary
+
+Only version-1 keyless preflight and current manifest-v3 customer-payment observe
+reports are supported. Legacy/audit/enforcement-enabled reports are refused.
+Maximum input is 2 MB / 1,000 payment rows. Canonical decimal strings become
+bigint; numeric/floating/negative/overflow amounts are refused. Validate chain,
+route, scope, IDs, declared row counts, proof/net-credit consistency, policy/return
+state, receipt blocks and common payment clock. Unknown fields are discarded;
+bounded prose is rendered as text with control/bidi characters removed.
+
+Report content remains in page memory and is cleared on navigation/reload or the
+clear button. There is no new server, upload endpoint, persistence or analytics.
+Importing a replacement first removes the previous snapshot; failed input does
+not leave old statuses displayed. A generation counter prevents an earlier slow
+file read from replacing a later selection. Reports older than five minutes or
+with a clock more than two minutes ahead are visibly flagged; even a recent file
+is a snapshot, not a live or authoritative execution decision. Listed requests
+are not a complete treasury inventory; metrics count listed rows only.
+
+`src/testing/fixtures/tripwire/operations-synthetic.json` is an explicitly marked
+example for inspecting UI states. Its hashes/addresses are fabricated and it
+establishes no public receipt or funding. Removing its marker does not authenticate
+a file; all imports retain the unverified-snapshot notice.
+
+## Evidence and limits
+
+1,294 tests / 65 files pass. Public archival adds 37 cases covering exact
+retention/clock/tie/batch boundaries, preserved bytes/permissions, private/partial
+file exclusion, symlink/collision/changed-file refusal, flush/link/unlink failure,
+crash/retry, CLI opt-in and real observer export→archive→reader wiring. A real
+2,001-file fixture drops below the viewer entry cap after a bounded batch; current
+outage reports still clear old rows. A separate explicitly synthetic disk rehearsal
+retained ten reports and archived two. The predeployment command with archival
+opt-in refused before creating its SQLite journal, lease or report directory. Local folder refresh adds 28 fixture-based cases for
+publication selection, partial/private/nested-file exclusion, outage/recovery,
+invalid-newest/deletion/no-fallback behavior, immutable publication checks, scope
+and clock continuity, bounds, native error redaction, sequential scheduling,
+cancellation and read-only capability detection. Continuous observation adds 62 cases covering
+sequential/idle/late-mint/backlog polling, outage backoff/reset, fresh receipt and
+policy reads, terminal manifest/storage/capacity/finality stops, cancellation,
+restart/publication failure, atomic files and public worker metadata. Durable
+discovery adds 55 cases for restart/idle
+recovery, late matching, bounded backlog, atomic failure/interruption, retained
+ambiguity, scope/corruption/capacity/quarantine guards, current receipt outage
+and public cumulative/increment/tip boundaries. Initial discovery adds 56 cases covering matching and
+ambiguous/missing/unsupported operations, exact range paging, scope/limits,
+cancellation, RPC/canonical failures, CLI restrictions, public coverage boundaries
+and an end-to-end discovery→receipt audit→viewer round-trip. Lifecycle adds 60 cases covering synthetic own-ABI
+receipts, missing/reverted/substituted/removed/duplicate events, bad recipients and
+amounts, maturity, bounded history, canonical switches, cross-chain clocks,
+unavailable current evidence and observer-to-viewer terminal round-trip. The
+earlier viewer milestone added 46 file-boundary/serialization/cache cases
+and an existing observer integration extended to round-trip its actual export
+through the browser adapter. Browser checks cover actual public funding import,
+synthetic state/filter/details, search, replacement refusal and narrow-layout
+rendering. Lifecycle browser checks verify the returned-credit timeline, exact
+intervals, explorer links and a separate unavailable-completion-history fixture.
+Discovery browser checks use the explicitly synthetic coverage fixture, expand
+unmatched/conflict details and confirm that only four paired rows enter the
+payment queue. Live predeployment discovery startup refuses before creating its
+observer journal or export file. The persistent mode also refuses predeployment
+startup without creating its database, lease or export. The resumed synthetic
+fixture verifies cumulative/new coverage separately in the browser. Continuous
+worker examples show healthy scheduling and unavailable retry metadata; outage
+imports replace previously loaded payment rows. The predeployment watch command
+also exits without creating a database, lease or reports directory.
+The folder picker was invoked in the actual in-app browser, but its native dialog
+cannot be operated through the available automation. End-to-end folder selection
+and filesystem refresh remain unverified in that browser; controller tests do not
+replace that check. Manual browser import remains verified.
+Build/typechecks and lint pass.
+
+Actual keyless funding read at 2026-10-06 12:37:40 UTC still shows four blockers
+(owner/oracle destination gas, source gas and source USDC). No new deployment,
+burn/mint/payout/return, public transaction, key read or external audit occurred.
+Expanded discovery retention, archive space reclamation, supervised process recovery/alerts, full lifecycle/finality/operator timing, aggregate exposure, hosted live data,
+audited source controls, behavioral policy and design-partner validation remain
+separate milestones. This page is a usable local operations viewer, not a hosted
+payment service or proof of production readiness.

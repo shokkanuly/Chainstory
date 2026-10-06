@@ -1,5 +1,10 @@
 # Tripwire durable operator — local implementation, 2026-09-30
 
+2026-10-06: the same queue/outbox now supports the explicit customer-payment profile;
+see [manifest-v3 product integration](tripwire-payment-operator.md). It retains funded
+rejections for recovery, relays customer-requested returns and stores finalized
+returned outcomes. The legacy terminal rules below describe the original profile.
+
 The operator persists observations and outgoing transactions across crashes.
 It runs separately from the read-only browser and stateless API proxies
 ([ADR-015](../07-decisions-adr.md#adr-015--durable-tripwire-operator-state-and-signed-transaction-outbox)).

@@ -62,6 +62,44 @@ fields or bypass the guardian. A compromised reviewer can nevertheless approve
 an invalid pending request if the bridge itself failed to authenticate it.
 Independent bridge authentication is mandatory for a production integration.
 
+## Scorer input safety — 2026-10-05
+
+Synthetic regression fixtures first reproduced 33 failures. The scorer now takes
+one screening observation for both health and the signal. Null, malformed results
+and lookup exceptions mean unavailable; a label lookup failure cannot erase a
+positive observation. Unavailable screening alone produces `indeterminate`/null,
+not `clear`. The watcher holds that request and reassesses after recovery.
+
+Baselines must match the transfer route and have sufficient integral samples,
+finite positive history window/p95/liquidity, a nonnegative median no greater than
+p95 and a fresh nonfuture computation timestamp. A usable transfer price is finite
+and nonnegative. Invalid assessment/transfer timestamps, relevant recent amounts
+or history timestamps and invalid scorer configuration produce indeterminate
+assessments. Other-route and out-of-window amounts do not affect this decision.
+Missing recent amounts are not treated as zero. Invalid legacy USD proof values
+are unavailable evidence, not an independently established source mismatch.
+
+Invalid inputs do not enter behavioral rules. A confirmed exact backing mismatch
+retains its deterministic score of 1 even with unavailable behavioral inputs;
+NaN statistics cannot average that evidence into a clear verdict. Invalid scorer
+configuration always holds. Optional contract facts remain optional; partial
+facts no longer describe an unchecked contract as verified and established.
+
+This fixes the current scorer's safety contract. It does not implement the new
+customer-policy/shadow-signal separation or funded-credit recovery in the
+[product backlog](tripwire-product.md). Behavioral USD values remain approximate;
+authenticated token backing and hard budgets use exact base units.
+
+Local validation for this slice: 683 tests passed, including 44 new scorer
+fixtures and two new watcher recovery/mismatch tests. Commands:
+`npm test -- --maxWorkers=2 --minWorkers=1`, `npm run build`, `npm run lint`,
+`npm run test:mutants` (all 38 caught), and `npm run tripwire:demo:local`
+(NONE → THROTTLE → DELAY → FREEZE; real gated-vault bytecode in a local EVM).
+The existing artifact-compilation test exceeded its five-second timeout while
+the first full suite ran alongside a build; limiting test workers and running
+that suite without the build passed. No timeout or contract-test semantics changed.
+Public transactions and external review are not part of this validation.
+
 ## Deployment status
 
 This milestone is local and reviewable. No live contracts have been redeployed.
@@ -92,6 +130,12 @@ contract/identity/policy change; historical generic vaults retain their older tr
 | P1 | Separate owner/oracle roles and reliable transaction sender | Rotation, insufficient gas balance, nonce conflicts, dropped transactions and RPC outages are observable and recoverable |
 | P2 | Incident review dashboard | Operators see source evidence, data health, decision version, actual guardian state and confirmed review/payout receipts |
 | Pilot | Observe one real route before enforcing small limits | Honest traffic and attack/failure fixtures quantify detection, false holds and additional latency |
+
+2026-10-05: the selected CCTP testnet pilot now has a continuous keyless observer,
+finalized evidence/state reports and a reproducible unsigned deployment package;
+[pilot runbook](tripwire-pilot.md). Separate local testnet role wallets were created.
+No public transaction has been sent. Verified backing remains HOLD until a real
+behavioral risk policy is configured; live accuracy/latency are not yet measured.
 
 Finality-aware operator behavior is documented in [the runbook](tripwire-operator.md)
 and ADR-016. Source/destination logs are finalized before ingestion; canonical

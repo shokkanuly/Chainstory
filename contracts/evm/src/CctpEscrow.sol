@@ -63,17 +63,16 @@ contract CctpEscrow is ProtectedVault, ReentrancyGuard {
         sourceToken = config.sourceToken;
     }
 
-    function releaseId(bytes32 nonce) public view returns (bytes32) {
+    function releaseId(bytes32 nonce) public view virtual returns (bytes32) {
         return keccak256(abi.encode(ESCROW_ID_DOMAIN, block.chainid, address(this), sourceDomain, nonce));
     }
 
     /// Permissionless relay, requiring the burn's destinationCaller to be this
     /// escrow. A direct call to Circle cannot consume its nonce and strand mint.
     function receiveCctp(bytes calldata message, bytes calldata attestation) external nonReentrant {
-        // Header 148 + burn body 228 + exactly one 64-byte beneficiary hook.
-        if (message.length != 440 || uint32(bytes4(message[0:4])) != 1 ||
+        if (message.length < 376 || uint32(bytes4(message[0:4])) != 1 ||
             uint32(bytes4(message[148:152])) != 1 || uint32(bytes4(message[140:144])) != 2000 ||
-            uint32(bytes4(message[144:148])) != 2000 || bytes32(message[376:408]) != BENEFICIARY_HOOK) {
+            uint32(bytes4(message[144:148])) != 2000) {
             revert UnsupportedCctpMessage();
         }
         if (uint32(bytes4(message[4:8])) != sourceDomain || uint32(bytes4(message[8:12])) != destinationDomain ||
@@ -82,7 +81,7 @@ contract CctpEscrow is ProtectedVault, ReentrancyGuard {
             _address(message, 184) != address(this)) revert InvalidCctpBinding();
         // Canonical EVM padding on the depositor and beneficiary as well.
         _address(message, 248);
-        address beneficiary = _address(message, 408);
+        address beneficiary = _beneficiary(message);
         if (beneficiary == address(0) || beneficiary == address(this)) revert InvalidCctpBinding();
         uint256 gross = uint256(bytes32(message[216:248]));
         uint256 maxFee = uint256(bytes32(message[280:312]));
@@ -102,11 +101,20 @@ contract CctpEscrow is ProtectedVault, ReentrancyGuard {
         if (afterMint < beforeMint || afterMint - beforeMint != net) revert CctpMintMismatch();
         bytes32 id = releaseId(nonce);
         fundedMessageHash[id] = keccak256(message);
+        _registerCredit(id, message, net);
         this.requestRelease(id, beneficiary, net);
         emit CctpEscrowFunded(id, nonce, fundedMessageHash[id], net);
     }
 
-    function _address(bytes calldata message, uint256 offset) private pure returns (address) {
+    function _beneficiary(bytes calldata message) internal virtual returns (address) {
+        // Header 148 + burn body 228 + exactly one 64-byte beneficiary hook.
+        if (message.length != 440 || bytes32(message[376:408]) != BENEFICIARY_HOOK) revert UnsupportedCctpMessage();
+        return _address(message, 408);
+    }
+
+    function _registerCredit(bytes32 id, bytes calldata message, uint256 net) internal virtual {}
+
+    function _address(bytes calldata message, uint256 offset) internal pure returns (address) {
         uint256 word = uint256(bytes32(message[offset:offset + 32]));
         if (word > type(uint160).max) revert InvalidCctpBinding();
         return address(uint160(word));

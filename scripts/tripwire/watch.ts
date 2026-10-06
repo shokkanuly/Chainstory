@@ -115,10 +115,12 @@ export class Watcher {
   }
 
   /** Acknowledge only a confirmed execution or terminal rejection; HOLD/delay stay pending. */
-  acknowledge(messageId: Hex): Promise<void> {
+  acknowledge(messageId: Hex, outcome?: 'executed' | 'rejected' | 'returned'): Promise<void> {
     const run = this.lock.then(() => {
       if (this.quarantine) throw new FinalityConflictError('Cannot acknowledge work while the operator is quarantined.');
       const previous = this.snapshot();
+      const release = this.pending.get(messageId);
+      if (outcome && release) this.cfg.store?.saveOutcome({ messageId, action: outcome, recipient: release.recipient, amount: release.amount });
       this.pending.delete(messageId);
       this.completed.add(messageId);
       try { this.persist(); } catch (error) { this.restore(previous); throw error; }

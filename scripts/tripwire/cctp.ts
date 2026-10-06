@@ -1,8 +1,8 @@
 // Read-only source authentication for Tripwire USDC escrow (ADR-017/018).
 import { decodeEventLog, keccak256, stringToHex, zeroAddress, type Abi, type Hex } from 'viem';
 import { z } from 'zod';
-import { cctpAddressSchema, cctpAddressWord, cctpAttestedMessage, cctpBytesSchema, cctpEscrowReleaseId, cctpHookBeneficiary, cctpReleaseId, decodeCctpBurnBody, decodeCctpMessage } from '../../src/chains/evm/cctp.js';
-import { CCTP_BASE_SEPOLIA_TO_SEPOLIA as route, CCTP_STANDARD_FINALITY, cctpEscrowAbi, cctpMessengerAbi, cctpTransmitterAbi } from '../../src/chains/evm/registry/cctp.js';
+import { cctpAddressSchema, cctpAddressWord, cctpAttestedMessage, cctpBytesSchema, cctpEscrowReleaseId, cctpHookBeneficiary, cctpPaymentReleaseId, cctpReleaseId, decodeCctpPaymentHook, decodeCctpBurnBody, decodeCctpMessage } from '../../src/chains/evm/cctp.js';
+import { CCTP_BASE_SEPOLIA_TO_SEPOLIA as route, CCTP_STANDARD_FINALITY, cctpEscrowAbi, cctpPaymentAbi, cctpMessengerAbi, cctpTransmitterAbi } from '../../src/chains/evm/registry/cctp.js';
 import { eventOriginSchema, releaseEventSchema, type EventOrigin, type ReleaseEvent } from './events.js';
 import { blockHashSchema, FinalityConflictError, receiptFinality, type BlockReader } from './finality.js';
 import type { OperatorStore } from './store.js';
@@ -37,11 +37,22 @@ const depositSchema = z.object({ burnToken: cctpAddressSchema, amount: z.bigint(
   mintRecipient: blockHashSchema, destinationDomain: uint32, destinationTokenMessenger: blockHashSchema,
   destinationCaller: blockHashSchema, maxFee: z.bigint().nonnegative(), minFinalityThreshold: uint32, hookData: cctpBytesSchema });
 
-export type CctpPolicy = 'legacy-post-mint' | 'authenticated-escrow';
-export function cctpVerifierScope(vault: string, policy: CctpPolicy = 'authenticated-escrow') {
+export const cctpPaymentBindingsSchema = z.object({
+  authority: cctpAddressSchema.refine((a) => a !== zeroAddress),
+  sourceSender: cctpAddressSchema.refine((a) => a !== zeroAddress),
+  returnRecipient: cctpAddressSchema.refine((a) => a !== zeroAddress),
+  recoveryDelay: z.union([z.bigint(), z.string().regex(/^[1-9][0-9]*$/).transform(BigInt)])
+    .pipe(z.bigint().min(3600n).max(30n * 86400n)),
+}).strict();
+export type CctpPaymentBindings = z.output<typeof cctpPaymentBindingsSchema>;
+export type CctpPolicy = 'legacy-post-mint' | 'authenticated-escrow' | 'customer-payment';
+export function cctpVerifierScope(vault: string, policy: CctpPolicy = 'authenticated-escrow', payment?: CctpPaymentBindings) {
+  const bindings = policy === 'customer-payment' ? cctpPaymentBindingsSchema.parse(payment) : undefined;
   return sourceVerifierScopeSchema.parse({ kind: 'cctp-v2-usdc', settlement: route.destination.transmitter,
-    fingerprint: keccak256(stringToHex(JSON.stringify({ policy: policy === 'legacy-post-mint' ? 'cctp-v2-usdc-post-mint-v1' : 'cctp-v2-usdc-authenticated-escrow-v1', route, vault: cctpAddressSchema.parse(vault),
-      finality: 'both-rpc-finalized-and-circle-standard', hook: 'Tripwire/CCTP/v2/USDC/beneficiary/v1' }))) });
+    ...(bindings ? { profile: 'customer-payment-v1' } : {}),
+    fingerprint: keccak256(stringToHex(JSON.stringify({ policy: policy === 'legacy-post-mint' ? 'cctp-v2-usdc-post-mint-v1' : policy === 'customer-payment' ? 'cctp-v2-usdc-customer-payment-v1' : 'cctp-v2-usdc-authenticated-escrow-v1', route, vault: cctpAddressSchema.parse(vault),
+      finality: 'both-rpc-finalized-and-circle-standard', hook: policy === 'customer-payment' ? 'Tripwire/CCTP/v2/USDC/payment/v1' : 'Tripwire/CCTP/v2/USDC/beneficiary/v1',
+      ...(bindings ? { payment: { ...bindings, recoveryDelay: bindings.recoveryDelay.toString() } } : {}) }))) });
 }
 const origin = (chainId: number, log: Log): EventOrigin => eventOriginSchema.parse({ chainId, ...log });
 const decoded = (receipt: Receipt, address: Hex, abi: Abi, eventName: string) => receipt.logs.flatMap((log) => {
@@ -62,10 +73,12 @@ const pending = (reason: string): SourceEvidence => ({ status: 'pending', reason
 export class CctpSourceAdapter implements SourceAdapter {
   readonly scope;
   private readonly vault: Hex;
+  private readonly payment?: CctpPaymentBindings;
   private lock: Promise<unknown> = Promise.resolve();
   constructor(private store: OperatorStore, vault: string, private sourceRpc: CctpRpc, private destinationRpc: CctpRpc,
-    private locate: (messageId: Hex) => Promise<unknown | null>, private readonly policy: CctpPolicy = 'authenticated-escrow') {
-    this.vault = cctpAddressSchema.parse(vault); this.scope = cctpVerifierScope(this.vault, policy);
+    private locate: (messageId: Hex) => Promise<unknown | null>, private readonly policy: CctpPolicy = 'authenticated-escrow', payment?: CctpPaymentBindings) {
+    this.payment = policy === 'customer-payment' ? cctpPaymentBindingsSchema.parse(payment) : undefined;
+    this.vault = cctpAddressSchema.parse(vault); this.scope = cctpVerifierScope(this.vault, policy, this.payment);
     if (store.scope.sourceChainId !== route.source.chainId || store.scope.chainId !== route.destination.chainId ||
       store.scope.source !== route.source.transmitter || store.scope.vault !== this.vault || store.scope.token !== route.destination.usdc ||
       store.scope.decimals !== route.decimals || store.scope.finalityMode !== 'finalized' ||
@@ -116,7 +129,7 @@ export class CctpSourceAdapter implements SourceAdapter {
         return invalid('Release originated on the wrong chain or vault.');
       }
       const cached = this.store.sourceProofs().find((p) => p.messageId === release.messageId);
-      if (cached && (this.policy === 'legacy-post-mint' || !release.origin)) return cached.recipient === release.recipient && cached.amount === release.amount
+      if (cached && this.policy !== 'customer-payment' && (this.policy === 'legacy-post-mint' || !release.origin)) return cached.recipient === release.recipient && cached.amount === release.amount
         ? { status: 'verified', amount: cached.amount } : invalid('Release fields differ from its authenticated source proof.');
       const rawLocator = await this.locate(release.messageId);
       if (rawLocator === null) return pending('Source transaction locator is not available.');
@@ -138,11 +151,15 @@ export class CctpSourceAdapter implements SourceAdapter {
         return invalid('CCTP chain, messenger, token or escrow recipient does not match the configured route.');
       }
       if (message.minFinalityThreshold !== CCTP_STANDARD_FINALITY) return unavailable('Only Circle Standard Transfer is supported.');
-      if (this.policy === 'authenticated-escrow' && message.destinationCaller !== this.vault) return invalid('Authenticated escrow must be the exclusive CCTP destination caller.');
+      if (this.policy !== 'legacy-post-mint' && message.destinationCaller !== this.vault) return invalid('Authenticated escrow must be the exclusive CCTP destination caller.');
       if (!/^0x0{64}$/.test(message.nonce) || message.finalityThresholdExecuted !== 0 || body.feeExecuted !== 0n || body.expirationBlock !== 0n || body.amount <= 0n || body.maxFee >= body.amount) {
         return invalid('Source MessageSent contains invalid burn or relay fields.');
       }
-      if (cctpHookBeneficiary(body.hookData) !== release.recipient) return invalid('Release recipient differs from the authenticated beneficiary hook.');
+      const paymentIntent = this.payment ? decodeCctpPaymentHook(body.hookData) : undefined;
+      if ((paymentIntent?.recipient ?? cctpHookBeneficiary(body.hookData)) !== release.recipient) return invalid('Release recipient differs from the authenticated beneficiary hook.');
+      if (paymentIntent && (paymentIntent.returnRecipient !== this.payment?.returnRecipient || body.messageSender !== this.payment?.sourceSender)) {
+        return invalid('Payment source sender or fixed return recipient differs from customer bindings.');
+      }
       const deposits = decoded(sentReceipt, route.source.messenger, cctpMessengerAbi, 'DepositForBurn');
       if (sent.length !== 1 || deposits.length !== 1) return unavailable('Batched source transfers require an explicit pairing adapter.');
       const deposit = depositSchema.parse(deposits[0].args);
@@ -172,8 +189,9 @@ export class CctpSourceAdapter implements SourceAdapter {
       if (mint.mintRecipient !== this.vault || mint.mintToken !== route.destination.usdc || mint.amount !== net || mint.feeCollected !== receivedBody.feeExecuted ||
         mints[0].log.logIndex >= receives[0].log.logIndex) return invalid('USDC mint does not match this burn, fee and vault.');
       if (release.amount !== net) return invalid('Release amount differs from the exact net USDC minted into escrow.');
-      if (this.policy === 'authenticated-escrow') {
-        if (cctpEscrowReleaseId(route.destination.chainId, this.vault, message.sourceDomain, receive.nonce) !== release.messageId) {
+      if (this.policy !== 'legacy-post-mint') {
+        const releaseId = paymentIntent ? cctpPaymentReleaseId : cctpEscrowReleaseId;
+        if (releaseId(route.destination.chainId, this.vault, message.sourceDomain, receive.nonce) !== release.messageId) {
           return invalid('Release ID is not bound to this escrow and authenticated CCTP nonce.');
         }
         const requested = decoded(mintedReceipt, this.vault, cctpEscrowAbi, 'ReleaseRequested');
@@ -192,6 +210,17 @@ export class CctpSourceAdapter implements SourceAdapter {
           .some((field) => release.origin?.[field] !== expectedOrigin[field])) {
           return invalid('Release request provenance differs from the atomic mint transaction.');
         }
+        if (paymentIntent) {
+          const bound = decoded(mintedReceipt, this.vault, cctpPaymentAbi, 'PaymentCreditBound');
+          if (bound.length !== 1) return unavailable('Mint must contain exactly one customer payment binding.');
+          const b = z.object({ messageId: blockHashSchema, operationId: blockHashSchema,
+            returnRecipient: cctpAddressSchema, intentPolicyHash: blockHashSchema }).parse(bound[0].args);
+          if (b.messageId !== release.messageId || b.operationId !== paymentIntent.operationId ||
+            b.returnRecipient !== paymentIntent.returnRecipient || b.intentPolicyHash !== paymentIntent.policyHash ||
+            bound[0].log.logIndex <= receives[0].log.logIndex || bound[0].log.logIndex >= requested[0].log.logIndex) {
+            return invalid('Customer operation, return recipient or policy binding differs from the atomic mint.');
+          }
+        }
       }
       // Revalidate after all RPC queries, then commit claims before returning VERIFIED.
       await this.assertCanonical();
@@ -200,7 +229,8 @@ export class CctpSourceAdapter implements SourceAdapter {
       }
       const saved = this.store.saveSourceProof({ messageId: release.messageId, recipient: release.recipient, amount: net, nonce: receive.nonce,
         source: origin(route.source.chainId, selected.log), destination: origin(route.destination.chainId, receives[0].log),
-        sourceMessageHash: keccak256(message.raw), destinationBodyHash: keccak256(receivedBody.raw) });
+        sourceMessageHash: keccak256(message.raw), destinationBodyHash: keccak256(receivedBody.raw),
+        ...(paymentIntent ? { payment: paymentIntent } : {}) });
       return saved === 'reused' ? invalid('This source event, destination settlement or CCTP nonce is already claimed by another release.')
         : { status: 'verified', amount: net };
     } catch (error) {

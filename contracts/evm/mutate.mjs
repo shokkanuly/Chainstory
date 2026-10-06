@@ -15,6 +15,9 @@ const VAULT = 'contracts/evm/src/TripwireDemo.sol', DEMO_ART = 'scripts/tripwire
 const vault = readFileSync(VAULT, 'utf8'), demoArt = readFileSync(DEMO_ART, 'utf8');
 const ESCROW = 'contracts/evm/src/CctpEscrow.sol', CCTP_ART = 'scripts/tripwire/testnet/cctpEscrow.artifact.ts';
 const escrow = readFileSync(ESCROW, 'utf8'), cctpArt = readFileSync(CCTP_ART, 'utf8');
+const PAYMENT = 'contracts/evm/src/CctpPaymentEscrow.sol', PAYMENT_ART = 'scripts/tripwire/testnet/cctpPaymentEscrow.artifact.ts';
+const payment = readFileSync(PAYMENT, 'utf8'), paymentArt = readFileSync(PAYMENT_ART, 'utf8');
+const ACCEPTANCE_ART = 'scripts/tripwire/testnet/cctpAcceptance.artifact.ts', acceptanceArt = readFileSync(ACCEPTANCE_ART, 'utf8');
 const M = [
  ['DELAY cap: DELAY gets the full cap', 'tier == Tier.THROTTLE || tier == Tier.DELAY ? uint256(cap) / 2', 'tier == Tier.THROTTLE ? uint256(cap) / 2'],
  ['DELAY hold: never holds', 'tier == Tier.DELAY && block.timestamp < r.delayUntil && amount > r.cap / 10', 'false && tier == Tier.DELAY'],
@@ -53,15 +56,37 @@ const CCTP_MUTANTS = [
  ['CCTP ownership: owner may invent credits', 'ProtectedVault(address(this), token_, guardian_, routeId_)', 'ProtectedVault(msg.sender, token_, guardian_, routeId_)'],
  ['CCTP source: wrong messenger accepted', '_address(message, 44) != sourceMessenger ||', ''],
  ['CCTP caller: unrestricted receives accepted', '_address(message, 108) != address(this) ||', ''],
- ['CCTP finality: fast receive accepted', 'uint32(bytes4(message[144:148])) != 2000 ||', ''],
+ ['CCTP finality: fast receive accepted', 'uint32(bytes4(message[144:148])) != 2000', 'false'],
  ['CCTP hook: unknown beneficiary format accepted', 'bytes32(message[376:408]) != BENEFICIARY_HOOK', 'false'],
  ['CCTP fee: max fee ignored', 'fee > maxFee ||', ''],
  ['CCTP receive: false success accepted', 'if (!transmitter.receiveMessage(message, attestation)) revert CctpReceiveFailed();', 'transmitter.receiveMessage(message, attestation);'],
  ['CCTP mint: pooled funds count as a fresh deposit', 'if (afterMint < beforeMint || afterMint - beforeMint != net) revert CctpMintMismatch();', ''],
 ];
 const results = [];
+// Optional name substring reruns a failed mutation without repeating unrelated checks.
+const selected = process.argv[2];
+const matches = (name) => !selected || name.includes(selected);
+const PAYMENT_MUTANTS = [
+ ['payment source: unrelated depositor reserves a business ID', 'if (_address(message, 248) != authorizedSourceSender) revert InvalidCctpBinding();', ''],
+ ['payment recipient: any recipient accepted', 'if (!permittedRecipients[r.to]) revert RecipientNotPermitted();', ''],
+ ['payment amount: hard maximum ignored', 'if (r.amount > paymentPolicy.maxPayment) revert PaymentLimitExceeded();', ''],
+ ['payment approval: reviewer bypasses customer consent', 'approvedPolicyVersion[id] != policyVersion)', 'false)'],
+ ['payment pause: paused payments execute', 'if (paymentsPaused) revert PaymentsPaused();', ''],
+ ['payment policy: stale ALLOW executes', 'if (reviewedPolicyVersion[id] != policyVersion) revert StalePaymentReview();', ''],
+ ['payment delay: unelapsed clock accepted', 'if (block.timestamp < paymentDelayUntil[id]) revert PaymentDelayActive(paymentDelayUntil[id]);', ''],
+ ['payment changes: queue delay ignored', 'queuedChangeAt == 0 || block.timestamp < queuedChangeAt ||', 'queuedChangeAt == 0 ||'],
+ ['payment operation: duplicate business payment funded', 'if (usedOperations[operationId]) revert OperationAlreadyFunded();', ''],
+ ['return authority: reviewer can initiate refund', 'if (msg.sender != c.returnRecipient) revert OnlyReturnRecipient();', ''],
+ ['return binding: source sender picks an arbitrary refund destination', 'returnRecipient != recoveryRecipient ||', ''],
+ ['return delay: early refund allowed', 'c.returnAt == 0 || block.timestamp < c.returnAt', 'c.returnAt == 0'],
+ ['return destination: payout recipient gets refund', 'token.safeTransfer(c.returnRecipient, r.amount);', 'token.safeTransfer(r.to, r.amount);'],
+ ['return amount: underpays authenticated credit', 'token.safeTransfer(c.returnRecipient, r.amount);', 'token.safeTransfer(c.returnRecipient, r.amount - 1);'],
+ ['return accounting: returned credit not consumed', 'totalReturned += r.amount;', ''],
+ ['return reentrancy: token callback bypasses shared guard', 'function executeReturn(bytes32 id) external nonReentrant', 'function executeReturn(bytes32 id) external'],
+];
 try {
   for (const [name, from, to] of M) {
+    if (!matches(name)) continue;
     if (!sol.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
     writeFileSync(SOL, sol.replace(from, to));
     execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
@@ -72,6 +97,7 @@ try {
   }
   writeFileSync(SOL, sol);
   for (const [name, from, to] of REVIEW_MUTANTS) {
+    if (!matches(name)) continue;
     if (!vault.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
     writeFileSync(VAULT, vault.replace(from, to));
     execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
@@ -82,6 +108,7 @@ try {
   }
   writeFileSync(VAULT, vault);
   for (const [name, from, to] of CCTP_MUTANTS) {
+    if (!matches(name)) continue;
     if (!escrow.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
     writeFileSync(ESCROW, escrow.replace(from, to));
     execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
@@ -90,12 +117,26 @@ try {
     results.push([name, caught ? 'caught' : 'SURVIVED']);
     console.log(results.at(-1)[1].padEnd(18), name);
   }
+  writeFileSync(ESCROW, escrow);
+  for (const [name, from, to] of PAYMENT_MUTANTS) {
+    if (!matches(name)) continue;
+    if (!payment.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
+    writeFileSync(PAYMENT, payment.replace(from, to));
+    execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
+    let caught;
+    try { execSync('npx vitest run contracts/evm/test/cctpPaymentEscrow.evm.test.ts', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
+    results.push([name, caught ? 'caught' : 'SURVIVED']);
+    console.log(results.at(-1)[1].padEnd(18), name);
+  }
 } finally {
   writeFileSync(SOL, sol); writeFileSync(ART, art);
   writeFileSync(VAULT, vault); writeFileSync(DEMO_ART, demoArt);
   writeFileSync(ESCROW, escrow); writeFileSync(CCTP_ART, cctpArt);
+  writeFileSync(PAYMENT, payment); writeFileSync(PAYMENT_ART, paymentArt);
+  writeFileSync(ACCEPTANCE_ART, acceptanceArt);
 }
 for (const [name, status] of results.filter((r) => r[1] === 'PATTERN NOT FOUND')) console.log(status.padEnd(18), name);
+if (results.length === 0) { console.error('No mutation matches the requested name.'); process.exit(2); }
 const bad = results.filter((r) => r[1] !== 'caught').length;
 console.log(bad ? `${bad} of ${results.length} mutants not caught` : `all ${results.length} mutants caught`);
 process.exit(bad ? 1 : 0);

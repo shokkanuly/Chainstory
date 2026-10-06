@@ -1,5 +1,32 @@
 # 03 — Domain Model
 
+Tripwire's standalone operations view adds `OperationsSnapshot` / `OperationsPayment`
+in `src/domain/operations.ts`: display-only imported provenance, capture time,
+generic blocks/accounts/contracts, bigint balances with symbol/decimals, listed
+payment states/reasons and public receipt references. Optional lifecycle data
+contains reported milestones and exact bigint durations, with unavailable/old
+reports and incompatible cross-chain clocks handled explicitly. It is separate from
+`NormalizedTx`, classification and tax. The EVM adapter validates the supported
+operator JSON boundary; imported canonical operator addresses remain lowercase.
+No field authorizes execution or establishes a complete treasury inventory.
+Optional discovery coverage separates searched ranges, paired audit candidates,
+source-only hints, unmatched destination hints and ambiguous operation IDs. Hints
+are not normalized authenticated credits or unminted balances. Persistent reports
+also separate cumulative coverage from new/idle scan windows and exact bigint
+remaining finalized-block counts; these fields describe search progress, not
+settlement finality or complete treasury exposure. Optional observer data records
+process-local attempts/failures, stopped/retry/planned-check state and a reported
+next delay. It is capture-time display data, never independent worker liveness or
+an execution grant. Optional `observationScope` is a canonical projection of the
+validated successful manifest-version/vault/guardian/operator scope, used only to
+refuse silently switching deployments within a local folder connection. Failure
+envelopes have no scope token. ADR-031 browser folder-check time and connection
+state stay separate from snapshot capture time and worker metadata; refreshing a
+file neither authenticates its publisher nor establishes process liveness.
+The pure shared public-report filename codec (ADR-032) returns a bigint local
+publication timestamp for browser selection/standalone archival only; it is not
+a chain clock, authenticated origin, credit amount or freshness reset.
+
 This is the contract between adapters and everything else. It lives in code at `src/domain/` (zod schemas + inferred types).
 If you change it, update this file in the same change and grep for every consumer (duplicated types drift silently).
 

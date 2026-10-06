@@ -8,9 +8,9 @@ import { reportDate, usd } from '@/tripwire/replay/format';
 const kelp = INCIDENTS.find((i) => i.id === 'kelp')!;
 
 const ROWS = [
-  { label: 'What actually happened', value: usd(kelp.reportedLossUsd) },
-  { label: 'Tripwire, before execution', value: '$0', strong: true },
-  { label: 'Tripwire, one block later', value: usd(kelp.reportedLossUsd) },
+  { label: 'Reported incident loss', value: usd(kelp.reportedLossUsd) },
+  { label: 'Model: before execution', value: '$0', strong: true },
+  { label: 'Model: one block later', value: usd(kelp.reportedLossUsd) },
 ];
 
 export default function TripwireTeaser() {
@@ -19,11 +19,11 @@ export default function TripwireTeaser() {
       <div className="b-card grid gap-8 p-6 sm:p-8 lg:grid-cols-[1fr_minmax(0,420px)] lg:items-center">
         <div>
           <p className="b-eyebrow">Also from Retold · Tripwire</p>
-          <h2 className="mt-2 text-2xl font-bold tracking-[-0.03em] sm:text-3xl">A circuit breaker for bridges.</h2>
+          <h2 className="mt-2 text-2xl font-bold tracking-[-0.03em] sm:text-3xl">Explore payout controls.</h2>
           <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-            Retold reads what a transaction did. Tripwire checks a bridge payout before it executes: is it backed by a
-            burn we can verify? If not, it pauses that one route. Every major bridge drain of 2026 was a single
-            transaction — so acting afterwards is too late.
+            Tripwire’s browser replay models guardian responses using synthetic incident inputs. It illustrates
+            when protection acts, without proving prevented historical losses. The authenticated CCTP escrow
+            prototype is tested separately; its live pilot and external review remain pending.
           </p>
           <a href="/tripwire?incident=kelp" className="b-btn b-btn--primary mt-6">
             Watch the Kelp DAO replay →
