@@ -88,6 +88,11 @@ now support optional advisory signals and explicit absence. The keyless observer
 does not calculate behavioral scores; current enforcement still requires the
 existing inputs and can HOLD on missing data.
 
+H4c1 records [the proposed customer advisory/screening policy](docs/plans/tripwire-behavioral-policy.md), ADR-038:
+independent issuer evidence, explicit customer consent and coordinated new-version
+migration. This is a design only; execution still uses legacy enforcement.
+The next H4c2 step implements pure read-only evidence verification, not ALLOW.
+
 The [v1 product specification](docs/plans/tripwire-product.md) targets one workflow:
 CCTP v2 Standard USDC payments from Base to Ethereum. Customer payment policies,
 authenticated funded-credit recovery and external review are required before a

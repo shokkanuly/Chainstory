@@ -125,8 +125,9 @@ state outage, existing-scorer projection/redaction with unchanged HOLD, closed
 version/scope/provenance/clocks, stale/future suppression, old/new report and
 folder replacement, and rendered read-only UI. No public RPC, key access,
 deployment/payment, hosted service, live calibrated model or external audit.
-H4c1 must design explicit customer consent and mandatory screening evidence,
-freshness and policy compatibility before any execution-policy change.
+H4c1 now records [the proposed consent/screening/compatibility contract](tripwire-behavioral-policy.md)
+under ADR-038. It changes no execution behavior. H4c2 implements pure read-only
+evidence verification; coordinated implementation/review precedes any new mode.
 
 ## Receipt-backed listed-credit timeline (ADR-027)
 

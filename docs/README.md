@@ -108,6 +108,11 @@ a pure read-only signal model. Current payment enforcement remains unchanged;
 H4b adds [optional advisory reports/display](plans/tripwire-operations.md#behavioral-advisory-reports-and-viewer-adr-037)
 with honest keyless-observer unavailability. Reviewed shadow-only execution remains pending.
 
+H4c1 records [the proposed customer advisory/screening policy](plans/tripwire-behavioral-policy.md), ADR-038:
+independent issuer evidence, explicit customer consent and coordinated new-version
+migration. This is a design only; execution still uses legacy enforcement.
+The next H4c2 step implements pure read-only evidence verification, not ALLOW.
+
 The [operations viewer](plans/tripwire-operations.md) at `/tripwire/operations`
 now displays public funding/customer observer snapshots, reasons and receipt
 anchors with explicit stale/error states. Receipt-backed lifecycle milestones now

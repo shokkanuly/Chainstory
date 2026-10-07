@@ -5,6 +5,11 @@ receipt verifier. This is a runnable testnet integration, not a deployed or audi
 service. All new evidence fixtures are synthetic. No public burn/mint/payout/return
 was submitted and no real Circle receipt was recorded in this milestone.
 
+H4c1 records [the proposed customer advisory/screening policy](tripwire-behavioral-policy.md), ADR-038:
+independent issuer evidence, explicit customer consent and coordinated new-version
+migration. This is a design only; execution still uses legacy enforcement.
+The next H4c2 step implements pure read-only evidence verification, not ALLOW.
+
 ## What now works
 
 | Path | Required evidence / behavior |

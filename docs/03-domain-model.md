@@ -57,6 +57,11 @@ clock, independent of transfer block time. Imported availability is not data
 authentication, proof completeness, aggregate scorer health or payment permission.
 The viewer applies later display expiry without mutating the imported assessment.
 
+H4c1 records [the proposed customer advisory/screening policy](plans/tripwire-behavioral-policy.md), ADR-038:
+independent issuer evidence, explicit customer consent and coordinated new-version
+migration. This is a design only; execution still uses legacy enforcement.
+The next H4c2 step implements pure read-only evidence verification, not ALLOW.
+
 ## Identifiers
 
 - **Chain IDs use CAIP-2:** `eip155:1`, `eip155:42161`, `eip155:8453`, `eip155:10`, `eip155:137`, `solana:mainnet`, `solana:devnet`.

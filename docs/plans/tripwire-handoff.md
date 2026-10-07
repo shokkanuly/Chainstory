@@ -1,7 +1,7 @@
 # Tripwire: передача разработки тиммейту
 
 **Актуальная точка продолжения:** [tripwire-progress.md](tripwire-progress.md).
-Follow-up H2a/H2b1/H2b2/H4a/H4b записаны 7 октября; ниже сохраняется исходный снимок 6 октября.
+Follow-up H2a/H2b1/H2b2/H4a/H4b/H4c1 записаны 7 октября; ниже сохраняется исходный снимок 6 октября.
 Каждый завершённый следующий шаг коммитится и отправляется в эту же ветку вместе
 с checkpoint согласно просьбе пользователя от 7 октября.
 
@@ -200,6 +200,11 @@ operator audit. Старые артефакты, scope или SQLite quarantine 
 ADR/decision matrix: какие источники обязательны, как трактовать их outage, какие
 эвристики только информируют и когда клиент явно разрешает их enforcement.
 Согласовать изменения operator/scorer/review/contract policy вместе.
+
+H4c1 фиксирует [конкретную proposed спецификацию](tripwire-behavioral-policy.md)
+и ADR-038: customer consent, отдельный issuer/head/receipt screening, обязательства
+review/execute и новые совместимые версии. Это design, не включённый режим.
+Следующий H4c2 — pure read-only verifier; точная задача в progress checkpoint.
 
 **Done:** отсутствующий/invalid обязательный source, mint, policy или screening
 не становится ALLOW; reviewer не обходит recipient/amount/approval/pause/delay;

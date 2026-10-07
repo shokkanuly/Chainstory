@@ -4,14 +4,14 @@ Implemented locally 2026-10-07, ADR-036. This matrix describes the current
 payment-v3 prototype and the review required for future separation. H4a adds a
 pure read-only projection; **shadow-only execution is not enabled**. Existing
 scorer, watcher, release decisions, attestor, contracts, signatures and journals
-are unchanged. H4b public report/UI integration and H4c enforcement design are
+are unchanged. H4b public report/UI integration and H4c enforcement changes are
 separate steps. This is not a deployment, audit or approved pilot policy.
 
 **Follow-up:** H4b report/viewer integration is now implemented under ADR-037;
 see the [optional advisory contract](tripwire-operations.md#behavioral-advisory-reports-and-viewer-adr-037).
 The implementation-at-H4a statements below are retained as the model's original
-boundary. Current keyless exports report assessment-not-produced; H4c policy
-design and execution separation remain open.
+boundary. Current keyless exports report assessment-not-produced; H4c1 proposed
+policy design is recorded below, while execution separation remains open.
 
 ## What can authorize payment today
 
@@ -149,3 +149,9 @@ compatible scorer/review/operator/contract policy before any enforcement change.
 H1 native picker, H2 host/process-tree/service acceptance, H3 real funded
 testnet workflow, H5 independent/source review and H6 partner commitment remain
 open. No public deployment/payment, key access or external audit is claimed.
+
+H4c1 now records [the concrete proposed policy](tripwire-behavioral-policy.md)
+and ADR-038. It specifies customer consent, independent screening issuer/head/
+receipt commitments, freshness/conflict/rotation outcomes and a new deployment
+compatibility matrix. No target version or execution mode has been implemented.
+Next H4c2 verifies evidence read-only; this matrix still describes current runtime.

@@ -6,7 +6,45 @@
 Текущий коммит файла определяется через `git log -1 -- docs/plans/tripwire-progress.md`;
 не нужно вставлять в коммит его собственный будущий hash.
 
-## Завершённый шаг: H4b — optional advisory report и read-only viewer
+## Завершённый шаг: H4c1 — policy design и compatibility contract
+
+Исходная точка: `012a01a`, отправлена и проверена на GitHub. Созданы
+[конкретная proposed policy](tripwire-behavioral-policy.md) и ADR-038: exact
+current-vs-target decision matrix, consent/policy commitments, независимые
+screening issuer/head/receipt, их ABI/EIP-712 binding, freshness, conflict,
+rotation/replay и version/deployment migration. **Это документация, не новый режим.**
+
+Target advisory отдельно от обязательных source/mint/customer/guardian gates:
+missing/invalid/stale/unknown/contradictory screening → HOLD, positive list match
+→ HOLD конкретного платежа, отрицательный результат проходит только screening.
+NOT_LISTED не означает safe/legal clearance. Exact net credit, sourceSender,
+operation/message/recipient/return/current-and-intent policy привязаны к receipt;
+подпись независимого issuer и active head проверяются при будущем ALLOW и execute.
+Сроки исходных observation/snapshot не освежаются повторным импортом/подписью.
+Поставщик и upstream conversion остаются точками доверия, vendor не выбран.
+
+Явное customer consent проходит one-day queue/commit; CLI/report/approval не
+заменяют его. Proposed escrow 2/release-policy 3/review-format 4/domain 3/manifest 4
+и own hook/namespace v2 требуют согласованной реализации и нового deployment.
+Старые credit/signature/journal/outbox сохраняют исходный смысл. Contract return
+остаётся fixed, customer-requested и независимым от доступности screening.
+
+Authorized advisory producer перестаёт передавать aggregate в attestor, выбирать
+minimum tier и обновлять protection по эвристикам. Guardian caps/active tiers/
+sticky delays сохраняются. Изолированный producer/route обязателен; guardian
+policy 2 всё ещё доверяет owner/oracle, которые могут остановить маршрут.
+Vault consent не устраняет эти права криптографически. Unpublished updates,
+issuer equivocation и уже finalized payout нельзя устранить одним receipt.
+
+Проверки: existing **1 496 тестов / 72 файла**, build/typechecks и lint прошли;
+local Markdown links/code references и documentation-only diff проверены.
+Новых runtime fixtures нет: 28 acceptance vectors в спецификации — требования
+будущих H4c2/H4c3, а не новые уже пройденные тесты. Код, contracts/artifacts,
+formats/configuration, scorer/Watcher/attestor/operator, SQLite/report/UI не менялись.
+Нет public RPC, ключей, deployment/payment, покупки provider, службы или аудита.
+**H4c1 design записан; H4 и execution separation остаются открытыми.**
+
+## История: H4b — optional advisory report и read-only viewer
 
 Исходная точка: `fd89814`, отправлена и проверена на GitHub. ADR-037 и
 [report/display contract](tripwire-operations.md#behavioral-advisory-reports-and-viewer-adr-037)
@@ -198,32 +236,38 @@ startup recheck упал после открытия, lease освобождае
 прошли. Среда: Node 24.19.0, npm 11.17.0. Все новые chain данные synthetic;
 нет public deployment/payment, чтения ключей или внешнего аудита.
 
-## Следующий независимый инженерный шаг: H4c1 — policy design и compatibility contract
+## Следующий независимый инженерный шаг: H4c2 — pure screening evidence verifier
 
-H1 требует ручного picker smoke; operational H2 и live H3 зависят от назначенного
-оператора/среды/реальных deployment и receipt evidence. Пока эти gates открыты,
-следующий автономный repo шаг — H4c1, без funding или ослабления execution.
+Источник контракта: [H4c1 policy](tripwire-behavioral-policy.md), ADR-038,
+S01–S16 acceptance vectors. Цель — проверить proposed evidence без возможности
+выдать ALLOW или изменить текущую legacy enforcement.
 
-1. Прочитать matrix/ADR-036/037, current scorer/Watcher/review/attestor/operator,
-   payment policy codecs и contract constraints. Создать конкретный proposed
-   `tripwire-behavioral-policy.md` и ADR: mandatory source/mint/customer/guardian
-   checks отдельно от трёх initially advisory сигналов. Зафиксировать exact
-   current-vs-target behavior, а не считать новый режим уже согласованным/включённым.
-2. Описать mandatory screening evidence: provider/list identity и version, address/
-   route binding, capture/expiry, positive/negative/unknown/contradictory outcomes,
-   outage и rotation. Текущая boolean observation и static-list freshness не
-   достаточны для нового provenance contract; missing/invalid/stale → HOLD.
-   Не выбирать платного поставщика или делать юридические claims без основания.
-3. Описать явное customer consent, policy hash/version, обязательства review,
-   mutable policy invalidation и migration/rollout. Отсутствие behavioral baseline/
-   price может перестать блокировать только в отдельном совместимом режиме после
-   implementation/review; screening, backing и customer limits не становятся optional.
-   Не добавлять switch, автоматически превращающий прежний HOLD в ALLOW.
-4. Acceptance: reviewable field/decision/compatibility matrix со всеми unknown/
-   expiry/rotation/replay cases, trust owners и точным следующим H4c2 implementation
-   gate. Если добавлены pure types/schema — meaningful negative fixtures; current
-   execution остаётся legacy-enforced. Обновить docs/checkpoint, проверки,
-   commit/normal push и сверку remote SHA. Реальный rollout/live/audit gates отдельно.
+1. Прочитать required AGENTS docs и policy. Добавить strict closed version-1
+   schemas/transport для profile/head/receipt и generic read-only result vocabulary;
+   EVM адреса, ABI/EIP-712, recovery и exact payment-context hashing держать в
+   chains/evm. Использовать существующие zod/viem без новой зависимости.
+2. Pure verifier получает явные expected scope/profile/active head/context,
+   current roles и chain check time. Проверить exact digests, issuer separation,
+   canonical 65-byte/low-s signature, original snapshot/observation, inclusive
+   expiry/age boundaries, bounded batch/dedup/conflicts и head transition.
+   Часы/сеть/storage не читать. Caller inputs не становятся authenticated RPC
+   state только от успешного pure verification; отметить этот trust boundary.
+3. Output только verified UNKNOWN/NOT_LISTED/MATCHED либо unavailable с fixed
+   reason и authorization none; no ReleaseDecision, score, tier, signing или
+   state mutation. Missing/outage не превращать в false. Не подключать verifier
+   к production Watcher/review/attestor/operator/contract или public reports.
+4. S01–S16 pure fixtures: independently constructed signing/hash vectors,
+   mutation каждого binding, version/field/integer/enum/role/signature refusals,
+   expiry/future/refresh/rotation/head conflict и противоречивый batch. Только
+   synthetic fixture keys; не читать реальные кошельки. Existing legacy negative
+   cases/behavior остаются неизменными, full checks проходят.
+5. Обновить spec/domain/architecture/roadmap/checkpoint и relevant runbook;
+   commit/normal push в текущую ветку, сверить полный remote SHA. Записать точный
+   H4c3 coordinated contract/operator/signature/journal integration gate.
+
+H4c2 не создаёт provider integration, CLI switch, executable manifest, новую
+contract/artifact/journal/report версию или customer consent. H1/H2 host/H3 live/
+H5 audit/H6 partner требуют отдельных owners/evidence и остаются открытыми.
 
 ## Остальные gates
 
@@ -234,7 +278,7 @@ H1 требует ручного picker smoke; operational H2 и live H3 зав�
 | H2b1 | Реализован: runtime failure classification и защита journal failures от retry |
 | H2b2 | Repo supervisor/crash drills/local incidents реализованы; host/service/process-tree/live acceptance остаются открытыми |
 | H3 | Открыт: назначенный человек с тестовыми аккаунтами, финансирование, реальные finalized deployment/burn/mint/payout/return receipts |
-| H4 | H4a matrix/model и H4b optional advisory report/viewer реализованы локально; следующий H4c1 concrete policy design; execution separation остаётся открытой |
+| H4 | H4a model/H4b report-viewer реализованы; H4c1 proposed policy design записан; следующий H4c2 pure evidence verifier; execution separation остаётся открытой |
 | H5 | Открыт: source bypass integration и независимый аудит конкретного коммита |
 | H6 | Открыт: discovery owner, интервью и реальный design-partner commitment |
 

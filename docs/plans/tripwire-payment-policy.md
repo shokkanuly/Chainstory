@@ -6,6 +6,11 @@ escrow implementation; it has not been deployed or independently audited.
 Its local fixture uses a synthetic attester and token, not real CCTP receipts
 or Circle's threshold cryptography.
 
+H4c1 records [the proposed customer advisory/screening policy](tripwire-behavioral-policy.md), ADR-038:
+independent issuer evidence, explicit customer consent and coordinated new-version
+migration. This is a design only; execution still uses legacy enforcement.
+The next H4c2 step implements pure read-only evidence verification, not ALLOW.
+
 ## Run the workflow
 
 `npm run tripwire:payment:demo:local`

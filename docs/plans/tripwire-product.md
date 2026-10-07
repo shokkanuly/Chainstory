@@ -4,6 +4,11 @@ Started 2026-10-05 under the user's instruction to execute the product plan.
 This document defines the target and release gates; unchecked items are not
 implemented features. Existing contract guarantees remain in the linked runbooks.
 
+H4c1 records [the proposed customer advisory/screening policy](tripwire-behavioral-policy.md), ADR-038:
+independent issuer evidence, explicit customer consent and coordinated new-version
+migration. This is a design only; execution still uses legacy enforcement.
+The next H4c2 step implements pure read-only evidence verification, not ALLOW.
+
 ## One workflow
 
 A team submits an approved USDC payment on CCTP v2 Standard, Base → Ethereum.

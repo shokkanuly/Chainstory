@@ -255,3 +255,8 @@ The operations viewer consumes display data only, suppressing old/future scores
 against the original capture and browser clock without changing payment state.
 Old reports remain valid, errors/outages replace the entire snapshot, and no
 signing/review/contract/storage permission or new data provider is added.
+
+H4c1 records [the proposed customer advisory/screening policy](plans/tripwire-behavioral-policy.md), ADR-038:
+independent issuer evidence, explicit customer consent and coordinated new-version
+migration. This is a design only; execution still uses legacy enforcement.
+The next H4c2 step implements pure read-only evidence verification, not ALLOW.
