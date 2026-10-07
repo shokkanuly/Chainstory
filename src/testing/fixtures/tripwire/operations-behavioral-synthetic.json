@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "mode": "observe",
+  "status": "ok",
+  "fixture": true,
+  "enforcement": false,
+  "route": "cctp-v2:base-sepolia:ethereum-sepolia:USDC",
+  "policy": "customer-payment",
+  "observedAt": "2026-10-06T07:00:00.000Z",
+  "finalized": {
+    "number": "200",
+    "hash": "0x00000000000000000000000000000000000000000000000000000000000000c8",
+    "timestamp": "1791270000"
+  },
+  "scope": {
+    "manifestVersion": 3,
+    "vault": "0x000000000000000000000000000000000000014d",
+    "guardian": "0x00000000000000000000000000000000000001bc",
+    "operator": "0x000000000000000000000000000000000000022b"
+  },
+  "counts": {
+    "verified": 1,
+    "pending": 0,
+    "unavailable": 0,
+    "invalid": 0
+  },
+  "results": [
+    {
+      "messageId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "evidence": {
+        "status": "verified",
+        "amount": "1000001"
+      },
+      "release": {
+        "recipient": "0x000000000000000000000000000000000000007b",
+        "amount": "1000001",
+        "state": "HELD",
+        "reviewedUntil": "0",
+        "delayUntil": "0"
+      },
+      "payment": {
+        "version": "1",
+        "hash": "0x0000000000000000000000000000000000000000000000000000000000000016",
+        "reviewedVersion": "0",
+        "returnAt": "0",
+        "returned": false,
+        "now": "1791270000",
+        "blockers": [
+          "approval"
+        ]
+      },
+      "proof": {
+        "sourceTransactionHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "destinationTransactionHash": "0x00000000000000000000000000000000000000000000000000000000000000c9",
+        "sourceBlock": "50",
+        "destinationBlock": "100",
+        "sourceBlockHash": "0x0000000000000000000000000000000000000000000000000000000000000032",
+        "destinationBlockHash": "0x0000000000000000000000000000000000000000000000000000000000000064",
+        "operationId": "0x000000000000000000000000000000000000000000000000000000000000012d",
+        "returnRecipient": "0x00000000000000000000000000000000000001c8",
+        "intentPolicyHash": "0x0000000000000000000000000000000000000000000000000000000000000016"
+      },
+      "recommendation": "HOLD",
+      "reason": "Synthetic fixture: no real payment or public receipt.",
+      "lifecycle": {
+        "version": 1,
+        "status": "verified",
+        "burn": {
+          "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+          "blockNumber": "50",
+          "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000032",
+          "timestamp": "1791263600",
+          "logIndex": 3
+        },
+        "mint": {
+          "transactionHash": "0x00000000000000000000000000000000000000000000000000000000000000c9",
+          "blockNumber": "100",
+          "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000064",
+          "timestamp": "1791263700",
+          "logIndex": 6
+        }
+      },
+      "behavioral": {
+        "version": 1,
+        "status": "reported",
+        "assessment": {
+          "version": 1,
+          "mode": "behavioral-shadow",
+          "enforcement": false,
+          "authorization": "none",
+          "executionPolicy": "legacy-enforced",
+          "source": "existing-scorer",
+          "synthetic": true,
+          "route": "cctp-v2:base-sepolia:ethereum-sepolia:USDC",
+          "transferId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "capturedAt": 1791269970,
+          "checkedAt": 1791270000,
+          "maxAgeSeconds": 300,
+          "freshness": "current",
+          "signals": [
+            {
+              "id": "size_vs_baseline",
+              "status": "reported",
+              "score": 0.25,
+              "evidence": "existing-scorer-signal"
+            },
+            {
+              "id": "withdrawal_velocity",
+              "status": "reported",
+              "score": 0.1,
+              "evidence": "existing-scorer-signal"
+            },
+            {
+              "id": "contract_risk",
+              "status": "unavailable",
+              "score": null,
+              "reason": "not-reported"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "blockers": [
+    "Synthetic report: illustrative behavioral signals; no live assessment or payment."
+  ],
+  "worker": {
+    "version": 1,
+    "state": "scheduled",
+    "attempt": 8,
+    "consecutiveFailures": 0,
+    "intervalSeconds": 10,
+    "nextPollSeconds": 10
+  }
+}

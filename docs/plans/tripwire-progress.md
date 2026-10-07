@@ -6,7 +6,46 @@
 Текущий коммит файла определяется через `git log -1 -- docs/plans/tripwire-progress.md`;
 не нужно вставлять в коммит его собственный будущий hash.
 
-## Завершённый шаг: H4a — decision matrix и read-only behavioral model
+## Завершённый шаг: H4b — optional advisory report и read-only viewer
+
+Исходная точка: `fd89814`, отправлена и проверена на GitHub. ADR-037 и
+[report/display contract](tripwire-operations.md#behavioral-advisory-reports-and-viewer-adr-037)
+описывают optional per-payment `behavioral` version 1. Строгая domain union
+содержит reported H4a assessment либо unavailable с fixed reason и без scores.
+Обёртка использует существующий projector; нового scorer или provider нет.
+
+Actual keyless customer observer всегда экспортирует assessment-not-produced,
+включая per-payment state outage: behavioral assessment у него пока отсутствует.
+Reported form поддерживается importer и synthetic fixture, но live producer не
+добавлен. Старые reports без extension остаются валидными и показывают отсутствие,
+не zero risk. Route/canonical messageId/synthetic marker совпадают с parent report;
+checkedAt равен observedAt, округлённому вниз до Unix seconds. Original capturedAt
+сохраняется; проверка этих caller fields не аутентифицирует источник assessment.
+
+Payment details показывают отдельный **Behavioral signals · Advisory only**
+panel. Отображаются original indicators/capture/age и fixed missing reasons.
+Stale/future assessment, browser clock behind export и ранее suppressed scores
+не отображаются как usable. Существующий 30-second timer обновляет display age;
+background throttling может задержать update. Это не execution clock/TTL.
+Старые данные полностью заменяются при outage/refusal/scope change/explicit absence;
+платёжные states, mandatory blockers, exact money и receipt references сохраняются.
+
+Проверки: **1 496 тестов / 72 файла**, **36 новых**. Build/typechecks и lint прошли.
+Actual synthetic audit → exclusive public file → import, per-row state outage,
+existing scorer projection/redaction с unchanged HOLD, old/new report compatibility,
+scope/provenance/check clocks/version/injection refusal, stale/future boundaries,
+folder replacement и rendered read-only UI покрыты fixtures. In-app browser smoke:
+synthetic aged signals, explicit absence, malformed import clearing, global outage,
+desktop и 390px layout. Native folder picker не проверяли; H1 остаётся открыт.
+Скриншоты smoke локальны `/tmp/tripwire-h4b/`, не Git/live evidence.
+
+Scorer/Watcher/review/attestor/signing operator/contracts/artifacts, format 3/domain 2,
+manifest/journal/SQLite и execution policy не изменены. Нет public RPC, чтения ключей,
+deployment/payment, live calibrated behavioral producer, службы или внешнего аудита.
+**H4b завершён локально; H4 целиком открыт.** Следующий H4c1 — concrete policy design
+перед согласованной execution separation. Shadow-only execution не включён.
+
+## История: H4a — decision matrix и read-only behavioral model
 
 Исходная точка: `ee7e926`, отправлена и проверена на GitHub. Добавлены
 [матрица/runbook](tripwire-decision-matrix.md) и ADR-036: обязательные source/mint/
@@ -159,29 +198,32 @@ startup recheck упал после открытия, lease освобождае
 прошли. Среда: Node 24.19.0, npm 11.17.0. Все новые chain данные synthetic;
 нет public deployment/payment, чтения ключей или внешнего аудита.
 
-## Следующий независимый инженерный шаг: H4b — advisory report и read-only viewer
+## Следующий независимый инженерный шаг: H4c1 — policy design и compatibility contract
 
 H1 требует ручного picker smoke; operational H2 и live H3 зависят от назначенного
 оператора/среды/реальных deployment и receipt evidence. Пока эти gates открыты,
-следующий автономный repo шаг — H4b, без funding или ослабления execution.
+следующий автономный repo шаг — H4c1, без funding или ослабления execution.
 
-1. Прочитать matrix/ADR-036, public report schema/adapter/export и operations
-   viewer. Спроектировать optional scoped advisory data, сохранив чтение старых
-   reports. Keyless observer сейчас не имеет behavioral assessment: отсутствие
-   явно показать как unavailable, не подменять baseline/price/history нулями.
-2. Подключить существующую H4a projection там, где действительно есть original
-   assessment и capture time. Не использовать transfer inclusion time вместо
-   capture time, не освежать старые scores при export/reload. Refusal, outage,
-   смена scope и новый unavailable report должны очищать старые advisory данные.
-3. Добавить read-only viewer с понятным advisory-only статусом и original age/
-   unavailable reasons. Не превращать scores в permission, вероятность ущерба
-   или утверждение о безопасности. Mandatory gate failures остаются отдельными;
-   current scorer/review/attestor/operator/contract enforcement не менять.
-4. Acceptance: fixtures старого/нового report, malformed/version/scope refusal,
-   stale/future/outage replacement и отсутствие execution influence; проверки
-   public export/redaction и UI. Обновить docs/checkpoint, выполнить meaningful
-   checks, commit/normal push и сверку remote SHA. H4c policy design оставить
-   отдельным шагом до любых изменений execution.
+1. Прочитать matrix/ADR-036/037, current scorer/Watcher/review/attestor/operator,
+   payment policy codecs и contract constraints. Создать конкретный proposed
+   `tripwire-behavioral-policy.md` и ADR: mandatory source/mint/customer/guardian
+   checks отдельно от трёх initially advisory сигналов. Зафиксировать exact
+   current-vs-target behavior, а не считать новый режим уже согласованным/включённым.
+2. Описать mandatory screening evidence: provider/list identity и version, address/
+   route binding, capture/expiry, positive/negative/unknown/contradictory outcomes,
+   outage и rotation. Текущая boolean observation и static-list freshness не
+   достаточны для нового provenance contract; missing/invalid/stale → HOLD.
+   Не выбирать платного поставщика или делать юридические claims без основания.
+3. Описать явное customer consent, policy hash/version, обязательства review,
+   mutable policy invalidation и migration/rollout. Отсутствие behavioral baseline/
+   price может перестать блокировать только в отдельном совместимом режиме после
+   implementation/review; screening, backing и customer limits не становятся optional.
+   Не добавлять switch, автоматически превращающий прежний HOLD в ALLOW.
+4. Acceptance: reviewable field/decision/compatibility matrix со всеми unknown/
+   expiry/rotation/replay cases, trust owners и точным следующим H4c2 implementation
+   gate. Если добавлены pure types/schema — meaningful negative fixtures; current
+   execution остаётся legacy-enforced. Обновить docs/checkpoint, проверки,
+   commit/normal push и сверку remote SHA. Реальный rollout/live/audit gates отдельно.
 
 ## Остальные gates
 
@@ -192,7 +234,7 @@ H1 требует ручного picker smoke; operational H2 и live H3 зав�
 | H2b1 | Реализован: runtime failure classification и защита journal failures от retry |
 | H2b2 | Repo supervisor/crash drills/local incidents реализованы; host/service/process-tree/live acceptance остаются открытыми |
 | H3 | Открыт: назначенный человек с тестовыми аккаунтами, финансирование, реальные finalized deployment/burn/mint/payout/return receipts |
-| H4 | H4a matrix/model реализованы локально; следующий H4b — optional advisory report/viewer; H4c согласованный policy design и execution separation остаются открытыми |
+| H4 | H4a matrix/model и H4b optional advisory report/viewer реализованы локально; следующий H4c1 concrete policy design; execution separation остаётся открытой |
 | H5 | Открыт: source bypass integration и независимый аудит конкретного коммита |
 | H6 | Открыт: discovery owner, интервью и реальный design-partner commitment |
 

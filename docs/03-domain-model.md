@@ -43,9 +43,19 @@ fixed not-reported/invalid/stale/future reasons. A stale/future report cannot
 retain current scores, and refreshing the check clock cannot refresh capture.
 No proof, screening, payment amount, ALLOW, signature, tier, aggregate verdict,
 raw source prose, storage or network operation enters this model. It is a pure
-display projection, not enabled shadow-only enforcement or an operations-report
-extension. See the [decision matrix](plans/tripwire-decision-matrix.md) for exact
+display projection, not enabled shadow-only enforcement. See the [decision matrix](plans/tripwire-decision-matrix.md) for exact
 freshness/scope bounds, compatibility and required future integration.
+
+ADR-037/H4b adds optional `OperationsPayment.behavioral: BehavioralAdvisory`.
+Its strict version-1 union is reported plus an H4a assessment, or unavailable
+plus a fixed assessment-not-produced/invalid-input/scope-mismatch reason and
+no assessment or score. Absence preserves old-report compatibility and is shown
+as not included, never zero risk. Reported route/transfer identity and synthetic
+marker must match the enclosing observer report; checkedAt must equal the report
+observedAt floored to Unix seconds. capturedAt stays the original assessment
+clock, independent of transfer block time. Imported availability is not data
+authentication, proof completeness, aggregate scorer health or payment permission.
+The viewer applies later display expiry without mutating the imported assessment.
 
 ## Identifiers
 

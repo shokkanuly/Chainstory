@@ -36,3 +36,11 @@ export const behavioralShadowSchema = shadowContextSchema.extend({
 });
 export type BehavioralShadow = z.infer<typeof behavioralShadowSchema>;
 export type BehavioralShadowSignal = BehavioralShadow['signals'][number];
+
+// Optional public-report extension; older reports omit it entirely.
+export const behavioralAdvisorySchema = z.discriminatedUnion('status', [
+  z.object({ version: z.literal(1), status: z.literal('reported'), assessment: behavioralShadowSchema }).strict(),
+  z.object({ version: z.literal(1), status: z.literal('unavailable'),
+    reason: z.enum(['assessment-not-produced', 'invalid-input', 'scope-mismatch']) }).strict(),
+]);
+export type BehavioralAdvisory = z.infer<typeof behavioralAdvisorySchema>;

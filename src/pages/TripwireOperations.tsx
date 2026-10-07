@@ -4,6 +4,7 @@ import { FileUp, Search, AlertCircle, ArrowLeft, X } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import PageAurora from '@/components/motion/PageAurora';
+import BehavioralAdvisory from '@/components/tripwire/BehavioralAdvisory';
 import { readOperationsText, OPERATIONS_FILE_LIMIT } from '@/chains/evm/operations';
 import { cleanDisplayText, formatBaseUnits, formatDuration, snapshotAge, type OperationsSnapshot, type OperationsPayment } from '@/domain/operations';
 import { chooseReportDirectory, folderSupported, reportFolderReader, watchReportFolder } from './operationsFeed';
@@ -111,7 +112,7 @@ export default function TripwireOperations() {
           </section>}
           <section className="grid gap-4 sm:grid-cols-3"><Metric label="Listed payments" value={String(report.payments.length)} /><Metric label="Held / unavailable" value={String(report.payments.filter((r) => r.state === 'Held' || r.state === 'Unavailable').length)} /><Metric label="Reported paid / returned" value={String(report.payments.filter((r) => r.state === 'Paid' || r.state === 'Returned').length)} /></section>
           <section className="b-card p-5"><div className="flex flex-col justify-between gap-3 sm:flex-row"><h2 className="font-semibold">Payment queue</h2><div className="flex flex-col gap-3 sm:flex-row"><label className="flex items-center gap-2 rounded-lg border border-border px-3 py-2"><Search size={15} /><input aria-label="Search payments by address or identifier" placeholder="Address or payment ID" value={query} onChange={(e) => setQuery(e.target.value)} className="min-w-0 bg-transparent text-sm outline-none" /></label><select aria-label="Filter payments by state" value={filter} onChange={(e) => setFilter(e.target.value)} className="rounded-lg border border-border bg-secondary px-3 py-2 text-sm"><option>All states</option>{states.map((s) => <option key={s}>{s}</option>)}</select></div></div>
-            <div className="mt-5 space-y-3">{visible.map((row) => <Payment key={row.id} row={row} />)}{visible.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">{report.payments.length ? 'No listed payments match this filter.' : 'No requests are listed in this report. This is not a complete treasury inventory.'}</p>}</div>
+            <div className="mt-5 space-y-3">{visible.map((row) => <Payment key={row.id} row={row} nowMs={now} />)}{visible.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">{report.payments.length ? 'No listed payments match this filter.' : 'No requests are listed in this report. This is not a complete treasury inventory.'}</p>}</div>
           </section>
         </>}
         {(report.contracts.length > 0 || report.blocks.length > 0) && <section className="b-card grid gap-6 p-5 lg:grid-cols-2"><div><h2 className="font-semibold">Contract scope</h2>{report.contracts.map((c) => <p key={c.label} className="mt-3 text-sm">{c.label} {c.predicted && <span className="text-xs text-muted-foreground">· predicted, deployment pending</span>}<code className="mt-1 block break-all text-xs text-muted-foreground">{c.address}</code></p>)}</div><div><h2 className="font-semibold">Snapshot anchors</h2>{report.blocks.map((b) => <p key={b.label} className="mt-3 text-sm">{b.label} · block {b.number.toString()}<code className="mt-1 block break-all text-xs text-muted-foreground">{b.hash}</code></p>)}</div></section>}
@@ -121,9 +122,10 @@ export default function TripwireOperations() {
   </div>;
 }
 function Metric({ label, value }: { label: string; value: string }) { return <div className="b-card p-5"><p className="b-eyebrow">{label}</p><p className="mt-3 break-words text-2xl font-semibold">{value}</p></div>; }
-function Payment({ row }: { row: OperationsPayment }) {
+function Payment({ row, nowMs }: { row: OperationsPayment; nowMs: number }) {
   return <details className="rounded-xl border border-border p-4"><summary className="cursor-pointer list-none"><div className="flex flex-wrap items-center justify-between gap-3"><span className="b-num text-sm">{short(row.id)}</span><span className="rounded-full border border-border px-3 py-1 text-xs font-semibold">{row.state}</span></div><div className="mt-2 flex flex-wrap justify-between gap-2 text-sm"><span className="text-muted-foreground">{row.recipient ? `To ${short(row.recipient)}` : 'Recipient unavailable'}</span><span className="b-num">{row.amount === undefined ? 'Amount unavailable' : `${formatBaseUnits(row.amount, row.decimals)} ${row.symbol}`}</span></div><p className="mt-2 text-xs text-muted-foreground">Backing: reported {row.evidence} · expand evidence</p></summary>
     <ul className="mt-4 list-disc space-y-2 pl-4 text-sm text-muted-foreground">{row.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+    <BehavioralAdvisory advisory={row.behavioral} nowMs={nowMs} />
     <section className="mt-5 rounded-lg bg-secondary/50 p-4" aria-label="Payment lifecycle">
       <h3 className="text-sm font-semibold">Payment timeline</h3>
       {row.lifecycle?.status === 'reported' ? <>

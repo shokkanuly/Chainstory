@@ -30,3 +30,11 @@ report and cannot be imported as payment/source/review evidence. The mandatory
 `executionPolicy: legacy-enforced` markers distinguish illustrative signal
 display from enabling shadow-only execution. No measured model accuracy,
 probability of loss, screening result or production baseline is represented.
+
+`operations-behavioral-synthetic.json` embeds that illustrative model in one
+synthetic held-payment row for ADR-037 report/viewer tests. Route/message identity,
+synthetic provenance and check clock match the enclosing report; original
+assessment capture is 30 seconds earlier. Its historical clocks deliberately
+remain unchanged: a current browser shows the scores as too old. It does not
+represent a newly calculated live assessment, public receipt or removed HOLD.
+Old fixtures without the extension remain the backward-compatibility cases.

@@ -15,6 +15,8 @@ import { readPaymentState, type PaymentStatus } from './paymentState.js';
 import { assertPaymentRuntime } from './artifactAcceptance.js';
 import { readPaymentLifecycle, type PaymentLifecycle } from './paymentLifecycle.js';
 import { auditBoundary, CctpAuditFailure, journalOperation, RpcBehindError } from '../auditFailure.js';
+import { projectBehavioralAdvisory } from '../../../src/tripwire/behavioralShadow.js';
+import type { BehavioralAdvisory } from '../../../src/domain/behavioralShadow.js';
 
 export interface CctpAuditReader extends CctpRpc {
   readPaymentEvents?(messageId: Hex, fromBlock: bigint, toBlock: bigint): Promise<unknown>;
@@ -28,6 +30,7 @@ const tierNames = ['NONE', 'THROTTLE', 'DELAY', 'FREEZE'] as const;
 const uint = z.bigint().nonnegative().max((1n << 256n) - 1n);
 const routeState = z.object({ windowSeconds: uint, cap: uint, tierExpiresAt: uint });
 export interface AuditResult {
+  behavioral?: BehavioralAdvisory;
   messageId: Hex; evidence: SourceEvidence;
   release?: { recipient: Hex; amount: bigint; state: typeof stateNames[number] | 'RETURNED'; reviewedUntil: bigint; delayUntil?: bigint };
   recommendation?: 'HOLD' | 'REJECT' | 'NONE'; reason?: string;
@@ -147,12 +150,14 @@ export async function createCctpAudit(input: unknown, stateFile: string, source:
         if (!observe) throw error;
         report.counts.unavailable++;
         report.results.push({ messageId: request.messageId, evidence: { status: 'unavailable', reason: 'Finalized payout state is unavailable or malformed.' },
+          ...(payment ? { behavioral: projectBehavioralAdvisory() } : {}),
           recommendation: 'HOLD', reason: 'Cannot independently read this payout. No authorization is produced.' });
         continue;
       }
       await auditBoundary('evidence', () => stable(block, store), true);
       const evidence = await adapter.verify({ messageId: request.messageId, recipient: r[0], amount: r[1], timestamp: Number(block.timestamp) });
       const result: AuditResult = { messageId: request.messageId, evidence,
+        ...(observe && payment ? { behavioral: projectBehavioralAdvisory() } : {}),
         release: { recipient: r[0], amount: r[1], state: stateNames[r[2]], reviewedUntil: r[3], ...(observe ? { delayUntil } : {}) } };
       if (payment) {
         const proof = evidence.status === 'verified' ? journalOperation(() => store.sourceProofs()).find((p) => p.messageId === request.messageId) : undefined;

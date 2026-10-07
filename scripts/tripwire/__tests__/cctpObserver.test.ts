@@ -30,6 +30,23 @@ async function setup(before?: (f: ReturnType<typeof observerFixture>) => void) {
   return { ...f, dir, path, audit, open, abort, reports, delays, run };
 }
 describe('continuous keyless CCTP observer', () => {
+  it('exports explicit behavioral unavailability with real keyless audit wiring and no signing work', async () => {
+    const s = await setup(); await s.run();
+    const report = s.reports[0]; if (report.status !== 'ok') throw new Error('Missing synthetic audit.');
+    expect(report.results[0].behavioral).toEqual({ version: 1, status: 'unavailable', reason: 'assessment-not-produced' });
+    expect(report.results[0].recommendation).toBe('HOLD'); expect(s.audit.store.transactions()).toEqual([]);
+    const path = join(s.dir, 'public-behavioral.json'); saveObservation(path, report);
+    expect(readOperationsText(readFileSync(path, 'utf8')).payments[0].behavioral).toEqual(report.results[0].behavioral);
+    expect(JSON.stringify(report.results[0].behavioral)).not.toMatch(/score|ALLOW|baseline|private/i);
+  });
+  it('keeps behavioral unavailability on a per-payment state outage instead of copying old data', async () => {
+    const s = await setup(), original = s.reader.readVault;
+    s.reader.readVault = async (name, ...args) => { if (name === 'releases') throw new Error('Synthetic unavailable state'); return original(name, ...args); };
+    await s.run(); const report = s.reports[0]; if (report.status !== 'ok') throw new Error('Missing synthetic audit.');
+    const row = readOperationsText(stringifyPublic(report)).payments[0];
+    expect(row.evidence).toBe('unavailable'); expect(row.behavioral).toEqual({ version: 1, status: 'unavailable', reason: 'assessment-not-produced' });
+    expect(row.amount).toBeUndefined(); expect(row.transactions).toEqual([]); expect(s.audit.store.transactions()).toEqual([]);
+  });
   it('audits every sequential idle tick without replaying event ranges', async () => {
     const s = await setup(); expect(await s.run()).toBe('stopped');
     expect(s.reports.map((r) => r.status)).toEqual(['ok', 'ok']); expect(s.reports.map((r) => r.worker?.attempt)).toEqual([1, 2]);

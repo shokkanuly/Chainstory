@@ -7,6 +7,12 @@ scorer, watcher, release decisions, attestor, contracts, signatures and journals
 are unchanged. H4b public report/UI integration and H4c enforcement design are
 separate steps. This is not a deployment, audit or approved pilot policy.
 
+**Follow-up:** H4b report/viewer integration is now implemented under ADR-037;
+see the [optional advisory contract](tripwire-operations.md#behavioral-advisory-reports-and-viewer-adr-037).
+The implementation-at-H4a statements below are retained as the model's original
+boundary. Current keyless exports report assessment-not-produced; H4c policy
+design and execution separation remain open.
+
 ## What can authorize payment today
 
 Authenticated mint creates a fixed funded credit; the operator's current
@@ -111,7 +117,8 @@ not exported. Scope mismatch/unknown input IDs refuse the projection.
 
 The standalone synthetic JSON fixture demonstrates the format; it cannot be
 imported as an operations/payment report. There is no new observer export flag,
-optional public-report field or UI panel yet. Existing observer files, review
+optional public-report field or UI panel at H4a. ADR-037 subsequently adds that
+optional display extension without enabling enforcement. Existing review
 format 3/domain 2, contracts/artifacts, journal scope/schema, CLI permissions and
 operator decisions stay compatible and unchanged. Old report consumers do not
 silently interpret this model as an execution assessment.
@@ -130,7 +137,7 @@ Local validation: **1,460 tests across 70 files**, including **39 new cases**;
 build/typechecks and lint passed. No live RPC, key access or chain transaction
 was needed for this step.
 
-Next H4b: add a clearly labelled optional advisory projection to actual keyless
+H4b acceptance (now implemented under ADR-037): add a clearly labelled optional advisory projection to actual keyless
 customer reports and the read-only viewer, with a scoped original capture time,
 backward-compatible parsing and unavailable-state replacement. Do not connect it
 to review/attestor/release decisions or fabricate a baseline for the keyless

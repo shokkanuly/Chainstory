@@ -36,8 +36,9 @@ may silently turn a missing mandatory source/funding check into ALLOW.
 H4a now records the [mandatory/behavioral decision matrix](tripwire-decision-matrix.md)
 and adds a pure versioned read-only three-signal projection (ADR-036). It does not
 relax existing HOLD/REJECT, enable shadow-only execution, add a customer-consent
-field or integrate observer exports/UI. H4b display integration and H4c reviewed
-scorer/review/operator/contract separation remain distinct steps.
+field. H4b now adds optional advisory reports/UI (ADR-037), with explicit
+unavailability because the keyless observer does not produce behavioral scores.
+H4c reviewed scorer/review/operator/contract separation remains a distinct step.
 
 `clear` describes only the configured checks. Optional contract facts may be
 absent for an EOA or an unsupported explorer; that is not evidence of a verified

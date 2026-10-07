@@ -4,6 +4,7 @@ import { baseSepolia, sepolia } from 'viem/chains';
 import { cctpAddressSchema } from './cctp';
 import { CCTP_BASE_SEPOLIA_TO_SEPOLIA as route } from './registry/cctp';
 import { cleanDisplayText, type OperationsSnapshot, type OperationsPayment } from '../../domain/operations';
+import { behavioralAdvisorySchema } from '../../domain/behavioralShadow';
 const uint = z.string().max(78).regex(/^(0|[1-9][0-9]*)$/).transform(BigInt).refine((v) => v < (1n << 256n));
 const hash = z.string().regex(/^0x[\da-fA-F]{64}$/).transform((v) => v.toLowerCase());
 const nonzeroHash = hash.refine((v) => !/^0x0{64}$/.test(v));
@@ -68,6 +69,7 @@ const result = z.object({ messageId: hash, evidence,
     reviewedUntil: time, delayUntil: time.optional() }).optional(), payment: payment.optional(), proof: proof.optional(),
   recommendation: z.enum(['HOLD', 'REJECT', 'NONE']).optional(), reason: text.optional(),
   lifecycle: lifecycle.optional(),
+  behavioral: behavioralAdvisorySchema.optional(),
 }).superRefine((r, ctx) => {
   if (r.evidence.status === 'verified' && (!r.release || !r.payment || !r.proof || r.evidence.amount !== r.release.amount)) ctx.addIssue({ code: 'custom', message: 'Incomplete reported customer proof.' });
   if (r.proof && r.evidence.status !== 'verified') ctx.addIssue({ code: 'custom', message: 'Proof attached to unverified observation.' });
@@ -103,6 +105,12 @@ const observation = z.object({ ...envelope, mode: z.literal('observe'), status: 
   worker: worker.optional(),
 }).superRefine((r, ctx) => {
   if (r.worker && r.worker.state !== 'scheduled') ctx.addIssue({ code: 'custom', message: 'Successful observation has failed/stopped worker metadata.' });
+  for (const row of r.results) if (row.behavioral?.status === 'reported') {
+    const a = row.behavioral.assessment;
+    if (a.route !== r.route || a.transferId !== row.messageId || a.synthetic !== (r.fixture === true) ||
+      a.checkedAt !== Math.floor(Date.parse(r.observedAt) / 1000))
+      ctx.addIssue({ code: 'custom', message: 'Behavioral advisory differs from its payment scope, provenance or report check time.' });
+  }
   const ids = new Set(r.results.map((row) => row.messageId));
   if (ids.size !== r.results.length) ctx.addIssue({ code: 'custom', message: 'Duplicate payment.' });
   if (r.discovery?.version === 2) {
@@ -164,6 +172,7 @@ export function parseOperationsReport(value: unknown): OperationsSnapshot {
     } : l ? { status: 'unavailable', reason: l.reason, milestones: [], closed: false, clockWarning: false } : undefined;
     return { id: row.messageId, state, evidence: row.evidence.status, recipient: row.release?.recipient, amount: row.release?.amount, symbol: 'USDC', decimals: route.decimals,
       lifecycle: displayedLifecycle,
+      behavioral: row.behavioral,
       reasons: [row.reason, row.evidence.status === 'verified' ? 'Backing reported verified; this file does not authorize release.' : row.evidence.reason,
         ...(row.payment?.blockers.map((b) => ({ paused: 'Customer paused payments.', recipient: 'Recipient is outside current policy.', amount: 'Amount exceeds customer policy.', approval: 'Current customer approval is required.' })[b]) ?? []),
         state === 'Rejected' ? 'Rejection does not return funded USDC. Customer recovery is a separate action.' : undefined].filter((v): v is string => Boolean(v)),

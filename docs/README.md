@@ -105,7 +105,8 @@ incident records; installation and acceptance in the team's live environment rem
 pending. See the [supervision runbook](plans/tripwire-operations.md#bounded-observer-supervision-and-local-incidents-adr-035).
 H4a adds the [mandatory/behavioral matrix](plans/tripwire-decision-matrix.md) and
 a pure read-only signal model. Current payment enforcement remains unchanged;
-report/UI integration and reviewed shadow-only execution remain pending.
+H4b adds [optional advisory reports/display](plans/tripwire-operations.md#behavioral-advisory-reports-and-viewer-adr-037)
+with honest keyless-observer unavailability. Reviewed shadow-only execution remains pending.
 
 The [operations viewer](plans/tripwire-operations.md) at `/tripwire/operations`
 now displays public funding/customer observer snapshots, reasons and receipt

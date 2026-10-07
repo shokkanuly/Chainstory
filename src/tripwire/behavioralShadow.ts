@@ -1,6 +1,6 @@
 // Pure projection of an existing assessment, never a second scorer or release gate.
 import { z } from 'zod';
-import { behavioralShadowSchema, shadowContextSchema, type BehavioralShadow, type BehavioralSignalId, type BehavioralShadowSignal } from '../domain/behavioralShadow.js';
+import { behavioralShadowSchema, shadowContextSchema, type BehavioralAdvisory, type BehavioralShadow, type BehavioralSignalId, type BehavioralShadowSignal } from '../domain/behavioralShadow.js';
 export type { ShadowContext } from '../domain/behavioralShadow.js';
 
 const signalId = z.enum(['proof_payout_mismatch', 'counterparty_screen', 'size_vs_baseline', 'withdrawal_velocity', 'contract_risk']);
@@ -33,4 +33,12 @@ export function projectBehavioralShadow(assessment: unknown, context: unknown): 
     authorization: 'none', executionPolicy: 'legacy-enforced', source: 'existing-scorer', ...scope.data, freshness,
     signals: [project('size_vs_baseline'), project('withdrawal_velocity'), project('contract_risk')] });
   return { ok: true, value };
+}
+
+// No input means the producer did not run a scorer, not that risk is zero.
+export function projectBehavioralAdvisory(assessment?: unknown, context?: unknown): BehavioralAdvisory {
+  if (assessment === undefined) return { version: 1, status: 'unavailable', reason: 'assessment-not-produced' };
+  const projected = projectBehavioralShadow(assessment, context);
+  return projected.ok ? { version: 1, status: 'reported', assessment: projected.value }
+    : { version: 1, status: 'unavailable', reason: projected.reason };
 }

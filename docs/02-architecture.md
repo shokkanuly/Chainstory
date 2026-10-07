@@ -241,6 +241,17 @@ legacy enforcement is still active. Proof/screening never enter its behavioral
 vocabulary; unavailable/stale/future/invalid inputs do not become zero scores.
 The new [decision matrix](plans/tripwire-decision-matrix.md) records mandatory
 current gates and owners separately from future behavioral separation. The
-model is not yet attached to public observer reports or the viewer; existing
+model at H4a was not yet attached to public observer reports or the viewer; existing
 operator/scorer/contracts/report/storage formats and browser boundaries stay
 unchanged. H4b display integration and H4c reviewed enforcement changes are separate.
+
+ADR-037/H4b adds an optional per-payment public `behavioral` extension. Domain
+schema owns reported/unavailable vocabulary; the EVM import boundary validates
+the nested H4a model against the report's route/payment identity, synthetic
+provenance and report check time. The existing pure projector supplies the
+reported wrapper only from caller-provided assessments; keyless customer audit
+emits assessment-not-produced because it has no behavioral scorer inputs.
+The operations viewer consumes display data only, suppressing old/future scores
+against the original capture and browser clock without changing payment state.
+Old reports remain valid, errors/outages replace the entire snapshot, and no
+signing/review/contract/storage permission or new data provider is added.

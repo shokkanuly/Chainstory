@@ -83,8 +83,10 @@ not an installed service or a completed live pilot.
 The [mandatory/behavioral decision matrix](docs/plans/tripwire-decision-matrix.md)
 now records current payment gates and future signal separation. A read-only
 behavioral model copies size/velocity/contract indicators without payment
-authorization. It is not yet connected to reports/UI; current enforcement
-still requires the existing inputs and can HOLD on missing data.
+authorization. [H4b reports/viewer](docs/plans/tripwire-operations.md#behavioral-advisory-reports-and-viewer-adr-037)
+now support optional advisory signals and explicit absence. The keyless observer
+does not calculate behavioral scores; current enforcement still requires the
+existing inputs and can HOLD on missing data.
 
 The [v1 product specification](docs/plans/tripwire-product.md) targets one workflow:
 CCTP v2 Standard USDC payments from Base to Ethereum. Customer payment policies,

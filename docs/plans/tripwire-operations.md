@@ -51,6 +51,83 @@ the recorded chain state; a local clock never advances a payment to paid/returne
 HOLD, unavailable input or rejection creates no browser execution permission.
 The observer still supplies no behavioral ALLOW; policy separation is pending.
 
+## Behavioral advisory reports and viewer (ADR-037)
+
+H4b, implemented locally 2026-10-07. Expand a listed payment to inspect
+**Behavioral signals · Advisory only** separately from backing, customer blockers
+and receipt history. Existing payout checks remain in force; a displayed indicator
+does not mean ALLOW, calibrated loss probability or evidence of safety.
+
+New keyless customer-payment observations include per-row `behavioral` version 1:
+
+```json
+{"version":1,"status":"unavailable","reason":"assessment-not-produced"}
+```
+
+The observer currently has no behavioral assessment, baseline, pricing or
+recipient-contract scorer port. It always emits that explicit absence, including
+per-payment state outages; no new provider or fabricated zero/baseline is added.
+Global unavailable/quarantine reports still contain no payment rows or old scores.
+Older reports without `behavioral` remain valid and display “This report does not
+include behavioral signals.” Neither kind of absence proves a healthy payment.
+
+When a producer actually supplies an existing scorer assessment and its original
+capture context, `projectBehavioralAdvisory(assessment, context)` uses the H4a
+projector, returning `{version:1,status:reported,assessment:...}` or a fixed
+unavailable invalid-input/scope-mismatch reason. It never copies raw reasons,
+aggregate verdicts, screening, proof, signature, tier or execution fields. There
+is no CLI switch or signing-operator path that produces live reported signals in
+this step. The reported form is supported by imports and synthetic fixtures;
+the keyless CLI produces only the explicit unavailable form.
+
+The nested assessment keeps ADR-036's closed version-1 schema, three ordered
+signal slots, null unavailable scores, original capture/check clocks, max age,
+synthetic marker and false/none/legacy-enforced authority markers. Import also
+requires exact supported route, canonical enclosing messageId, matching fixture
+provenance and `checkedAt === floor(Date.parse(observedAt) / 1000)`. Set observedAt
+from the producer's report check clock; never replace capturedAt with transfer
+inclusion, export or reload time. These constraints check internal consistency,
+not publisher authentication or proof of original data completeness.
+
+Unknown wrapper/model versions, missing fields, unsupported reasons, malformed
+scores/clocks, extra signature/decision fields, wrong payment/provenance/check
+time or contradictory stale/future scores refuse the **whole** report. Manual
+import clears the previous snapshot before reading; the folder reader clears it
+on refusal, outage or scope change and does not fall back to an older file.
+A newer valid row with explicit absence or an old-format row replaces its prior
+advisory data. Readiness and global failure views have no advisory payment rows.
+Existing 2 MB / 1,000 payment-row import bounds still apply.
+
+At display time, current reported signals show their original 0–1 numeric
+indicators, original capture and age. Age exactly maxAgeSeconds is current;
+larger age hides all scores. Future capture, browser clock behind report check,
+invalid browser clock and originally stale/future assessments also hide scores.
+Suppressed export scores are never revived. The page's existing 30-second clock
+timer updates display expiry; browser background throttling can delay that update.
+Expiry is a display aid, not a release TTL or trusted clock. Missing optional
+facts remain explicit, and neither local time nor unavailable signals change a
+payment's Held/Rejected/Paid/Returned state. Controls remain read-only.
+
+Synthetic smoke: import
+`src/testing/fixtures/tripwire/operations-behavioral-synthetic.json`, expand its
+single held payment and verify approval remains required, synthetic provenance,
+original capture and unavailable aged scores. Its historical times must not be
+changed to make it appear fresh. Old fixtures test omitted advisory data;
+`operations-worker-outage-synthetic.json` clears all rows. Malformed advisory
+version 2 must produce the import error with no previous snapshot. Browser import,
+explicit absence, malformed/outage replacement and desktop/390px layout were
+checked in the in-app browser on 2026-10-07. The native folder picker H1 remains
+unverified; folder replacement here has fixture/controller coverage only.
+
+Validation: **1,496 tests / 72 files**, **36 new**; build/typechecks and lint pass.
+Coverage includes actual synthetic audit→exclusive public file→import, per-row
+state outage, existing-scorer projection/redaction with unchanged HOLD, closed
+version/scope/provenance/clocks, stale/future suppression, old/new report and
+folder replacement, and rendered read-only UI. No public RPC, key access,
+deployment/payment, hosted service, live calibrated model or external audit.
+H4c1 must design explicit customer consent and mandatory screening evidence,
+freshness and policy compatibility before any execution-policy change.
+
 ## Receipt-backed listed-credit timeline (ADR-027)
 
 Fresh observer reports optionally include `lifecycle` version 1 per currently

@@ -35,6 +35,9 @@ a separate read-only behavioral projection. That model is not an operator mode
 or input accepted by review/attestor/source verification. Current baseline/price/
 screening HOLD and customer/guardian gates still apply. Behavioral enforcement
 separation requires the later reviewed H4c policy/compatibility step.
+ADR-037/H4b adds an optional public advisory extension and read-only viewer;
+keyless customer observations explicitly report assessment-not-produced. This
+adds no scorer input/provider or signing-operator mode, and does not remove HOLD.
 
 ## Manifest v3
 

@@ -1,8 +1,8 @@
 // Synthetic scorer observations. No network, imported approval or live baseline.
 import { readFileSync } from 'node:fs';
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { projectBehavioralShadow, type ShadowContext } from '../behavioralShadow.js';
-import { behavioralShadowSchema } from '../../domain/behavioralShadow.js';
+import { projectBehavioralShadow, projectBehavioralAdvisory, type ShadowContext } from '../behavioralShadow.js';
+import { behavioralShadowSchema, behavioralAdvisorySchema } from '../../domain/behavioralShadow.js';
 import { scoreTransfer, type ScoreInput } from '../riskScorer.js';
 import type { RiskAssessment } from '../types.js';
 import { releaseDecision, ReleaseDecision } from '../../../scripts/tripwire/review.js';
@@ -26,6 +26,22 @@ function observation(assessment: RiskAssessment, source: SourceEvidence = { stat
     burned: source.status === 'verified' ? source.amount : null, source, assessment };
 }
 describe('read-only behavioral shadow contract', () => {
+  it('wraps an actual existing scorer assessment for display without copying raw reasons or affecting HOLD', () => {
+    const assessment = scoreTransfer(input({ baseline: null, targetContract: {
+      address: 'synthetic-recipient', isVerified: false, ageDays: 1, isUpgradeable: true, adminFunctions: [],
+    } }));
+    assessment.signals[0].reason = 'https://secret:REDACTION_SENTINEL@rpc.invalid';
+    const before = structuredClone(assessment), advisory = projectBehavioralAdvisory(assessment, context);
+    expect(behavioralAdvisorySchema.parse(JSON.parse(JSON.stringify(advisory)))).toEqual(advisory);
+    expect(advisory.status).toBe('reported'); expect(JSON.stringify(advisory)).not.toContain('REDACTION_SENTINEL');
+    expect(assessment).toEqual(before); expect(releaseDecision(observation(assessment))).toBe(ReleaseDecision.HOLD);
+  });
+  it('turns missing/refused display input into fixed unavailable reasons, never fabricated scores', () => {
+    expect(projectBehavioralAdvisory()).toEqual({ version: 1, status: 'unavailable', reason: 'assessment-not-produced' });
+    expect(projectBehavioralAdvisory({}, context)).toEqual({ version: 1, status: 'unavailable', reason: 'invalid-input' });
+    expect(projectBehavioralAdvisory(scoreTransfer(input()), { ...context, transferId: 'other' }))
+      .toEqual({ version: 1, status: 'unavailable', reason: 'scope-mismatch' });
+  });
   it('validates the standalone synthetic fixture without making it an assessment or observation', () => {
     const value = behavioralShadowSchema.parse(JSON.parse(readFileSync('src/testing/fixtures/tripwire/behavioral-shadow-synthetic.json', 'utf8')));
     expect(value.synthetic).toBe(true); expect(value.authorization).toBe('none');

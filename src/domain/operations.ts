@@ -1,4 +1,5 @@
 // Display-only snapshots. No imported value can authorize execution.
+import type { BehavioralAdvisory } from './behavioralShadow';
 export interface OperationsSnapshot {
   // Display continuity only; imported scope does not authenticate a publisher.
   observationScope?: string;
@@ -17,6 +18,7 @@ export interface OperationsSnapshot {
     unmatchedDestination: { operationId: string; messageId: string; transactionHash: string; reason: string; explorerUrl: string }[]; conflicts: string[] };
 }
 export interface OperationsPayment {
+  behavioral?: BehavioralAdvisory;
   id: string; operationId?: string; recipient?: string; amount?: bigint; symbol: string; decimals: number;
   state: 'Pending' | 'Held' | 'Rejected' | 'Paid' | 'Return requested' | 'Returned' | 'Unavailable';
   evidence: 'verified' | 'pending' | 'invalid' | 'unavailable'; reasons: string[];
