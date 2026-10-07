@@ -5,7 +5,7 @@
 <h1 align="center">Retold · Tripwire</h1>
 
 <p align="center">
-  <strong>Read any wallet. Protect every bridge.</strong>
+  <strong>Read wallet history. Control escrow payouts.</strong>
 </p>
 
 <p align="center">
@@ -21,7 +21,6 @@
   <img src="https://img.shields.io/badge/Solidity-0.8.37-363636?logo=solidity&logoColor=white" alt="Solidity" />
   <img src="https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/viem-2.56-FFC517" alt="viem" />
-  <img src="https://img.shields.io/badge/tests-567_passing-brightgreen" alt="567 tests passing" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
 </p>
 
@@ -35,7 +34,7 @@ tools on that insight:
 | | For | What it does |
 | :--- | :--- | :--- |
 | **[Retold](https://chainstory-iota.vercel.app/app)** | Anyone with a wallet | Paste an address or ENS name: get its history in plain English, a draft Form 8949 tax report, token approvals and a counterparty risk check. **[Check before you sign](https://chainstory-iota.vercel.app/check)**: paste a pending transaction and get a green, yellow or red badge with its reasons. Read-only — no wallet connection, nothing to sign. |
-| **[Tripwire](https://chainstory-iota.vercel.app/tripwire)** | Bridge teams | Scores each bridge payout *before* it executes, and tightens just that route in proportion: throttle, delay, or freeze. |
+| **[Tripwire](https://chainstory-iota.vercel.app/tripwire)** | USDC payment teams | Local prototype for authenticated CCTP escrow payouts with per-release reviews, route limits and delays. The linked browser page demonstrates synthetic incident scoring. |
 
 Retold explains what a transaction did, before or after it is signed. Tripwire
 applies the same verification before a bridge payout can do damage, and reuses
@@ -53,39 +52,105 @@ work. The operator now
 has durable state, a signed transaction journal, HOLD/delay recovery, finalized RPC
 observations, reorg handling and continuous protection refresh while fresh pending
 risk persists; see its
-[runbook](docs/plans/tripwire-operator.md).
+[runbook](docs/plans/tripwire-operator.md). Route-scoped reporters, conservative
+rolling caps and per-request DELAY are implemented locally in immutable policy v2;
+[limits and fresh-deployment requirements](docs/plans/tripwire-route-policy.md).
 The [CCTP v2 USDC adapter](docs/plans/tripwire-cctp.md) verifies finalized burns and
 minted escrow backing on Base Sepolia → Ethereum Sepolia, with durable replay claims
 and a read-only audit command. `CctpEscrow` now creates immutable pending requests
 only from an authenticated Circle mint in the same transaction, for the exact
 net amount and hook beneficiary. Its fixtures are synthetic; external review,
 fresh deployment and the live pilot remain pending.
+The selected testnet pilot now includes a [keyless observer and unsigned deployment
+planner](docs/plans/tripwire-pilot.md): `tripwire:cctp:observe` reports finalized
+proofs and payout state; `tripwire:cctp:plan` prepares a fresh deployment package.
+Neither command signs or sends transactions. Real traffic and enforcement remain pending.
 
-On 18 April 2026, $292M left Kelp DAO's bridge. Not over hours — in **a single
-release**. Verus lost $11.58M the same way in May, Syscoin ~$10M in June.
 
-Every defence that exists today — rate limits, emergency pauses, security
-councils — acts **after** a transaction lands. Against a one-transaction drain,
-that is too late by definition.
+The keyless observer can now retain operation hints and resume finalized searches
+with `--discover-resume=sourceStart:destinationStart`. It rechecks saved history,
+reads bounded increments without skipping backlog and authenticates current
+receipts again. The operations viewer separates cumulative/new coverage and
+remaining blocks; see [restart runbook](docs/plans/tripwire-operations.md#persistent-discovery-and-restart-recovery-adr-029).
+Use `--watch --interval=10 --reports=public-reports` with persistent discovery
+for [sequential background checks](docs/plans/tripwire-operations.md#continuous-keyless-observer-adr-030),
+capped outage retries and atomic public snapshots. This remains a local bounded
+pilot process; public deployment, payments and audit remain pending. The
+[foreground supervisor](docs/plans/tripwire-operations.md#bounded-observer-supervision-and-local-incidents-adr-035)
+adds bounded process restarts and local incident records. It is a repo tool,
+not an installed service or a completed live pilot.
 
-Tripwire checks one invariant *before* a bridge pays out — **is this payout
-backed by a burn we can independently verify?** — and if not, pauses just that
-route.
+The [mandatory/behavioral decision matrix](docs/plans/tripwire-decision-matrix.md)
+now records current payment gates and future signal separation. A read-only
+behavioral model copies size/velocity/contract indicators without payment
+authorization. [H4b reports/viewer](docs/plans/tripwire-operations.md#behavioral-advisory-reports-and-viewer-adr-037)
+now support optional advisory signals and explicit absence. The keyless observer
+does not calculate behavioral scores; current enforcement still requires the
+existing inputs and can HOLD on missing data.
 
-## The result
+H4c1 records [the proposed customer advisory/screening policy](docs/plans/tripwire-behavioral-policy.md), ADR-038:
+independent issuer evidence, explicit customer consent and coordinated new-version
+migration. This is a design only; execution still uses legacy enforcement.
+The next H4c2 step implements pure read-only evidence verification, not ALLOW.
 
-We replayed all three exploits through Tripwire's oracle and its guardian
-contract. Each release is sent to two deployments at once: one that acts before
-execution, one that acts a block later.
+The [v1 product specification](docs/plans/tripwire-product.md) targets one workflow:
+CCTP v2 Standard USDC payments from Base to Ethereum. Customer payment policies,
+authenticated funded-credit recovery and external review are required before a
+real-money pilot. A reviewed, live version is still pending.
+The new local `CctpPaymentEscrow` now implements customer constraints, version-bound
+reviews and returns to an immutable customer recovery address;
+[contract and integration limits](docs/plans/tripwire-payment-policy.md).
+`npm run tripwire:payment:demo:local` runs its synthetic local workflow.
+The [durable product operator](docs/plans/tripwire-payment-operator.md) now supports
+manifest v3, authenticated operation/return bindings, checked policy snapshots,
+format-3 signatures and restart-safe returns. `tripwire:cctp:operator` starts its
+standalone queue; missing behavioral data keeps payouts held. Verified public
+receipts, fresh deployment and external review remain pending.
+The [testnet readiness check](docs/plans/tripwire-testnet-readiness.md) adds exact
+compiled runtime acceptance and `tripwire:cctp:preflight` for keyless public funding,
+nonce and first-step gas checks. It does not deploy or authorize a payout.
+`tripwire:cctp:accept` adds [receipt-backed initial deployment acceptance](docs/plans/tripwire-deployment-acceptance.md)
+for the exact prepared creation/configuration transactions, initial policy and
+complete guardian grant history. The live check remains pending until deployment.
+`tripwire:cctp:payment` adds [first Standard payment preparation](docs/plans/tripwire-first-payment.md):
+current fees, an exact USDC allowance, a reserved burn nonce and one simulated
+unsigned step. Missing deployment evidence blocks all source actions. No public
+payment has been sent.
+Continue development with the [teammate handoff and implementation queue](docs/plans/tripwire-handoff.md).
+The [current checkpoint](docs/plans/tripwire-progress.md) records each delivered
+step, verification and the next task. Observer startup now has a
+[classified exit contract](docs/plans/tripwire-operations.md#observer-process-exit-contract-adr-033);
+[running failures now stop or retry by cause](docs/plans/tripwire-operations.md#observer-running-failure-contract-adr-034).
+Supervision, process crash drills and local incidents remain the next step.
 
-| | Verus | Syscoin | Kelp DAO |
-| :--- | ---: | ---: | ---: |
-| What actually happened | $11.58M | $10M | $292M |
-| **Tripwire — before execution** | **$0** | **$0** | **$0** |
-| Tripwire — one block later | $11.58M | $10M | $292M |
+The [read-only operations viewer](docs/plans/tripwire-operations.md) at
+`/tripwire/operations` imports public readiness or customer observer snapshots to
+inspect funding, holds, reported outcomes, receipt-backed timelines and separate
+settlement/escrow block-time durations. Export an observer
+snapshot with `--report=new-payments.json`. **Follow public report folder** can
+refresh the page from a dedicated `--watch --reports` directory in supporting
+browsers, with read-only access and stale/error/continuity guards. Native folder
+selection end-to-end remains unverified by automation. Optional
+`--keep-reports=500` archives older public snapshots without purging them;
+bounded batches preserve current reports and leave discovery claims untouched.
+Total disk usage still grows. Files are not authorization.
+With an empty customer manifest, `--discover=sourceStart:destinationStart` searches
+bounded finalized ranges and builds receipt locators automatically. Full backing
+checks still apply; unmatched/ambiguous hints are shown separately from audited payments.
 
-The last row is shown on purpose. It is the whole argument: for these attacks,
-a breaker acts before execution or it does not act at all.
+Protection covers payouts through the configured escrow. Covering the entire
+automated treasury flow also requires source permissions that prevent bypassing
+that escrow. Current local contracts require a fresh signed review before release;
+the adapter independently verifies source and settlement evidence.
+
+## What the replay demonstrates
+
+The browser reconstructs selected incident patterns using synthetic inputs and
+an in-process guardian. It compares applying protection before a modeled release
+with applying it later. It does not fork and replay original exploit transactions,
+run the latest authenticated CCTP escrow gate, or establish that Tripwire would
+have prevented those historical losses. Real traffic, accuracy and added latency
+still need measurement in the pilot.
 
 **[Watch it happen →](https://chainstory-iota.vercel.app/tripwire?incident=kelp)**
 
@@ -96,9 +161,9 @@ no per-release review gate. No redeployment has been performed for the hardening
 change; the current Sepolia demo scripts detect the old vault and stop before
 sending transactions. A fresh deployment is required to run the current loop.
 
-The same loop runs on a public testnet: a scripted attack, a watcher that scores
-each payout before it executes, a signed attestation, and the guardian's tier
-changing on-chain. Every contract but the attacker's is verified on Etherscan.
+The historical public-testnet demonstration used scripted payouts, a watcher,
+signed attestations and guardian tier changes. Its addresses are preserved below
+as deployment history; they are not the current CCTP pilot deployment.
 
 | Contract | Role | Address |
 | :--- | :--- | :--- |
@@ -108,15 +173,15 @@ changing on-chain. Every contract but the attacker's is verified on Etherscan.
 | DemoUSDC | The token the vault pays out | [`0xaa50…41a8`](https://sepolia.etherscan.io/address/0xaa50b34054195114f38a78e3dbf2a6a4c3ce41a8#code) |
 | Attacker's contract | Fresh, unverified, upgradeable (ERC-1967 proxy) — on purpose | [`0x4979…6467`](https://sepolia.etherscan.io/address/0x4979cca7a710d11b9a289b601718e1d954716467) |
 
-What the run did, step by step. Open the guardian's and the vault's transaction
-lists to see each attestation and each blocked payout.
+The current **local** gated-vault demo runs these steps. Historical testnet
+transactions do not demonstrate the new per-release review requirement.
 
 | Step | What happens | Score | Guardian tier |
 | :--- | :--- | ---: | :--- |
 | 0 | Three ordinary payouts, each backed by a burn: all paid | 0.00 | NONE |
 | 1 | A payout to the attacker's contract: fresh, unverified, upgradeable | 0.65 | **THROTTLE** — cap halved, still paid |
-| 2 | A 900,000 payout to the same contract, 10× the route's usual size | 0.85 | **DELAY** — held (`OutflowDelayed`); an honest 40,000 payout in the same minute is paid |
-| 3 | A forged 11,580,000 payout with no burn behind it | 1.00 | **FREEZE** — blocked (`RoutePaused`) |
+| 2 | A 900,000 payout to the same contract, 10× the route's usual size | 0.85 | **DELAY** — held (`ReleaseDelayed`); an honest 40,000 payout in the same minute is paid |
+| 3 | A forged 11,580,000 payout with no burn behind it | 1.00 | **FREEZE + REJECT** — terminally blocked (`ReleaseRejected`) |
 
 Reproduce it: `npm run tripwire:demo:local` runs the same four steps against
 the real bytecode in a local EVM, no keys needed.
@@ -213,10 +278,11 @@ against **no verifiable burn at all**.
 | CCTP v2 USDC: exact escrow backing, identity/fee binding, replay, durable claims and quarantine | 45 tests |
 | Authenticated CCTP escrow: atomic net mint/credit, self-ownership, rollback, receipt identity and deployment bindings | 74 tests |
 | Protection refresh: expiry/restart, chain clock, concurrent calls, key rotation, stale risk and RPC/quarantine failures | 28 tests |
-| Release-review and authenticated CCTP guards broken on purpose | 7 + 8 mutants caught |
+| Route isolation, rolling caps, request delay and historical review policy | 42 tests |
+| Guardian/release-review/authenticated CCTP guards broken on purpose | 38 mutants caught |
 | Check before you sign, incl. "nothing reachable from /check can sign" | 40 tests |
-| Gas: check an outflow · accept an attestation | 36.7k · 84.5k |
-| Total | **567 tests passing** |
+| Gas: check an outflow · accept an attestation | 79.0k · 84.5k |
+| Total | **609 tests passing** |
 
 The dashboard runs the exact contract bytecode the tests run, and a test fails
 if they ever differ.
@@ -228,7 +294,7 @@ git clone https://github.com/shokkanuly/Chainstory.git
 cd Chainstory
 npm install
 npm run dev                    # Retold at /app and /check, Tripwire at /tripwire
-npm test                       # 567 tests
+npm test                       # 609 tests
 npm run tripwire:demo:local    # the four-step attack, in a local EVM
 ```
 

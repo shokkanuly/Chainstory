@@ -69,7 +69,9 @@ contract ProtectedVault is Ownable, EIP712 {
     bytes32 public immutable routeId;
 
     mapping(bytes32 messageId => Release) public releases;
+    mapping(bytes32 messageId => uint256) public releaseDelayUntil;
 
+    uint256 public constant RELEASE_POLICY_VERSION = 2;
     uint256 public constant MAX_REVIEW_TTL = 10 minutes;
     bytes32 public constant REVIEW_TYPEHASH = keccak256(
         "ReleaseReview(bytes32 messageId,bytes32 routeId,address token,address recipient,uint256 amount,uint8 decision,uint8 minimumTier,uint256 validUntil,uint256 nonce)"
@@ -91,14 +93,22 @@ contract ProtectedVault is Ownable, EIP712 {
     error ReviewNonceAlreadyUsed(uint256 nonce);
     error InvalidReviewer(address recovered);
     error RequiredProtectionMissing(bytes32 routeId, ITripwireGuardian.Tier minimumTier);
+    error ReleaseDelayed(bytes32 messageId, uint256 releaseAt);
+    error RequestDelayNotStarted(bytes32 messageId);
 
     constructor(address owner_, IERC20 token_, ITripwireGuardian guardian_, bytes32 routeId_)
-        Ownable(owner_) EIP712("TripwireProtectedVault", "1")
+        Ownable(owner_) EIP712("TripwireProtectedVault", "2")
     {
         token = token_;
         guardian = guardian_;
         routeId = routeId_;
     }
+
+    /// Signing startup must distinguish extensions with a different review type.
+    function REVIEW_FORMAT_VERSION() public pure virtual returns (uint256) { return 2; }
+
+    function _beforeReview(bytes32 messageId, ReviewDecision decision) internal virtual {}
+    function _beforeExecute(bytes32 messageId) internal virtual {}
 
     /// @notice The relayer delivers a cross-chain message. In an exploit, this
     ///         is where a forged message arrives.
@@ -126,17 +136,22 @@ contract ProtectedVault is Ownable, EIP712 {
         if (nonce <= r.reviewNonce) revert ReviewNonceAlreadyUsed(nonce);
         address reviewer = ECDSA.recover(hashReleaseReview(messageId, decision, minimumTier, validUntil, nonce), signature);
         if (reviewer != ITripwireOracle(address(guardian)).oracle()) revert InvalidReviewer(reviewer);
+        _beforeReview(messageId, decision);
         r.reviewNonce = nonce;
         r.state = decision == ReviewDecision.ALLOW
             ? ReleaseState.VERIFIED : decision == ReviewDecision.HOLD ? ReleaseState.HELD : ReleaseState.REJECTED;
         r.reviewedUntil = validUntil;
         r.reviewer = reviewer;
         r.minimumTier = minimumTier;
+        if (decision == ReviewDecision.ALLOW && releaseDelayUntil[messageId] == 0) {
+            uint256 delay = guardian.outflowDelay(routeId, r.amount);
+            if (delay > 0) releaseDelayUntil[messageId] = block.timestamp + delay;
+        }
         emit ReleaseReviewed(messageId, decision, validUntil, nonce);
     }
 
     function hashReleaseReview(bytes32 messageId, ReviewDecision decision, ITripwireGuardian.Tier minimumTier, uint256 validUntil, uint256 nonce)
-        public view returns (bytes32)
+        public view virtual returns (bytes32)
     {
         Release storage r = releases[messageId];
         return _hashTypedDataV4(keccak256(abi.encode(
@@ -144,7 +159,9 @@ contract ProtectedVault is Ownable, EIP712 {
         )));
     }
 
-    function executeRelease(bytes32 messageId) external {
+    function executeRelease(bytes32 messageId) external virtual { _executeRelease(messageId); }
+
+    function _executeRelease(bytes32 messageId) internal {
         Release storage r = releases[messageId];
         if (r.to == address(0)) revert UnknownRelease(messageId);
         if (r.state == ReleaseState.EXECUTED) revert AlreadyExecuted(messageId);
@@ -154,6 +171,10 @@ contract ProtectedVault is Ownable, EIP712 {
         if (block.timestamp > r.reviewedUntil) revert ReviewExpired(r.reviewedUntil);
         if (r.reviewer != ITripwireOracle(address(guardian)).oracle()) revert InvalidReviewer(r.reviewer);
         if (guardian.currentTier(routeId) < r.minimumTier) revert RequiredProtectionMissing(routeId, r.minimumTier);
+        uint256 releaseAt = releaseDelayUntil[messageId];
+        if (releaseAt == 0 && guardian.outflowDelay(routeId, r.amount) > 0) revert RequestDelayNotStarted(messageId);
+        if (block.timestamp < releaseAt) revert ReleaseDelayed(messageId, releaseAt);
+        _beforeExecute(messageId);
         r.state = ReleaseState.EXECUTED;
         guardian.onTokenOutflow(routeId, r.amount);
         token.safeTransfer(r.to, r.amount);

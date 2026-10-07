@@ -14,10 +14,18 @@
     "demo:attack": "tsx scripts/tripwire/demoLocal.ts",
     "test:mutants": "node contracts/evm/mutate.mjs",
     "tripwire:demo:local": "tsx scripts/tripwire/demoLocal.ts",
+    "tripwire:payment:demo:local": "tsx scripts/tripwire/demoPaymentLocal.ts",
     "tripwire:deploy": "tsx scripts/tripwire/testnet/deploy.ts",
     "tripwire:verify": "tsx scripts/tripwire/testnet/verify.ts",
     "tripwire:operator:sepolia": "tsx scripts/tripwire/testnet/runOperator.ts",
     "tripwire:cctp:verify": "tsx scripts/tripwire/testnet/verifyCctp.ts",
+    "tripwire:cctp:observe": "tsx scripts/tripwire/testnet/observeCctp.ts",
+    "tripwire:cctp:supervise": "node --import tsx scripts/tripwire/testnet/superviseCctp.ts",
+    "tripwire:cctp:operator": "tsx scripts/tripwire/testnet/runCctpOperator.ts",
+    "tripwire:cctp:plan": "tsx scripts/tripwire/testnet/planCctp.ts",
+    "tripwire:cctp:preflight": "tsx scripts/tripwire/testnet/preflightCctp.ts",
+    "tripwire:cctp:accept": "tsx scripts/tripwire/testnet/acceptCctpDeployment.ts",
+    "tripwire:cctp:payment": "tsx scripts/tripwire/testnet/planFirstCctpPayment.ts",
     "tripwire:demo:sepolia": "tsx scripts/tripwire/testnet/demo.ts"
   },
   "dependencies": {
@@ -60,5 +68,5 @@
     "vite": "^8.1.1",
     "vitest": "^3.2.7"
   },
-  "description": "A predictive, cross-chain circuit breaker for bridges."
+  "description": "Evidence-backed controls for cross-chain USDC escrow payouts."
 }

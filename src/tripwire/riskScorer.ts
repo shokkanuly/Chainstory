@@ -3,12 +3,9 @@
 // The risk oracle: four rules, scored per transfer, aggregated into a verdict
 // the on-chain guardian can act on.
 //
-// Why rules before a model. EIP-7265's documented weakness is that it only
-// tracks outflow volume, so a transfer that is suspicious for any other reason
-// passes untouched as long as it sits under the dollar cap. Each rule here
-// closes one of those gaps, and each is explainable in a sentence — which
-// matters when the output pauses somebody's bridge. A learned model can
-// replace the weighting later; it cannot replace the need to say why.
+// Rules make the illustrative behavioral signals inspectable. Their hand-set
+// weights are not calibrated production evidence. Exact backing verification
+// and customer payment constraints have separate trust and policy boundaries.
 //
 // Why `indeterminate` exists. Every input to this file can be missing: a
 // baseline may be stale, a price may be unavailable, a screening list may fail
@@ -77,6 +74,41 @@ export interface ScreeningSource {
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
+const usableUsd = (n: number | null | undefined): n is number =>
+  typeof n === 'number' && Number.isFinite(n) && n >= 0;
+const usableTimestamp = (n: number): boolean => Number.isSafeInteger(n) && n >= 0;
+
+function usableConfig(config: ScorerConfig): boolean {
+  const thresholds = [config.elevatedThreshold, config.tripThreshold, config.delayThreshold, config.freezeThreshold];
+  return thresholds.every((n, i) => Number.isFinite(n) && n >= 0 && n <= 1 && (i === 0 || n >= thresholds[i - 1])) &&
+    Number.isFinite(config.severeSignal) && config.severeSignal > 0 && config.severeSignal <= 1 &&
+    Number.isSafeInteger(config.baselineMaxAgeSeconds) && config.baselineMaxAgeSeconds >= 0 &&
+    Number.isSafeInteger(config.baselineMinSamples) && config.baselineMinSamples > 0 &&
+    Number.isSafeInteger(config.velocityWindowSeconds) && config.velocityWindowSeconds > 0 &&
+    Number.isFinite(config.payoutTolerance) && config.payoutTolerance >= 0 && config.payoutTolerance <= 1;
+}
+
+function usableBaseline(baseline: RouteBaseline | null, input: ScoreInput, config: ScorerConfig): boolean {
+  return baseline !== null && baseline.route === input.transfer.route &&
+    usableTimestamp(input.now) && usableTimestamp(baseline.computedAt) &&
+    baseline.computedAt <= input.now && input.now - baseline.computedAt <= config.baselineMaxAgeSeconds &&
+    Number.isSafeInteger(baseline.sampleSize) && baseline.sampleSize >= config.baselineMinSamples &&
+    Number.isFinite(baseline.windowHours * 3600) && baseline.windowHours > 0 &&
+    usableUsd(baseline.medianTransferUsd) && usableUsd(baseline.p95TransferUsd) && baseline.p95TransferUsd > 0 &&
+    baseline.medianTransferUsd <= baseline.p95TransferUsd &&
+    usableUsd(baseline.rollingTvlUsd) && baseline.rollingTvlUsd > 0;
+}
+
+/** One observation drives both health and evidence; source failures mean unknown. */
+function screeningSnapshot(transfer: BridgeTransfer, screening: ScreeningSource): boolean | null {
+  try {
+    const flagged = screening.isFlagged(transfer.to);
+    return typeof flagged === 'boolean' ? flagged : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Rule 1 — the proven burn must match the claimed payout.
  *
@@ -111,6 +143,7 @@ export function proofPayoutMismatch(
   // what a forged cross-chain message (Kelp DAO) and a malformed proof that
   // the relay accepted (Syscoin) look like from the destination chain.
   if (provenBurnUsd == null || claimedPayoutUsd == null) return null;
+  if (!usableUsd(provenBurnUsd) || !usableUsd(claimedPayoutUsd)) return null;
   if (claimedPayoutUsd <= 0) return null;
 
   const gap =
@@ -229,9 +262,17 @@ export function counterpartyScreen(
   transfer: BridgeTransfer,
   screening: ScreeningSource
 ): RiskSignal | null {
-  const flagged = screening.isFlagged(transfer.to);
+  return screeningSignal(transfer, screening, screeningSnapshot(transfer, screening));
+}
+
+function screeningSignal(transfer: BridgeTransfer, screening: ScreeningSource, flagged: boolean | null): RiskSignal | null {
   // Null is "the list did not load", which is not the same as "not flagged".
   if (flagged === null) return null;
+
+  let label = 'flagged address';
+  if (flagged) {
+    try { label = screening.describe(transfer.to) ?? label; } catch { /* Keep the positive observation even without a label. */ }
+  }
 
   return {
     id: 'counterparty_screen',
@@ -239,7 +280,7 @@ export function counterpartyScreen(
     weight: 0.1,
     deterministic: flagged,
     reason: flagged
-      ? `Recipient is on the screening list: ${screening.describe(transfer.to) ?? 'flagged address'}.`
+      ? `Recipient is on the screening list: ${label}.`
       : 'Recipient is not on the screening list.',
   };
 }
@@ -305,7 +346,9 @@ export function contractRisk(target: ContractRiskSummary, config: ScorerConfig):
     weight: 0.2,
     floor: score >= config.severeSignal ? config.tripThreshold : undefined,
     reason:
-      (found.length ? `${who}: ${found.join(', ')}.` : `${who} is verified and established.`) + unknownNote,
+      (found.length ? `${who}: ${found.join(', ')}.` : unknown.length
+        ? `${who}: no risk indicators in the available facts.`
+        : `${who} is verified and established.`) + unknownNote,
   };
 }
 
@@ -334,28 +377,43 @@ export function scoreTransfer(input: ScoreInput): RiskAssessment {
   const config = input.config ?? DEFAULT_CONFIG;
   const { transfer, baseline, screening } = input;
 
-  const baselineFresh =
-    baseline !== null &&
-    baseline.sampleSize >= config.baselineMinSamples &&
-    input.now - baseline.computedAt <= config.baselineMaxAgeSeconds;
+  const configValid = usableConfig(config);
+  const baselineFresh = configValid && usableBaseline(baseline, input, config);
+  const flagged = screeningSnapshot(transfer, screening);
 
   const health: OracleHealth = {
     baselineFresh,
-    screeningAvailable: screening.isFlagged(transfer.to) !== null,
-    priceAvailable: transfer.amountUsd !== null,
+    screeningAvailable: flagged !== null,
+    priceAvailable: usableUsd(transfer.amountUsd),
   };
 
   const signals: RiskSignal[] = [];
+  if (!configValid) return {
+    transfer, score: null, verdict: 'indeterminate', signals, health,
+    degradedReason: 'Cannot assess: invalid scorer configuration.',
+  };
+
+  const transferTimeValid = usableTimestamp(input.now) && usableTimestamp(transfer.timestamp) && transfer.timestamp <= input.now;
+  const since = transfer.timestamp - config.velocityWindowSeconds;
+  const historyValid = transferTimeValid && input.recent.every((t) =>
+    t.route !== transfer.route || t.hash === transfer.hash ||
+    (usableTimestamp(t.timestamp) && t.timestamp <= input.now &&
+      (t.timestamp < since || t.timestamp > transfer.timestamp || usableUsd(t.amountUsd)))
+  );
+  // The legacy USD proof is a demo heuristic. Malformed numbers are unavailable
+  // evidence, not proof of a mismatch. Exact adapter backing remains authoritative.
+  const legacyProofValid = transfer.backing !== undefined ||
+    [transfer.provenBurnUsd, transfer.claimedPayoutUsd].every((n) => n == null || usableUsd(n));
   const mismatch = proofPayoutMismatch(transfer, config);
   if (mismatch) signals.push(mismatch);
-  const screen = counterpartyScreen(transfer, screening);
+  const screen = screeningSignal(transfer, screening, flagged);
   if (screen) signals.push(screen);
   const contract = input.targetContract ? contractRisk(input.targetContract, config) : null;
   if (contract) signals.push(contract);
-  if (baselineFresh && baseline) {
+  if (baselineFresh && baseline && health.priceAvailable && transferTimeValid) {
     const size = sizeVsBaseline(transfer, baseline);
     if (size) signals.push(size);
-    const velocity = withdrawalVelocity(transfer, input.recent, baseline, config);
+    const velocity = historyValid ? withdrawalVelocity(transfer, input.recent, baseline, config) : null;
     if (velocity) signals.push(velocity);
   }
 
@@ -368,10 +426,13 @@ export function scoreTransfer(input: ScoreInput): RiskAssessment {
     if (!health.priceAvailable) reasons.push('the transfer could not be priced');
     if (!baselineFresh) reasons.push('no fresh baseline for this route');
     if (!health.screeningAvailable) reasons.push('the screening list is unavailable');
+    if (!transferTimeValid) reasons.push('invalid transfer timestamp or assessment clock');
+    if (!historyValid) reasons.push('recent route history contains unavailable amounts or invalid timestamps');
+    if (!legacyProofValid) reasons.push('invalid legacy proof amounts');
 
-    // Without a baseline or a price there is no behavioural opinion to give.
-    // Saying so is the whole point; scoring it zero would read as "clear".
-    if (!health.priceAvailable || !baselineFresh) {
+    // Every required input must be usable. Missing evidence cannot lower the
+    // score into "clear", even when other signals are available.
+    if (reasons.length > 0) {
       return {
         transfer,
         score: null,

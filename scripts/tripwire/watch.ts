@@ -7,6 +7,7 @@ import { burnEventSchema, releaseEventSchema, type BurnEvent, type LogFeed, type
 import type { OperatorStore, WatcherState } from './store.js';
 import { FinalityConflictError } from './finality.js';
 import type { sourceVerifierScopeSchema } from './sourceProof.js';
+import { CctpAuditFailure } from './auditFailure.js';
 
 export interface SourceAdapter {
   scope: z.infer<typeof sourceVerifierScopeSchema>;
@@ -115,10 +116,12 @@ export class Watcher {
   }
 
   /** Acknowledge only a confirmed execution or terminal rejection; HOLD/delay stay pending. */
-  acknowledge(messageId: Hex): Promise<void> {
+  acknowledge(messageId: Hex, outcome?: 'executed' | 'rejected' | 'returned'): Promise<void> {
     const run = this.lock.then(() => {
       if (this.quarantine) throw new FinalityConflictError('Cannot acknowledge work while the operator is quarantined.');
       const previous = this.snapshot();
+      const release = this.pending.get(messageId);
+      if (outcome && release) this.cfg.store?.saveOutcome({ messageId, action: outcome, recipient: release.recipient, amount: release.amount });
       this.pending.delete(messageId);
       this.completed.add(messageId);
       try { this.persist(); } catch (error) { this.restore(previous); throw error; }
@@ -167,6 +170,7 @@ export class Watcher {
             ? await this.cfg.verifySource(release, observedBurn)
             : { status: 'pending', reason: 'Independent source verification is not configured; observed events alone are insufficient.' });
       } catch (error) {
+        if (error instanceof CctpAuditFailure && error.reason === 'journal') throw error;
         if (error instanceof FinalityConflictError) this.enterQuarantine(error);
         source = { status: 'unavailable', reason: 'Source verification is unavailable; retry required.' };
       }

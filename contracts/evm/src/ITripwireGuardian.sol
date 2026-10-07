@@ -23,6 +23,10 @@ interface ITripwireGuardian {
     ///         inside a DELAY review window.
     function onTokenOutflow(bytes32 routeId, uint256 amount) external;
 
+    /// @notice Hold duration for a newly reviewed request under the active tier.
+    /// Vaults must keep a per-request clock in addition to the route-wide hook.
+    function outflowDelay(bytes32 routeId, uint256 amount) external view returns (uint256);
+
     /// @notice Submit an EIP-712 attestation signed by the risk oracle.
     ///         Applies a graduated tier for 24h, escalate-only while active:
     ///         - riskScore >= 95: FREEZE   — every outflow reverts

@@ -1,5 +1,10 @@
 # Tripwire durable operator — local implementation, 2026-09-30
 
+2026-10-06: the same queue/outbox now supports the explicit customer-payment profile;
+see [manifest-v3 product integration](tripwire-payment-operator.md). It retains funded
+rejections for recovery, relays customer-requested returns and stores finalized
+returned outcomes. The legacy terminal rules below describe the original profile.
+
 The operator persists observations and outgoing transactions across crashes.
 It runs separately from the read-only browser and stateless API proxies
 ([ADR-015](../07-decisions-adr.md#adr-015--durable-tripwire-operator-state-and-signed-transaction-outbox)).
@@ -187,3 +192,24 @@ data; the default unconfigured CLI does not manufacture them.
 Validation: 24 expiry/restart/clock/concurrency/oracle/RPC cases, including actual
 guardian bytecode, plus four durable-queue integration regressions. No live
 refresh, public transaction or deployment was performed.
+
+## Route policy v2 and request delay (ADR-020)
+
+The RPC runner now requires guardian/release policy markers 2 and a scoped
+`isProtected(vault, routeId)` grant before opening a journal or signing. ALLOW
+reviews use EIP-712 domain version 2. Historical deployments/signatures cannot be
+silently reused. Contracts need a fresh reviewed deployment and reconciliation
+of outstanding funds, queued requests and signed work.
+
+A large request under DELAY has its own sticky 30-minute clock, including requests
+reviewed after the original route window. The runner reads that clock and request
+at one checked block. While a verified request still merits ALLOW but its delay
+is pending, it keeps the queue without repeated review signatures. Source/risk
+and route protection continue to be evaluated; new HOLD/REJECT are submitted
+immediately. At maturity, a fresh review is submitted before simulating/executing.
+Expired reviews never become valid merely because a delay has elapsed.
+
+The guardian's cap now counts conservative rolling usage; resume/configuration
+cannot reset recent spending. Repeated testnet demos refuse a busy budget before
+reset writes. See [the complete policy](tripwire-route-policy.md) for the 224-second
+one-hour conservatism bound, gas tradeoff, permissions, compatibility and rollout.

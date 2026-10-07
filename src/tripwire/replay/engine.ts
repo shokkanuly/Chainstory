@@ -135,7 +135,7 @@ export class IncidentReplay {
       for (const key of [route, ...idle.map((r) => r.key)]) {
         await expectOk(g.send(actors.owner, 'configureRoute', [key, CAP_DISABLED, CAP_WINDOW]), 'configureRoute');
       }
-      await expectOk(g.send(actors.owner, 'setProtected', [actors.bridge.address, true]), 'setProtected');
+      await expectOk(g.send(actors.owner, 'setProtected', [actors.bridge.address, route, true]), 'setProtected');
       guards[s] = g;
     }
 

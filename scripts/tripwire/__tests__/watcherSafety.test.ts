@@ -132,11 +132,38 @@ describe('watcher failure recovery', () => {
     expect(releaseDecision(observation)).toBe(ReleaseDecision.HOLD);
   });
 
-  it('holds a payout when the screening list is unavailable despite a numeric score', async () => {
+  it('holds a payout with an indeterminate assessment when screening is unavailable', async () => {
     const { watcher, ingress, egress } = fixture(undefined, { screening: { isFlagged: () => null, describe: () => undefined } });
     ingress.emit({ messageId: MESSAGE, amount: release.amount, timestamp: NOW });
     egress.emit(release);
     const [observation] = await watcher.tick();
+    expect(observation.assessment.verdict).toBe('indeterminate');
+    expect(observation.assessment.score).toBeNull();
     expect(releaseDecision(observation)).toBe(ReleaseDecision.HOLD);
+  });
+
+  it('retains a payout through a screening exception and allows a fresh retry after recovery', async () => {
+    const isFlagged = vi.fn().mockImplementationOnce(() => { throw new Error('screening outage'); }).mockReturnValue(false);
+    const { watcher, ingress, egress } = fixture(undefined, { screening: { isFlagged, describe: () => undefined } });
+    ingress.emit({ messageId: MESSAGE, amount: release.amount, timestamp: NOW });
+    egress.emit(release);
+    const [held] = await watcher.tick();
+    expect(releaseDecision(held)).toBe(ReleaseDecision.HOLD);
+    const [recovered] = await watcher.tick();
+    expect(recovered.release.messageId).toBe(MESSAGE);
+    expect(recovered.assessment.verdict).toBe('clear');
+    expect(releaseDecision(recovered)).toBe(ReleaseDecision.ALLOW);
+    expect(isFlagged).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let a screening outage hide an exact source amount mismatch', async () => {
+    const { watcher, ingress, egress } = fixture(undefined, {
+      payoutToleranceBps: 0n, screening: { isFlagged: () => null, describe: () => undefined },
+    });
+    ingress.emit({ messageId: MESSAGE, amount: release.amount - 1n, timestamp: NOW });
+    egress.emit(release);
+    const [observation] = await watcher.tick();
+    expect(observation.assessment.score).toBe(1);
+    expect(releaseDecision(observation)).toBe(ReleaseDecision.REJECT);
   });
 });

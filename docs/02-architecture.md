@@ -152,3 +152,111 @@ block, bounded below by observed write receipts. Source evidence stays finalized
 Fresh pending assessments may renew a matching active tier near expiry; stale
 decisions are not persisted as permanent risk flags. Existing queue/outbox recovery
 and quarantine apply to refresh signatures and transactions as well.
+
+ADR-020 scopes guardian callers by route, uses a bounded conservative rolling
+budget and adds a sticky per-message delay to ProtectedVault/CctpEscrow. The
+operator binds request delay to chain time and waits without repeated ALLOW
+signatures, while reassessing risk/source health/protection. Immutable policy-v2
+markers and route grants are checked before opening the signing lifecycle;
+release review domain version is 2. Existing deployment-bound persistence and
+read-only browser boundaries remain. See [policy/rollout](plans/tripwire-route-policy.md).
+
+ADR-024 adds keyless, receipt-backed initial deployment acceptance alongside the
+existing unsigned planner/preflight. All four creation/configuration transactions
+must match the package and reach canonical finality before exact code and initial
+mutable state/history are accepted at one stable snapshot. The constructor policy
+hash codec remains pure in `src/chains/evm/`; RPC provenance, bounded grant history
+and local public JSON reports stay under operator scripts. This introduces no
+wallet sender, browser keys, server state or deployment/burn automation. See the
+[initial deployment runbook](plans/tripwire-deployment-acceptance.md).
+
+
+ADR-029 extends the standalone SQLite journal with an optional versioned discovery
+index: both scoped finalized event checkpoints and all retained operation hints
+commit atomically under the existing process lease. Startup validates untrusted
+stored state; resumes recheck canonical history and process bounded increments.
+Hints are separate from authenticated source claims, and full current receipt
+verification remains mandatory. Public metadata v2 exposes cumulative coverage,
+new scan windows and backlog to the display-only operations adapter. Browser and
+proxy runtimes have no database access, wallet sender or new persistence service.
+
+
+ADR-030 extracts the existing CLI tick into a sequential keyless worker with
+cancellable polling and capped outage backoff. The CLI owns clients/signals and
+the existing SQLite lease, while discovery/audit remain its evidence ports.
+Scope/capacity/storage failures stop; finalized conflicts quarantine. Public
+watch snapshots are atomically published local files with optional capture-time
+worker metadata. Browser/proxies still have no polling backend, key access or
+execution permission; process supervision remains separate.
+
+ADR-031 adds a read-only native public-directory source in the operations UI.
+Its sequential, cancellable browser controller accepts generic display snapshots;
+EVM schema parsing remains in the adapter. Validated successful scope becomes an
+optional continuity token, not publisher authentication. Only selected top-level
+completed report files are read, under entry/body limits. Handles/data remain in
+page memory; there is no new backend, upload, browser database or filesystem writer.
+Unsupported browsers keep manual import. Native picker end-to-end refresh remains
+unverified by automation; see the operations runbook for the concrete limitation.
+
+
+ADR-032 adds optional bounded archival after the standalone observer's public
+snapshot publication. The browser and publisher share a pure filename timestamp
+codec in `src/domain/reportFiles.ts`; it expresses no protocol or chain evidence.
+The local filesystem helper moves only older completed public files into an
+archive via flushed exclusive hard links, identity/collision checks and bounded
+batches. Failure stops publication scheduling without rolling back committed
+journal/proof state; retry keeps the same scoped journal. No browser writer,
+server storage, private-file reader, signing path or discovery pruning is added.
+
+ADR-034 moves shared audit failure types into `scripts/tripwire/auditFailure.ts`
+and separates local journal boundaries from network/evidence boundaries on the
+existing keyless observer path. Proof/quarantine/discovery read/write failures
+escape the source adapter and stop; only recognized transport faults or validated
+behind-head conditions retry. Unknown global/provider evidence stops, while safe
+per-payment HOLD/unavailable results remain. The old testnet failure entrypoint
+re-exports the single implementation. No report, manifest, SQLite, review or
+execution-permission change is introduced; standalone supervision follows below.
+
+ADR-035 adds a foreground Node/tsx supervisor for the fixed keyless observer
+entrypoint. Its strict local config determines observer paths and finite restart
+policy; it never launches a shell or signing entrypoint. Each child owns the
+original observer journal lease; the parent waits for child/stdio closure before
+another launch. A separate SQLite exclusive lease in the dedicated incident
+directory prevents concurrent supervisors there. Only RPC exit 75 and explicitly
+enabled fatal crash signals permit bounded backoff/restart. Local report monitoring
+reuses the existing EVM public-report adapter and pure filename codec. Fixed
+process/report condition events are atomically published to a private local
+directory; no raw stderr, error, path, URL, payment row or secret is copied.
+Capture time and process liveness remain separate. This extends the ADR-015 local
+operator boundary, not browser/proxy storage. No daemon, dependency, manifest,
+contract, report or existing operator SQLite schema changes.
+
+ADR-036 adds a pure read-only behavioral projection under `src/tripwire/`,
+depending on schema/types in `src/domain/behavioralShadow.ts`. It copies only
+existing size/velocity/contract signal scores from a supplied assessment, with
+explicit caller capture/check clocks and expected route/transfer scope. It does
+not rescore, reprice, read data, sign, persist or choose a release/guardian tier.
+Closed versioned output has no execution authority and explicitly records that
+legacy enforcement is still active. Proof/screening never enter its behavioral
+vocabulary; unavailable/stale/future/invalid inputs do not become zero scores.
+The new [decision matrix](plans/tripwire-decision-matrix.md) records mandatory
+current gates and owners separately from future behavioral separation. The
+model at H4a was not yet attached to public observer reports or the viewer; existing
+operator/scorer/contracts/report/storage formats and browser boundaries stay
+unchanged. H4b display integration and H4c reviewed enforcement changes are separate.
+
+ADR-037/H4b adds an optional per-payment public `behavioral` extension. Domain
+schema owns reported/unavailable vocabulary; the EVM import boundary validates
+the nested H4a model against the report's route/payment identity, synthetic
+provenance and report check time. The existing pure projector supplies the
+reported wrapper only from caller-provided assessments; keyless customer audit
+emits assessment-not-produced because it has no behavioral scorer inputs.
+The operations viewer consumes display data only, suppressing old/future scores
+against the original capture and browser clock without changing payment state.
+Old reports remain valid, errors/outages replace the entire snapshot, and no
+signing/review/contract/storage permission or new data provider is added.
+
+H4c1 records [the proposed customer advisory/screening policy](plans/tripwire-behavioral-policy.md), ADR-038:
+independent issuer evidence, explicit customer consent and coordinated new-version
+migration. This is a design only; execution still uses legacy enforcement.
+The next H4c2 step implements pure read-only evidence verification, not ALLOW.

@@ -76,7 +76,7 @@ async function main() {
 
   console.log('\n2. Initializing Bridge Route [Sepolia -> Base Sepolia: USDC]...');
   await guardian.send(actors.owner, 'configureRoute', [ROUTE, INITIAL_CAP, WINDOW_SECONDS]);
-  await guardian.send(actors.owner, 'setProtected', [actors.bridge.address, true]);
+  await guardian.send(actors.owner, 'setProtected', [actors.bridge.address, ROUTE, true]);
   console.log(`   ✓ Route Configured: Base Cap = $${INITIAL_CAP.toLocaleString()} / 1hr`);
 
   const initialStatus = await guardian.read<number>('routeStatus', [ROUTE]);

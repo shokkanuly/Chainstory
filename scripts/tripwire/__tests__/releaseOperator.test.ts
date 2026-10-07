@@ -31,14 +31,16 @@ function fixture(extra: Partial<WatcherConfig> = {}, protection?: GuardianPort) 
       maxFeePerGas: 1n, maxPriorityFeePerGas: 1n, to: r.to as Hex, data: r.data as Hex, value: BigInt(r.value) }),
     broadcast: async (raw) => {
       const data = parseTransaction(raw).data;
-      if (data === '0xff') state = { ...state, state: ReleaseState.EXECUTED };
-      else state = { ...state, nonce: state.nonce + 1n, state: data === '0x00' ? ReleaseState.VERIFIED : data === '0x01' ? ReleaseState.HELD : ReleaseState.REJECTED };
+      if (data === '0xfe') state = { ...state, state: ReleaseState.REJECTED, payment: state.payment ? { ...state.payment, returned: true } : undefined };
+      else if (data === '0xff') state = { ...state, state: ReleaseState.EXECUTED };
+      else state = { ...state, nonce: state.nonce + 1n, state: data === '0x00' ? ReleaseState.VERIFIED : data === '0x01' ? ReleaseState.HELD : ReleaseState.REJECTED,
+        ...(state.payment && data === '0x00' ? { payment: { ...state.payment, reviewedVersion: state.payment.version } } : {}) };
       return keccak256(raw);
     }, receipt: async () => null, waitReceipt: async () => ({ status: 'success', blockNumber: 100n, gasUsed: 50_000n }) };
   const canExecute = vi.fn().mockResolvedValue(true);
   const releasePort: ReleasePort = { read: async () => state,
-    review: async (o) => request(toHex(releaseDecision(o), { size: 1 })),
-    execute: () => request('0xff'), canExecute, terminalFinalized: async () => true };
+    review: async (o, _nonce, decision = releaseDecision(o)) => request(toHex(decision, { size: 1 })),
+    execute: () => request('0xff'), returnCredit: () => request('0xfe'), canExecute, terminalFinalized: async () => true };
   const cfg = (s: OperatorStore): WatcherConfig => ({ route: scope.route, chain: 'base', token: 'USDC', decimals: 6,
     bridge: scope.vault, store: s, ingress, egress, now: () => release.timestamp,
     baseline: { route: scope.route, computedAt: release.timestamp, windowHours: 24, sampleSize: 100, medianTransferUsd: 10_000, p95TransferUsd: 100_000, rollingTvlUsd: 40_000_000 },
@@ -52,6 +54,53 @@ function fixture(extra: Partial<WatcherConfig> = {}, protection?: GuardianPort) 
 }
 
 describe('durable release queue', () => {
+  const payment = () => ({ version: 1n, hash: toHex(1, { size: 32 }), reviewedVersion: 1n, returnAt: 0n, returned: false, now: 100n, blockers: [] });
+  it.each(['paused', 'recipient', 'amount', 'approval'] as const)('holds a customer %s gate instead of treating clean risk as permission', async (gate) => {
+    const f = fixture(); f.setState({ payment: { ...payment(), blockers: [gate] } });
+    const review = vi.spyOn(f.releasePort, 'review');
+    expect((await f.operator.tick())[0].action).toBe('held'); expect(review).not.toHaveBeenCalled(); expect(f.store.transactions()).toEqual([]);
+  });
+  it('revokes an old ALLOW when customer permissions are revoked', async () => {
+    const f = fixture(); f.setState({ state: ReleaseState.VERIFIED, payment: { ...payment(), blockers: ['recipient'] } });
+    expect((await f.operator.tick())[0].action).toBe('held'); expect(f.store.transactions()[0].request.data).toBe('0x01');
+  });
+  it('refreshes a review after a policy change even during an old customer delay', async () => {
+    const f = fixture(); f.setState({ state: ReleaseState.VERIFIED, payment: { ...payment(), version: 2n }, delay: { now: 100n, until: 200n } });
+    f.canExecute.mockResolvedValue(false); const review = vi.spyOn(f.releasePort, 'review');
+    expect((await f.operator.tick())[0].action).toBe('delayed'); expect(review).toHaveBeenCalledTimes(1);
+  });
+  it('keeps a funded rejection available for a later customer return', async () => {
+    const f = fixture(); f.setState({ state: ReleaseState.REJECTED, payment: payment() });
+    expect((await f.operator.tick())[0].action).toBe('rejected'); expect(f.store.loadWatcher()?.pending).toHaveLength(1);
+    f.setState({ payment: { ...payment(), returnAt: 100n } });
+    expect((await f.operator.tick())[0].action).toBe('returned'); expect(f.store.loadWatcher()?.pending).toEqual([]);
+  });
+  it('waits for customer recovery maturity across restart without signing reviews', async () => {
+    const f = fixture(); f.setState({ payment: { ...payment(), returnAt: 200n } });
+    const review = vi.spyOn(f.releasePort, 'review');
+    expect((await f.operator.tick())[0].action).toBe('return-pending'); f.store.close(); const store = f.open();
+    expect((await f.make(store).tick())[0].action).toBe('return-pending'); expect(review).not.toHaveBeenCalled();
+    f.setState({ payment: { ...payment(), now: 200n, returnAt: 200n } });
+    expect((await f.make(store).tick())[0].action).toBe('returned'); expect(store.transactions()).toHaveLength(1);
+    expect(store.transactions()[0].id).toContain('return/');
+    expect(store.outcomes()).toEqual([{ messageId: f.release.messageId, action: 'returned', recipient: f.release.recipient, amount: f.release.amount }]);
+    store.close(); const reopened = f.open(); expect(reopened.outcomes()[0].action).toBe('returned');
+  });
+  it('requires finalized returned state before acknowledgment', async () => {
+    const f = fixture(); f.setState({ payment: { ...payment(), returnAt: 100n } });
+    f.releasePort.terminalFinalized = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    expect((await f.operator.tick())[0].action).toBe('retry'); expect(f.store.loadWatcher()?.pending).toHaveLength(1);
+    expect((await f.operator.tick())[0].action).toBe('returned'); expect(f.store.transactions()).toHaveLength(1);
+  });
+  it('does not initiate returns, complete unverified claims or turn customer recovery into a payout', async () => {
+    const f = fixture({ verifySource: undefined }); f.setState({ payment: { ...payment(), returnAt: 100n } });
+    expect((await f.operator.tick())[0].action).toBe('held'); expect(f.store.transactions()).toEqual([]);
+  });
+  it('can return while behavioral assessment is held without escalating or consulting guardian protection', async () => {
+    const f = fixture({ screening: { isFlagged: () => true, describe: () => 'Fixture' } });
+    f.setState({ payment: { ...payment(), returnAt: 100n, blockers: ['paused'] } });
+    expect((await f.operator.tick())[0].action).toBe('returned'); expect(f.protectionSubmit).not.toHaveBeenCalled();
+  });
   it('waits for finalized terminal state before acknowledging an external execution', async () => {
     const f = fixture(); f.setState({ state: ReleaseState.EXECUTED });
     f.releasePort.terminalFinalized = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
@@ -100,6 +149,28 @@ describe('durable release queue', () => {
     expect((await f.operator.tick())[0].action).toBe('delayed'); expect(f.store.loadWatcher()?.pending).toHaveLength(1);
     f.store.close(); const restored = f.open(); expect((await f.make(restored).tick())[0].action).toBe('executed');
     expect(restored.loadWatcher()?.pending).toEqual([]); expect(await f.make(restored).tick()).toEqual([]);
+  });
+  it('waits through a sticky delay across restart without review churn, then freshly reviews at maturity', async () => {
+    const f = fixture(); const now = BigInt(f.release.timestamp), until = now + 1800n;
+    f.setState({ state: ReleaseState.VERIFIED, nonce: 1n, delay: { now, until } });
+    const review = vi.spyOn(f.releasePort, 'review');
+    expect((await f.operator.tick())[0].action).toBe('delayed'); expect(review).not.toHaveBeenCalled();
+    f.store.close(); const restored = f.open(); const operator = f.make(restored);
+    expect((await operator.tick())[0].action).toBe('delayed'); expect(restored.transactions()).toEqual([]);
+    f.setState({ delay: { now: until, until } });
+    expect((await operator.tick())[0].action).toBe('executed'); expect(review).toHaveBeenCalledTimes(1);
+    expect(restored.loadWatcher()?.pending).toEqual([]);
+  });
+  it('revokes ALLOW during a sticky delay as soon as source evidence becomes unavailable', async () => {
+    const f = fixture({ verifySource: undefined });
+    f.setState({ state: ReleaseState.VERIFIED, delay: { now: 100n, until: 200n } });
+    expect((await f.operator.tick())[0].action).toBe('held');
+    expect(f.store.transactions()[0].request.data).toBe('0x01'); expect(f.store.loadWatcher()?.pending).toHaveLength(1);
+  });
+  it('refuses malformed delay state before reviewing or acknowledging a request', async () => {
+    const f = fixture(); f.setState({ state: ReleaseState.VERIFIED, delay: { now: -1n, until: 200n } });
+    await expect(f.operator.tick()).rejects.toThrow(); expect(f.store.transactions()).toEqual([]);
+    expect(f.store.loadWatcher()?.pending).toHaveLength(1);
   });
   it('reconciles an executed payout after acknowledgment commit failed without executing again', async () => {
     const f = fixture(); const save = f.store.saveWatcher.bind(f.store);

@@ -42,6 +42,35 @@ export function cctpHookBeneficiary(input: unknown): Hex {
   return recipient;
 }
 
+// New payment escrow convention; legacy 64-byte hooks remain separately decoded.
+export const TRIPWIRE_CCTP_PAYMENT_HOOK_V1 = keccak256(stringToHex('Tripwire/CCTP/v2/USDC/payment/v1'));
+const nonzeroHash = z.string().regex(/^0x[0-9a-fA-F]{64}$/).transform((v) => v.toLowerCase() as Hex)
+  .refine((v) => !/^0x0{64}$/.test(v), 'A nonzero commitment is required.');
+export const cctpPaymentIntentSchema = z.object({
+  recipient: cctpAddressSchema.refine((v) => !/^0x0{40}$/.test(v)),
+  returnRecipient: cctpAddressSchema.refine((v) => !/^0x0{40}$/.test(v)),
+  operationId: nonzeroHash, policyHash: nonzeroHash,
+}).strict();
+export function cctpPaymentHook(input: unknown): Hex {
+  const intent = cctpPaymentIntentSchema.parse(input);
+  return concatHex([TRIPWIRE_CCTP_PAYMENT_HOOK_V1, cctpAddressWord(intent.recipient),
+    cctpAddressWord(intent.returnRecipient), intent.operationId, intent.policyHash]);
+}
+export function decodeCctpPaymentHook(input: unknown) {
+  const raw = cctpBytesSchema.parse(input);
+  if (raw.length !== 322 || field(raw, 0, 32) !== TRIPWIRE_CCTP_PAYMENT_HOOK_V1) throw new Error('Unsupported Tripwire payment hook.');
+  return cctpPaymentIntentSchema.parse({ recipient: addressAt(raw, 32), returnRecipient: addressAt(raw, 64),
+    operationId: field(raw, 96, 32), policyHash: field(raw, 128, 32) });
+}
+export function cctpPaymentReleaseId(chainId: number, vault: string, sourceDomain: number, nonce: Hex): Hex {
+  z.number().int().positive().max(Number.MAX_SAFE_INTEGER).parse(chainId);
+  z.number().int().nonnegative().max(0xffffffff).parse(sourceDomain);
+  z.string().regex(/^0x[0-9a-fA-F]{64}$/).parse(nonce);
+  return keccak256(encodeAbiParameters([
+    { type: 'bytes32' }, { type: 'uint256' }, { type: 'address' }, { type: 'uint32' }, { type: 'bytes32' },
+  ], [keccak256(stringToHex('Tripwire/CCTP/v2/payment-escrow/v1')), BigInt(chainId), cctpAddressSchema.parse(vault), sourceDomain, nonce]));
+}
+
 // Stable source identity: v2's attester-assigned nonce is absent in MessageSent.
 export function cctpReleaseId(chainId: number, transmitter: string, transactionHash: Hex, logIndex: number): Hex {
   z.number().int().positive().max(Number.MAX_SAFE_INTEGER).parse(chainId);

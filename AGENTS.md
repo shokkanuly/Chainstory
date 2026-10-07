@@ -101,7 +101,23 @@ Confirm real scripts with `cat package.json` — do not assume. Target scripts (
 1. Check the docs above. 2. Search official docs (`zkcompression.com`, Solana docs, protocol docs) — never guess.
 3. Ask the human one specific question and state your default assumption. 4. Record the resolution in `docs/07-decisions-adr.md`.
 
-## 10. Glossary
+## 10. Tripwire continuation and delivery
+
+For Tripwire implementation, read `docs/plans/tripwire-progress.md` and
+`docs/plans/tripwire-handoff.md` after the required read order above. The progress
+file is the current checkpoint; the handoff contains the larger plan and historical
+evidence. Do not mark a manual/live/audit gate complete using synthetic tests.
+
+The human explicitly requested on 2026-10-07 that each completed implementation
+step be committed and pushed to `codex/tripwire-route-limits`. Include the updated
+checkpoint and relevant runbooks in that step's commit. Record behavior, checks,
+remaining limits and the exact next task before committing. Verify the remote
+branch SHA after pushing. Preserve concurrent teammate changes; no force push or
+automatic merge into `main`. Do not include wallets, `.env*`, `.tripwire/`, signed
+outboxes or SQLite journals. If delivery fails, record the local commit and report
+the failure instead of claiming it is on GitHub.
+
+## 11. Glossary
 
 See `docs/09-glossary.md` (Solana, ZK Compression, and tax terms). Key: **NormalizedTx**, **Story**, **TaxEvent**, **Adapter**,
 **Photon**, **validity proof**, **state tree**, **balance-diff**.

@@ -40,6 +40,8 @@ import { z } from 'zod';
 import { blockHeaderSchema, blockHashSchema, finalizedCheckpointSchema, FinalityConflictError } from '../finality.js';
 import { releaseDecision, releaseMinimumTier, signReleaseReview, type ReleaseReview } from '../review.js';
 import demo from './contracts.artifact.js';
+import { assertProtectionPolicy } from './protectionPolicy.js';
+import { RpcBehindError } from '../auditFailure.js';
 
 export const ROOT = resolve(import.meta.dirname, '../../..');
 export const EXPLORER = 'https://sepolia.etherscan.io';
@@ -203,7 +205,7 @@ export async function deploy(cfg: TestnetConfig, c: Clients, log: (s: string) =>
     c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'configureRoute', args: [ROUTE_ID, CAP, WINDOW_SECONDS] })
   );
   await run('guardian.setProtected(vault)', () =>
-    c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'setProtected', args: [vault.address, true] })
+    c.wallet.writeContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'setProtected', args: [vault.address, ROUTE_ID, true] })
   );
   await run(`token.mint(vault, ${VAULT_FUNDING / USDC})`, () =>
     c.wallet.writeContract({ address: token.address, abi: demo.DemoUSDC.abi, functionName: 'mint', args: [vault.address, VAULT_FUNDING] })
@@ -240,21 +242,30 @@ export function readDeployment(cfg: TestnetConfig): Deployment {
 // --- the demo -------------------------------------------------------------------
 
 /** eth_getLogs with a block cursor: the testnet counterpart of MemoryFeed. */
+export interface EventFeedClient {
+  chainId: number;
+  pub: {
+    getBlock(args: { blockTag: 'finalized' } | { blockNumber: bigint }): Promise<unknown>;
+    getBlockNumber(args: { cacheTime: number }): Promise<bigint>;
+    getContractEvents(args: { address: Hex; abi: Abi; eventName: string; fromBlock: bigint; toBlock: bigint; strict?: boolean }): Promise<unknown>;
+  };
+}
 export class ContractEventFeed<E> implements LogFeed<E> {
   private cursor: bigint;
   private times = new Map<bigint, number>();
   private anchor: { number: bigint; hash: Hex } | null = null;
 
   constructor(
-    private c: Pick<Clients, 'pub' | 'chainId'>,
+    private c: EventFeedClient,
     private address: Hex,
     private abi: Abi,
     private eventName: string,
     private from: bigint,
     private map: (args: Record<string, unknown>, timestamp: number, origin?: EventOrigin) => E | null,
-    private opts: { finality?: 'finalized' } = {}
+    private opts: { finality?: 'finalized'; until?: bigint } = {}
   ) {
     this.cursor = from;
+    if (opts.until !== undefined && (!opts.finality || opts.until < from)) throw new Error('Bounded feeds require a valid finalized range.');
   }
 
   checkpoint(): string {
@@ -285,18 +296,19 @@ export class ContractEventFeed<E> implements LogFeed<E> {
     const head = await this.c.pub.getBlockNumber({ cacheTime: 0 });
     const latest = head < this.cursor + 1999n ? head : this.cursor + 1999n;
     if (latest < this.cursor) return [];
-    const logs = await this.c.pub.getContractEvents({
+    const rawLogs = await this.c.pub.getContractEvents({
       address: this.address,
       abi: this.abi,
       eventName: this.eventName,
       fromBlock: this.cursor,
       toBlock: latest,
     });
+    const logs = z.array(z.object({ blockNumber: z.bigint().nullable().optional(), args: z.record(z.string(), z.unknown()) })).parse(rawLogs);
     const out: E[] = [];
     for (const l of logs) {
       const bn = l.blockNumber ?? latest;
-      if (!this.times.has(bn)) this.times.set(bn, Number((await this.c.pub.getBlock({ blockNumber: bn })).timestamp));
-      const mapped = this.map((l as unknown as { args: Record<string, unknown> }).args, this.times.get(bn) ?? 0);
+      if (!this.times.has(bn)) this.times.set(bn, Number(z.object({ timestamp: z.bigint().nonnegative().max(BigInt(Number.MAX_SAFE_INTEGER)) }).parse(await this.c.pub.getBlock({ blockNumber: bn })).timestamp));
+      const mapped = this.map(l.args, this.times.get(bn) ?? 0);
       if (mapped !== null) out.push(mapped);
     }
     // Commit only after every RPC lookup and decode has succeeded. Otherwise
@@ -314,7 +326,7 @@ export class ContractEventFeed<E> implements LogFeed<E> {
 
   private async checkAnchor(finalizedNumber: bigint): Promise<void> {
     if (!this.anchor) return;
-    if (finalizedNumber < this.anchor.number) throw new Error('Finalized RPC is behind the committed checkpoint; retry another healthy endpoint.');
+    if (finalizedNumber < this.anchor.number) throw new RpcBehindError('Finalized RPC is behind the committed checkpoint; retry another healthy endpoint.');
     const block = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: this.anchor.number }));
     if (block.number !== this.anchor.number) throw new Error('RPC returned the wrong checkpoint block.');
     if (block.hash !== this.anchor.hash) throw new FinalityConflictError('A committed finalized block changed; operator reconciliation is required.');
@@ -323,10 +335,11 @@ export class ContractEventFeed<E> implements LogFeed<E> {
   private async pollFinalized(): Promise<E[]> {
     const head = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: 'finalized' }));
     await this.checkAnchor(head.number);
-    if (head.number < this.cursor) return [];
+    const ceiling = this.opts.until !== undefined && this.opts.until < head.number ? this.opts.until : head.number;
+    if (ceiling < this.cursor) return [];
     // Hash-link every header so a load-balanced RPC cannot mix log blocks
     // from one fork with an endpoint from another. Bound this work to 64 blocks.
-    const end = head.number < this.cursor + 63n ? head.number : this.cursor + 63n;
+    const end = ceiling < this.cursor + 63n ? ceiling : this.cursor + 63n;
     const endpoint = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: end }));
     if (endpoint.number !== end || (end === head.number && endpoint.hash !== head.hash)) throw new Error('RPC finalized endpoint is inconsistent.');
     const headers = new Map<bigint, z.infer<typeof blockHeaderSchema>>();
@@ -373,7 +386,7 @@ export class ContractEventFeed<E> implements LogFeed<E> {
       out.push({ ...mapped, origin });
     }
     const final = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: 'finalized' }));
-    if (final.number < end) throw new Error('Finalized RPC moved behind the queried range.');
+    if (final.number < end) throw new RpcBehindError('Finalized RPC moved behind the queried range.');
     await this.checkAnchor(final.number);
     const checked = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: end }));
     if (checked.number !== end || checked.hash !== endpoint.hash) throw new Error('Canonical endpoint changed while fetching logs.');
@@ -439,13 +452,21 @@ export async function runTestnetDemo(
   // Old deployed vaults lack the execution gate. Fail before sending reset or payout transactions.
   try {
     await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'MAX_REVIEW_TTL' });
+    await assertProtectionPolicy({
+      guardianVersion: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'GUARDIAN_POLICY_VERSION' }),
+      releaseVersion: () => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'RELEASE_POLICY_VERSION' }),
+      reviewFormat: () => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'REVIEW_FORMAT_VERSION' }),
+      routePermission: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'isProtected', args: [vault.address, ROUTE_ID] }),
+    });
   } catch {
-    throw new Error('This deployment has no release-review gate (or its RPC is unavailable). Deploy the current demo contracts before running it.');
+    throw new Error('This deployment has no release-review gate or current protection policy (or its RPC is unavailable). Deploy the current demo contracts before running it.');
   }
 
-  // Every run starts from a clean route. A tier set by an earlier run lasts
-  // 24 hours, and the hour's outflow total carries over; the owner's resume
-  // and a fresh configureRoute clear both.
+  // Configuration/resume cannot erase rolling spend. Refuse a repeat demo
+  // before reset transactions; wait for prior usage to age out naturally.
+  const usage = z.bigint().nonnegative().parse(await c.pub.readContract({ address: guardian.address,
+    abi: guardianArtifact.abi, functionName: 'rollingUsage', args: [ROUTE_ID] }));
+  if (usage > 0n) throw new Error('This demo route has recent outflows. Wait for its rolling budget to age out before rerunning the demo.');
   for (const [label, functionName, args] of [
     ['guardian.resume', 'resume', [ROUTE_ID]],
     ['guardian.configureRoute', 'configureRoute', [ROUTE_ID, CAP, WINDOW_SECONDS]],
