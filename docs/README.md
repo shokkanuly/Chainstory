@@ -103,6 +103,9 @@ and process exits; H2b1 now classifies running failures and stops on journal fau
 H2b2 now adds a foreground supervisor, actual subprocess recovery drills and local
 incident records; installation and acceptance in the team's live environment remain
 pending. See the [supervision runbook](plans/tripwire-operations.md#bounded-observer-supervision-and-local-incidents-adr-035).
+H4a adds the [mandatory/behavioral matrix](plans/tripwire-decision-matrix.md) and
+a pure read-only signal model. Current payment enforcement remains unchanged;
+report/UI integration and reviewed shadow-only execution remain pending.
 
 The [operations viewer](plans/tripwire-operations.md) at `/tripwire/operations`
 now displays public funding/customer observer snapshots, reasons and receipt

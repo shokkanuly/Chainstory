@@ -6,7 +6,43 @@
 Текущий коммит файла определяется через `git log -1 -- docs/plans/tripwire-progress.md`;
 не нужно вставлять в коммит его собственный будущий hash.
 
-## Завершённый шаг: H2b2 — управление процессом и локальные события
+## Завершённый шаг: H4a — decision matrix и read-only behavioral model
+
+Исходная точка: `ee7e926`, отправлена и проверена на GitHub. Добавлены
+[матрица/runbook](tripwire-decision-matrix.md) и ADR-036: обязательные source/mint/
+customer/recipient/amount/approval/pause/delay/recovery/screening gates, их
+missing/malformed/outage/expiry outcomes, роли владельцев и существующие
+негативные fixtures. Size/velocity/contract heuristics описаны отдельно от
+обязательного backing и screening; новая configurable execution policy не введена.
+
+`src/domain/behavioralShadow.ts` задаёт строгую version-1 display-only схему;
+`src/tripwire/behavioralShadow.ts` проецирует только три уже рассчитанных сигнала.
+Нет второго scorer, I/O, чтения часов, подписи, guardian tier или вызова release
+decision. Обязательные сигналы не копируются. Scope проверяется по исходным
+route/transfer; caller передаёт original capture time, check time и synthetic
+marker. Эти поля не доказывают достоверность или полноту исходного assessment.
+
+Missing/invalid/duplicate сигналы остаются unavailable с `score: null`.
+Stale/future capture подавляет все scores; повторная проверка не освежает время.
+Фиксированы `enforcement: false`, `authorization: none`,
+`executionPolicy: legacy-enforced`; ALLOW/signature/aggregate verdict и неизвестные
+поля отвергаются. Standalone synthetic fixture не является operations report.
+
+Проверки: **1 460 тестов / 70 файлов**, **39 новых**. Build/typechecks и lint
+прошли. Fixtures проверяют scope/clock/expiry boundaries, недоступные и malformed
+сигналы, запрещённые execution/mandatory поля, отсутствие raw reasons и мутации.
+Differential cases сохраняют исходные HOLD/REJECT при сбоях source/backing/
+screening/baseline/price. Контракты, scorer, Watcher, attestor, operator, review
+format/domain, reports и journal не изменены. Нет public RPC, ключей, deployment,
+payment или внешнего аудита.
+
+**H4a завершён в repo; H4 целиком открыт.** Модель ещё не подключена к экспортам
+и UI. Keyless observer пока не рассчитывает behavioral assessment: следующий
+H4b должен честно показывать availability, без выдуманной baseline или scores.
+Shadow-only execution не включён; H4c требует отдельного согласованного policy
+design, обязательного screening provenance/freshness и совместимого execution.
+
+## История: H2b2 — управление процессом и локальные события
 
 Исходная точка: `3c0fac2`, отправлена и проверена на GitHub. Добавлены
 `tripwire:cctp:supervise`, строгая public-path конфигурация и repo example.
@@ -123,26 +159,29 @@ startup recheck упал после открытия, lease освобождае
 прошли. Среда: Node 24.19.0, npm 11.17.0. Все новые chain данные synthetic;
 нет public deployment/payment, чтения ключей или внешнего аудита.
 
-## Следующий независимый инженерный шаг: H4a — decision matrix и shadow contract
+## Следующий независимый инженерный шаг: H4b — advisory report и read-only viewer
 
 H1 требует ручного picker smoke; operational H2 и live H3 зависят от назначенного
 оператора/среды/реальных deployment и receipt evidence. Пока эти gates открыты,
-следующий автономный repo шаг из handoff — первая часть H4, без ослабления execution.
+следующий автономный repo шаг — H4b, без funding или ослабления execution.
 
-1. Прочитать product/payment policy/operator/hardening, scorer/watch/review и
-   contract conditions; описать обязательные source/mint/customer/recipient/amount/
-   approval/pause/delay/recovery/screening проверки и отдельно behavioral heuristics.
-   Для каждого input записать malformed/missing/outage/expiry outcome и trust owner.
-2. Подготовить ADR/decision matrix и typed read-only shadow projection с fixtures:
-   display advisory не становится ALLOW, не обходит current policy и не меняет
-   format/domain/contracts или подписываемое review. Не объявлять shadow-only режим
-   существующим, если operator/scorer ещё enforce старую политику.
-3. Обновить совместимость и следующий implementation gate. Возможное изменение
-   execution policy требует отдельного согласованного contract/review/operator
-   шага и негативных tests; сначала concrete reviewable matrix, не автоматическое
-   снятие HOLD из-за отсутствующих сигналов.
-4. Done: воспроизводимая матрица и безопасная read-only модель; docs/checkpoint,
-   meaningful checks, commit/normal push и remote SHA verification.
+1. Прочитать matrix/ADR-036, public report schema/adapter/export и operations
+   viewer. Спроектировать optional scoped advisory data, сохранив чтение старых
+   reports. Keyless observer сейчас не имеет behavioral assessment: отсутствие
+   явно показать как unavailable, не подменять baseline/price/history нулями.
+2. Подключить существующую H4a projection там, где действительно есть original
+   assessment и capture time. Не использовать transfer inclusion time вместо
+   capture time, не освежать старые scores при export/reload. Refusal, outage,
+   смена scope и новый unavailable report должны очищать старые advisory данные.
+3. Добавить read-only viewer с понятным advisory-only статусом и original age/
+   unavailable reasons. Не превращать scores в permission, вероятность ущерба
+   или утверждение о безопасности. Mandatory gate failures остаются отдельными;
+   current scorer/review/attestor/operator/contract enforcement не менять.
+4. Acceptance: fixtures старого/нового report, malformed/version/scope refusal,
+   stale/future/outage replacement и отсутствие execution influence; проверки
+   public export/redaction и UI. Обновить docs/checkpoint, выполнить meaningful
+   checks, commit/normal push и сверку remote SHA. H4c policy design оставить
+   отдельным шагом до любых изменений execution.
 
 ## Остальные gates
 
@@ -153,7 +192,7 @@ H1 требует ручного picker smoke; operational H2 и live H3 зав�
 | H2b1 | Реализован: runtime failure classification и защита journal failures от retry |
 | H2b2 | Repo supervisor/crash drills/local incidents реализованы; host/service/process-tree/live acceptance остаются открытыми |
 | H3 | Открыт: назначенный человек с тестовыми аккаунтами, финансирование, реальные finalized deployment/burn/mint/payout/return receipts |
-| H4 | Следующий автономный repo шаг H4a выше: ADR/decision matrix и read-only behavioral shadow contract; execution separation ещё открыта |
+| H4 | H4a matrix/model реализованы локально; следующий H4b — optional advisory report/viewer; H4c согласованный policy design и execution separation остаются открытыми |
 | H5 | Открыт: source bypass integration и независимый аудит конкретного коммита |
 | H6 | Открыт: discovery owner, интервью и реальный design-partner commitment |
 

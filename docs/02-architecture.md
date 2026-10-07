@@ -230,3 +230,17 @@ directory; no raw stderr, error, path, URL, payment row or secret is copied.
 Capture time and process liveness remain separate. This extends the ADR-015 local
 operator boundary, not browser/proxy storage. No daemon, dependency, manifest,
 contract, report or existing operator SQLite schema changes.
+
+ADR-036 adds a pure read-only behavioral projection under `src/tripwire/`,
+depending on schema/types in `src/domain/behavioralShadow.ts`. It copies only
+existing size/velocity/contract signal scores from a supplied assessment, with
+explicit caller capture/check clocks and expected route/transfer scope. It does
+not rescore, reprice, read data, sign, persist or choose a release/guardian tier.
+Closed versioned output has no execution authority and explicitly records that
+legacy enforcement is still active. Proof/screening never enter its behavioral
+vocabulary; unavailable/stale/future/invalid inputs do not become zero scores.
+The new [decision matrix](plans/tripwire-decision-matrix.md) records mandatory
+current gates and owners separately from future behavioral separation. The
+model is not yet attached to public observer reports or the viewer; existing
+operator/scorer/contracts/report/storage formats and browser boundaries stay
+unchanged. H4b display integration and H4c reviewed enforcement changes are separate.

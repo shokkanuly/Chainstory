@@ -22,3 +22,11 @@ validation checks shape/internal consistency, not consensus or signatures.
 to the resumed discovery example. `operations-worker-outage-synthetic.json`
 fabricates a temporary outage with a planned retry and no current payment rows.
 These are display examples, not a running worker, real outage or public receipt.
+
+`behavioral-shadow-synthetic.json` is a standalone ADR-036 read-only model
+example with hand-written synthetic scores. It is not an operations observer
+report and cannot be imported as payment/source/review evidence. The mandatory
+`synthetic: true`, `authorization: none`, `enforcement: false` and
+`executionPolicy: legacy-enforced` markers distinguish illustrative signal
+display from enabling shadow-only execution. No measured model accuracy,
+probability of loss, screening result or production baseline is represented.

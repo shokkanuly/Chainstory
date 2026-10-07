@@ -33,6 +33,12 @@ for a non-deterministic numeric verdict. The shadow-policy separation above is
 target behavior, not a switch shipped by the scorer safety fix. No configuration
 may silently turn a missing mandatory source/funding check into ALLOW.
 
+H4a now records the [mandatory/behavioral decision matrix](tripwire-decision-matrix.md)
+and adds a pure versioned read-only three-signal projection (ADR-036). It does not
+relax existing HOLD/REJECT, enable shadow-only execution, add a customer-consent
+field or integrate observer exports/UI. H4b display integration and H4c reviewed
+scorer/review/operator/contract separation remain distinct steps.
+
 `clear` describes only the configured checks. Optional contract facts may be
 absent for an EOA or an unsupported explorer; that is not evidence of a verified
 or safe contract. The current screening heuristic's positive signal is also

@@ -30,6 +30,23 @@ a chain clock, authenticated origin, credit amount or freshness reset.
 This is the contract between adapters and everything else. It lives in code at `src/domain/` (zod schemas + inferred types).
 If you change it, update this file in the same change and grep for every consumer (duplicated types drift silently).
 
+ADR-036 adds a separate `BehavioralShadow` vocabulary/schema for read-only scorer
+signal display, outside `OperationsSnapshot`, `RiskAssessment` and signed reviews.
+Fixed markers are version 1, mode `behavioral-shadow`, enforcement false,
+authorization none, executionPolicy `legacy-enforced` and source `existing-scorer`.
+Expected opaque route/transfer identity, synthetic provenance and caller-supplied
+original capture/check Unix seconds bind the projection; timestamps do not
+authenticate a publisher. Exactly three ordered signal slots represent size,
+velocity and optional contract indicators. Reported slots copy a bounded original
+score with a scorer-output reference; unavailable slots have null scores and
+fixed not-reported/invalid/stale/future reasons. A stale/future report cannot
+retain current scores, and refreshing the check clock cannot refresh capture.
+No proof, screening, payment amount, ALLOW, signature, tier, aggregate verdict,
+raw source prose, storage or network operation enters this model. It is a pure
+display projection, not enabled shadow-only enforcement or an operations-report
+extension. See the [decision matrix](plans/tripwire-decision-matrix.md) for exact
+freshness/scope bounds, compatibility and required future integration.
+
 ## Identifiers
 
 - **Chain IDs use CAIP-2:** `eip155:1`, `eip155:42161`, `eip155:8453`, `eip155:10`, `eip155:137`, `solana:mainnet`, `solana:devnet`.

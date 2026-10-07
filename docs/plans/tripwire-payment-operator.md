@@ -30,6 +30,12 @@ behavioral score and does not depend on the guardian allowing business payouts.
 The operator cannot request returns, approve payments, change recipients, change
 customer policy, burn USDC, mint USDC or automatically bridge returned funds back.
 
+ADR-036/H4a documents the [decision matrix](tripwire-decision-matrix.md) and adds
+a separate read-only behavioral projection. That model is not an operator mode
+or input accepted by review/attestor/source verification. Current baseline/price/
+screening HOLD and customer/guardian gates still apply. Behavioral enforcement
+separation requires the later reviewed H4c policy/compatibility step.
+
 ## Manifest v3
 
 The existing verifier and observer accept version 3 with a required `payment`
