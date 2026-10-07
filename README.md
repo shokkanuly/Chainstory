@@ -75,7 +75,10 @@ remaining blocks; see [restart runbook](docs/plans/tripwire-operations.md#persis
 Use `--watch --interval=10 --reports=public-reports` with persistent discovery
 for [sequential background checks](docs/plans/tripwire-operations.md#continuous-keyless-observer-adr-030),
 capped outage retries and atomic public snapshots. This remains a local bounded
-pilot process; public deployment, payments, supervision and audit remain pending.
+pilot process; public deployment, payments and audit remain pending. The
+[foreground supervisor](docs/plans/tripwire-operations.md#bounded-observer-supervision-and-local-incidents-adr-035)
+adds bounded process restarts and local incident records. It is a repo tool,
+not an installed service or a completed live pilot.
 
 The [v1 product specification](docs/plans/tripwire-product.md) targets one workflow:
 CCTP v2 Standard USDC payments from Base to Ethereum. Customer payment policies,

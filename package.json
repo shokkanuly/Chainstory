@@ -20,6 +20,7 @@
     "tripwire:operator:sepolia": "tsx scripts/tripwire/testnet/runOperator.ts",
     "tripwire:cctp:verify": "tsx scripts/tripwire/testnet/verifyCctp.ts",
     "tripwire:cctp:observe": "tsx scripts/tripwire/testnet/observeCctp.ts",
+    "tripwire:cctp:supervise": "node --import tsx scripts/tripwire/testnet/superviseCctp.ts",
     "tripwire:cctp:operator": "tsx scripts/tripwire/testnet/runCctpOperator.ts",
     "tripwire:cctp:plan": "tsx scripts/tripwire/testnet/planCctp.ts",
     "tripwire:cctp:preflight": "tsx scripts/tripwire/testnet/preflightCctp.ts",

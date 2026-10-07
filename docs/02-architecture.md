@@ -215,5 +215,18 @@ escape the source adapter and stop; only recognized transport faults or validate
 behind-head conditions retry. Unknown global/provider evidence stops, while safe
 per-payment HOLD/unavailable results remain. The old testnet failure entrypoint
 re-exports the single implementation. No report, manifest, SQLite, review or
-execution-permission change is introduced; supervision and local incidents remain
-the next separate milestone.
+execution-permission change is introduced; standalone supervision follows below.
+
+ADR-035 adds a foreground Node/tsx supervisor for the fixed keyless observer
+entrypoint. Its strict local config determines observer paths and finite restart
+policy; it never launches a shell or signing entrypoint. Each child owns the
+original observer journal lease; the parent waits for child/stdio closure before
+another launch. A separate SQLite exclusive lease in the dedicated incident
+directory prevents concurrent supervisors there. Only RPC exit 75 and explicitly
+enabled fatal crash signals permit bounded backoff/restart. Local report monitoring
+reuses the existing EVM public-report adapter and pure filename codec. Fixed
+process/report condition events are atomically published to a private local
+directory; no raw stderr, error, path, URL, payment row or secret is copied.
+Capture time and process liveness remain separate. This extends the ADR-015 local
+operator boundary, not browser/proxy storage. No daemon, dependency, manifest,
+contract, report or existing operator SQLite schema changes.

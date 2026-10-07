@@ -551,7 +551,173 @@ example for inspecting UI states. Its hashes/addresses are fabricated and it
 establishes no public receipt or funding. Removing its marker does not authenticate
 a file; all imports retain the unverified-snapshot notice.
 
-## Evidence and limits
+## Bounded observer supervision and local incidents (ADR-035)
+
+H2b2 is a repository foreground tool, tested with actual child processes and
+synthetic chain vectors on local macOS. No service has been installed. It supervises
+the keyless observer only; it cannot sign, deploy, relay or start the payment operator.
+The original manifest, journal and public report formats remain unchanged.
+
+### Configure and run
+
+Use Node with `node:sqlite` and the installed lockfile dependencies. The tested
+environment is Node 24.19.0 / npm 11.17.0. Create a private local configuration
+outside Git, for example `.tripwire/observer-supervisor.json`:
+
+```json
+{
+  "version": 1,
+  "manifest": "pilot/payment-manifest.json",
+  "journal": "pilot/observer.sqlite",
+  "reports": "pilot/public-reports",
+  "incidents": "pilot/observer-incidents",
+  "intervalSeconds": 10,
+  "keepReports": 500,
+  "maxRestarts": 3,
+  "restartOnCrash": false,
+  "backoffSeconds": 10,
+  "maxBackoffSeconds": 300,
+  "stopGraceSeconds": 30,
+  "checkSeconds": 5,
+  "staleSeconds": 300
+}
+```
+
+Paths resolve relative to this config file, not the current terminal directory.
+The checked-in `scripts/tripwire/testnet/supervisor.example.json` uses paths relative
+to its own repo location; edit paths if copying it elsewhere. The example does
+not supply a deployed manifest in a fresh clone. Supply an accepted manifest v3;
+leave its receipt locators intact. For empty-manifest persistent discovery add
+`"discovery": "SOURCE_START:DESTINATION_START"`, replacing both placeholders with
+the original decimal start blocks. Argument bounds come from the observer's
+existing parser; changed starts/scope are still refused by the journal.
+
+```sh
+npm run tripwire:cctp:supervise -- .tripwire/observer-supervisor.json
+```
+
+For an external process manager use the direct entrypoint, preserving its exit:
+
+```sh
+node --import tsx scripts/tripwire/testnet/superviseCctp.ts .tripwire/observer-supervisor.json
+```
+
+The parent launches exactly `process.execPath --import tsx observeCctp.ts` with
+structured arguments, no shell, using the repo's working directory. Child stdout
+is discarded because reports already publish to the configured public directory.
+Only RPC transport URLs and minimal OS/path/temp environment variables are passed
+to the child; wallet variables, `HOME`, `NODE_OPTIONS`, `NODE_PATH` and unrelated
+credentials are excluded. RPC URLs may contain credentials; they are never
+included in incident output. Config accepts no arbitrary command or environment
+block. Dedicated reports/incidents directories must be disjoint from each other
+and the manifest/journal. One trusted local writer owns each real directory;
+concurrent filesystem tampering or symlinked ancestors are outside this pilot's
+filesystem assumption. The parent never reads signing keys or journal rows.
+
+### Restart and stop contract
+
+| Child outcome | Parent behavior |
+| :--- | :--- |
+| 0 | Finish with 0; no restart |
+| 75 | Restart within the configured finite budget |
+| SIGKILL / SIGABRT / SIGSEGV / SIGBUS | Restart only with explicit `restartOnCrash: true` and remaining budget; otherwise 78 |
+| 70 / 74 / 78 or another numeric failure | Stop and preserve that exit; no automatic restart |
+| SIGTERM / SIGINT / other unapproved signal | Stop with 78; no crash-policy restart |
+| Spawn failure | Stop with 70 |
+| Restart budget exhausted | Record `restart-exhausted`, stop with 78 |
+| Parent incident-directory/lease failure | Refuse before launching with 78 |
+| Incident publication failure while child runs | Send SIGTERM, wait for child closure, stop with 74; no restart |
+
+`maxRestarts` is 0–10 additional launches, never reset by an individual child's
+lifetime. Delay is `min(maxBackoffSeconds, backoffSeconds * 2^(restartNumber-1))`;
+both delays are 1–300 seconds with initial ≤ maximum. Defaults permit three
+additional launches at 10/20/40 seconds. Watch-mode RPC polls retain their own
+existing capped backoff; the process restart budget does not limit in-process
+polling. Do not wrap this tool in an unconditional outer restart policy: a fresh
+supervisor invocation starts a fresh budget. Exhaustion and terminal exits need
+manual reconciliation before another invocation.
+
+Send SIGINT/SIGTERM to the supervisor, or stop it with Ctrl+C. It cancels pending
+backoff, forwards SIGTERM to the current direct child, and waits for the child's
+exit **and stdio closure**. Grace is 1–300 seconds, default 30. If exceeded, send
+SIGKILL, record `stop-timeout`, return 78 and require reconciliation; do not
+automatically treat forced shutdown as clean or restart it. A terminal child
+exit during cancellation remains terminal. A clean observer cancellation returns
+0. The separate `incidents/supervisor.lease` is an OS-released SQLite exclusive
+transaction; never delete it or the observer lease to force a second process.
+
+Before a manual restart verify that the old parent and child have exited. Reuse
+the original manifest/journal/start blocks. Inspect fixed process incidents and
+resolve provider/configuration/storage/publication causes. Quarantine remains
+terminal; no tool here clears it. A proof/discovery commit or already published
+report survives a later failure. Regenerate a public snapshot by a fresh current
+audit, never undo a commit or send another transfer to hide a publication failure.
+
+### Local incident records
+
+Each event is an exclusively published `incident-<time>-<uuid>.json`, mode 0600,
+in the dedicated private incident directory (new directory mode 0700), with
+version 1, mode `supervise`, enforcement false, per-invocation `runId` and
+`recordedAt`. The same fixed event is printed as NDJSON. Raw child stderr is
+discarded; only a bounded strict observer diagnostic with a reason matching the
+actual child exit may be retained. Numeric exit controls restart, never message
+contents. Old incident records are preserved. Their total disk use grows; there
+is no deletion/rotation or external alert delivery in this step. Do not choose
+the incident directory in the browser's public-report picker.
+
+Process events distinguish starting, exited, restart-scheduled/exhausted,
+stopping/stop-timeout and spawn-failed. Report events record conditions and
+recovery transitions, not every periodic check. Only validated capture time,
+synthetic marker and fixed condition IDs are exported:
+
+- `report-missing`, `report-access`, `report-invalid`;
+- `report-stale`, `report-future`, `report-unavailable`, `report-retrying`,
+  `report-stopped`, `report-quarantined`;
+- `discovery-backlog`, `discovery-gaps`, `discovery-capacity` (100 retained hints).
+
+No payment rows, addresses, body reasons, URL/path, error stack or raw cause is
+copied. Capacity/storage/publication reasons also appear in actual child exit
+events. Report selection checks only completed top-level names, up to 10,000
+entries, maximum body 2 MB; reject symlink/nonregular bodies, newest timestamp
+ties, invalid newest and deletion-based fallback. Reuse the existing public
+adapter's schemas and pin successful deployment scope across the managed run.
+Capture time comes from the report body; filename/check/incident time cannot
+refresh it. Default stale threshold is 300 seconds (configurable 30–3600);
+more than 120 seconds in the future is separately flagged. No report file is
+modified by this monitoring.
+
+Conditions are advisory. An empty condition list does not certify payments,
+enforcement, complete treasury coverage or process liveness; process events are
+separate. Imported reports remain unauthenticated, with the existing RPC/Circle
+and accepted-runtime trust assumptions. A hanging child causes stale events,
+not automatic killing/restarting based on old snapshots.
+
+### Validation and remaining acceptance
+
+**1,421 tests / 69 files** pass, with 58 new tests. Actual Node/tsx subprocesses
+run the real audit/discovery/store/export path using serialized synthetic RPC
+ports; fixtures are test-only and cannot be selected by the production CLI.
+Checks cover startup outage, SIGKILL before/after publication, same-journal claims/
+cursors, post-commit journal failure, persistent quarantine, before-publication
+and after-publication archive failure, explicit crash policy, finite exponential
+budget, real delay/cancel, graceful SIGTERM/lease reuse, forced timeout,
+spawn/diagnostic redaction, actual CLI terminal exits/incidents and supervisor
+lease exclusion/reuse. Monitor fixtures cover stale/future capture time,
+retry/stopped/quarantine, backlog/capacity/gaps, bounds/nonregular input,
+scope/timestamp/deletion refusal, partial/archive exclusion and recovery dedup.
+Build/typechecks and lint pass. No public RPC/deployment/payment/key read or audit.
+
+The team's host/service acceptance still needs a designated operator: dedicated
+paths/permissions/disk budget, approved crash policy, pinned runtime/checkout,
+outer process-manager behavior and real deployment evidence. Abrupt termination
+of the **parent** (SIGKILL, host crash) cannot forward a signal to its child;
+the host manager must stop/check the entire process tree. A surviving child keeps
+its journal lease, so blindly starting another parent will refuse rather than
+steal the lease. Parent-crash/process-tree management, Windows behavior, power-loss
+durability and external notifications are not verified here. Repository checks
+do not close the full operational/live pilot gate.
+
+## Historical evidence and limits (ADR-032 snapshot)
 
 1,294 tests / 65 files pass. Public archival adds 37 cases covering exact
 retention/clock/tie/batch boundaries, preserved bytes/permissions, private/partial
@@ -602,7 +768,9 @@ Build/typechecks and lint pass.
 Actual keyless funding read at 2026-10-06 12:37:40 UTC still shows four blockers
 (owner/oracle destination gas, source gas and source USDC). No new deployment,
 burn/mint/payout/return, public transaction, key read or external audit occurred.
-Expanded discovery retention, archive space reclamation, supervised process recovery/alerts, full lifecycle/finality/operator timing, aggregate exposure, hosted live data,
+Expanded discovery retention, archive space reclamation, full lifecycle/finality/operator timing, aggregate exposure, hosted live data,
 audited source controls, behavioral policy and design-partner validation remain
 separate milestones. This page is a usable local operations viewer, not a hosted
-payment service or proof of production readiness.
+payment service or proof of production readiness. Repo supervision/local incidents
+were added later in ADR-035 above; live host/service acceptance and external alerts
+remain pending.

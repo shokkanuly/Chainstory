@@ -100,7 +100,9 @@ clean-clone setup, current limits, pending live gates and checkable next steps.
 Read the [current continuation checkpoint](plans/tripwire-progress.md) for the
 latest completed step and exact next gate. H2a adds classified observer startup
 and process exits; H2b1 now classifies running failures and stops on journal faults.
-H2b2 supervision, process crash drills and local incidents remain pending.
+H2b2 now adds a foreground supervisor, actual subprocess recovery drills and local
+incident records; installation and acceptance in the team's live environment remain
+pending. See the [supervision runbook](plans/tripwire-operations.md#bounded-observer-supervision-and-local-incidents-adr-035).
 
 The [operations viewer](plans/tripwire-operations.md) at `/tripwire/operations`
 now displays public funding/customer observer snapshots, reasons and receipt
