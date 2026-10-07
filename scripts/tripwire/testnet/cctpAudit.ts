@@ -14,6 +14,7 @@ import { releaseTuple } from './releaseState.js';
 import { readPaymentState, type PaymentStatus } from './paymentState.js';
 import { assertPaymentRuntime } from './artifactAcceptance.js';
 import { readPaymentLifecycle, type PaymentLifecycle } from './paymentLifecycle.js';
+import { auditBoundary, CctpAuditFailure } from './cctpAuditFailure.js';
 
 export interface CctpAuditReader extends CctpRpc {
   readPaymentEvents?(messageId: Hex, fromBlock: bigint, toBlock: bigint): Promise<unknown>;
@@ -47,13 +48,13 @@ export interface AuditReport {
 
 export async function createCctpAudit(input: unknown, stateFile: string, source: CctpRpc,
   destination: CctpAuditReader, observe = false) {
-  const manifest = parseAuditManifest(input, observe);
+  const manifest = await auditBoundary('configuration', () => parseAuditManifest(input, observe));
   const payment = manifest.version === 3 ? manifest.payment : undefined;
   const policy = manifest.version === 3 ? 'customer-payment' : manifest.version === 2 ? 'authenticated-escrow' : 'legacy-post-mint';
   const routeId = keccak256(stringToHex(route.id));
   const assertChains = async () => {
     if (await source.getChainId() !== route.source.chainId || await destination.getChainId() !== route.destination.chainId) {
-      throw new Error('RPC chain identity does not match the CCTP route.');
+      throw new CctpAuditFailure('deployment', new Error('RPC chain identity does not match the CCTP route.'));
     }
   };
   const validateDeployment = async (block: bigint) => {
@@ -85,20 +86,24 @@ export async function createCctpAudit(input: unknown, stateFile: string, source:
       store?.quarantineSource(reason); throw new FinalityConflictError(reason);
     }
   };
-  await assertChains();
-  const head = blockHeaderSchema.parse(await destination.getBlock({ blockTag: 'finalized' }));
-  await validateDeployment(head.number); await stable(head);
-  const store = new OperatorStore(stateFile, { route: route.id, sourceChainId: route.source.chainId,
+  await auditBoundary('internal', assertChains, true);
+  const head = await auditBoundary('internal', async () => blockHeaderSchema.parse(await destination.getBlock({ blockTag: 'finalized' })), true);
+  await auditBoundary('deployment', () => validateDeployment(head.number), true);
+  await auditBoundary('internal', () => stable(head), true);
+  const store = await auditBoundary('journal', () => new OperatorStore(stateFile, { route: route.id, sourceChainId: route.source.chainId,
     chainId: route.destination.chainId, source: route.source.transmitter, vault: manifest.vault,
     guardian: manifest.guardian, token: route.destination.usdc, sender: manifest.operator,
-    decimals: route.decimals, finalityMode: 'finalized', sourceVerifier: cctpVerifierScope(manifest.vault, policy, payment) });
+    decimals: route.decimals, finalityMode: 'finalized', sourceVerifier: cctpVerifierScope(manifest.vault, policy, payment) }));
   let active: CctpManifest = manifest;
   const adapter = new CctpSourceAdapter(store, manifest.vault, source, destination,
     async (id) => active.requests.find((r) => r.messageId === id)?.proof ?? null, policy, payment);
   const assertHealthy = () => {
-    if (store.loadWatcher()?.quarantine || store.sourceQuarantine()) throw new Error('This operator is quarantined; reconcile it before auditing new proof claims.');
+    if (store.loadWatcher()?.quarantine || store.sourceQuarantine()) throw new CctpAuditFailure('quarantine', new Error('This operator is quarantined; reconcile it before auditing new proof claims.'));
   };
-  try { assertHealthy(); await adapter.assertCanonical(); } catch (error) { store.close(); throw error; }
+  try {
+    await auditBoundary('journal', assertHealthy);
+    await auditBoundary('internal', () => adapter.assertCanonical(), true);
+  } catch (error) { store.close(); throw error; }
   let lock: Promise<unknown> = Promise.resolve();
   const poll = async (updated: unknown): Promise<AuditReport> => {
     const next = parseAuditManifest(updated, observe);
@@ -112,7 +117,7 @@ export async function createCctpAudit(input: unknown, stateFile: string, source:
       throw new Error('Finalized CCTP state is behind previously authenticated settlement.');
     }
     // Recheck configurable roles/grants each poll. All report fields use this block.
-    await validateDeployment(block.number);
+    await auditBoundary('deployment', () => validateDeployment(block.number), true);
     const report: AuditReport = { version: 1, mode: observe ? 'observe' : 'audit', policy, route: route.id,
       scope: { manifestVersion: manifest.version, vault: manifest.vault, guardian: manifest.guardian, operator: manifest.operator },
       finalized: { number: block.number, hash: block.hash, timestamp: block.timestamp },

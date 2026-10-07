@@ -229,6 +229,8 @@ The CLI accepts product runtime/bindings and opens the existing exclusive journa
 lease BEFORE starting its loop. Startup failure, missing contracts, wrong scope,
 quarantine or an already-owned journal exits without entering polling. Startup
 RPC outages require a process restart; automatic retries apply after acceptance.
+ADR-033 below classifies startup exits for a future supervisor; no supervisor is
+installed and untyped running exceptions still need the H2b review.
 The CLI owns the lease and releases it in `finally`, including cancellation,
 terminal observation failure and publication failure. No daemon installation,
 OS supervisor, hosted API, alert delivery or background Codex automation is added.
@@ -394,6 +396,74 @@ recurse into the archive. Inspect an archived public report by manual import;
 never copy old files back to the top level to manufacture a fresh status. Native
 folder selection/refresh end-to-end remains unverified by automation as recorded
 under ADR-031. The discovery journal's 100-hints-per-chain cap is unchanged.
+
+## Observer process exit contract (ADR-033)
+
+H2a extends the existing standalone CLI; it does not install a daemon or change
+manifest/review/journal/public report formats. Stdout remains public observation
+NDJSON (or the existing one-shot file mode). Failed process exit emits a fixed
+version-1 JSON object on stderr, never a raw exception, RPC URL, local path or
+stack trace. It contains `mode: observe`, `enforcement: false`, `phase`
+(`startup`, `running`, `cleanup`), a reason and `restartable`.
+
+| Exit | Diagnostic reason | Operational response |
+| :--- | :--- | :--- |
+| 0 | No failure diagnostic | One-shot completed or signal cancellation completed; not proof of a healthy long-running service |
+| 75 | `rpc-unavailable` | Recognized temporary RPC exception at a marked audit boundary; future supervisor may retry with bounded backoff |
+| 78 | `configuration`, `deployment`, `journal`, `quarantine`, `observation-stopped` | Stop and reconcile; no automatic restart to bypass scope/runtime/capacity/storage/quarantine guards |
+| 74 | `publication` | Local public output or archival failed; inspect storage, keep the same journal, then explicitly retry |
+| 70 | `internal`, `observation-unavailable` | Unclassified failure or unsuccessful one-shot audit; inspect before restart, do not assume RPC outage |
+
+Example terminal diagnostic (fixed structure, not a live incident):
+
+```json
+{"version":1,"mode":"observe","enforcement":false,"phase":"startup","reason":"deployment","restartable":false}
+```
+
+Only recognized viem HTTP transport failures without status, status 408/429/5xx,
+TimeoutError or LimitExceededRpcError make a marked **network** boundary retryable.
+Follow at most twelve error causes, reject cycles, and refuse denied/non-transient
+HTTP statuses even with an inner timeout. No substring/class-name impersonation
+is accepted. Unknown causes fail conservatively. Startup HTTP(S) URL syntax is
+validated before creating clients; HTTP 400/401/403/404 and wrong chain identity
+are not claimed to be temporary outages. Raw causes are retained internally for
+typed control flow/compatibility and must never be logged by added tooling.
+
+Manifest/client configuration, initial deployment acceptance and journal opening
+are classified separately. Missing/wrong runtime refuses before SQLite creation.
+A startup canonical RPC failure after opening state closes the lease; a new
+command can reuse the original journal. Existing persistent quarantine stays
+terminal across restarts. A finalized conflict detected before a journal exists
+is reported as quarantine/reconciliation but cannot persist a marker in a journal
+that was never opened. Runtime acceptance failure inside watch stops the worker;
+it no longer endlessly polls a mismatched deployment. A partial publication/archive
+failure can follow committed proof/index state and a visible report; preserve both.
+
+**Remaining H2b boundary:** the running worker still has its prior catch/backoff
+for untyped audit/discovery exceptions. These have not all been distinguished from
+internal evidence/storage failures. This milestone therefore does not make an
+unconditional watch supervisor safe, does not prove crash recovery in a supervised
+process, and does not add incident monitoring/notifications. Detailed next task is
+in [the current checkpoint](tripwire-progress.md). Do not delete journals, reset
+quarantine, change scope or regenerate intents to obtain a restartable result.
+
+For future supervision, invoke the Node entrypoint directly (with the repository's
+existing tsx dependency) so the child exit code is observable:
+
+```sh
+node --import tsx scripts/tripwire/testnet/observeCctp.ts empty-manifest.json observer.sqlite --discover-resume=SOURCE_START_BLOCK:DESTINATION_START_BLOCK --watch --interval=10 --reports=public-reports --keep-reports=500
+```
+
+Use actual bounds and the accepted empty manifest. This is an invocation example,
+not a supervisor installation; rate limiting, crash policy and local incidents
+remain required. Startup diagnostics contain no observed/capture timestamp and
+must not be interpreted as a fresh operations snapshot.
+
+Evidence: 1,331 tests / 66 files, build/typechecks and lint pass. The 37 new cases
+cover startup input/URL/chain/runtime/RPC/journal/quarantine, bounded typed cause
+classification and redaction, same-journal lease recovery, runtime stop, committed
+publication failure recovery, cancellation and a real CLI subprocess exit 78.
+All chain data is synthetic. No live deployment/payment/key read/audit occurred.
 
 ## File and freshness boundary
 

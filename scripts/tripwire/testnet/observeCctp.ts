@@ -8,6 +8,8 @@ import { pilotManifestSchema } from './cctpManifest.js';
 import { cctpPublicClients } from './cctpPublic.js';
 import { runCctpObserver } from './cctpObserver.js';
 import { archivePublicReports, reportKeepSchema } from './reportArchive.js';
+import { CctpAuditFailure, type AuditFailureReason } from './cctpAuditFailure.js';
+import { FinalityConflictError } from '../finality.js';
 
 export const observeUsage = 'Usage: npm run tripwire:cctp:observe -- manifest.json [state.sqlite] [--watch] [--interval=10] [--report=new-report.json (one-shot) OR --reports=directory (watch)] [--keep-reports=10..1000 (requires --reports; archives older public files)] [--discover=sourceStart:destinationStart OR --discover-resume=sourceStart:destinationStart (empty manifest v3; only resume supports watch)]';
 export function parseObserveArgs(args: string[]) {
@@ -55,30 +57,70 @@ export function saveWatchObservation(directory: string, value: unknown, keepRepo
   if (keepReports !== undefined) archivePublicReports(directory, path, keepReports);
   return path;
 }
-async function main() {
-  if (process.argv.includes('--help')) { console.log(observeUsage); return; }
-  const args = parseObserveArgs(process.argv.slice(2));
-  const emit = (value: unknown) => {
-    if (args.reportPath) saveObservation(args.reportPath, value);
-    else { if (args.reportsDir) saveWatchObservation(args.reportsDir, value, args.keepReports); json(value); }
-  };
-  const readManifest = () => pilotManifestSchema.parse(JSON.parse(readFileSync(args.manifestPath, 'utf8')));
-  const manifest = readManifest();
-  if (args.discovery && (manifest.version !== 3 || manifest.requests.length)) throw new Error('Discovery requires an empty customer-payment manifest.');
-  const abort = new AbortController(); const stop = () => abort.abort();
-  process.once('SIGINT', stop); process.once('SIGTERM', stop);
-  let audit: Awaited<ReturnType<typeof createCctpAudit>> | undefined;
+type ExitReason = AuditFailureReason | 'publication' | 'observation-stopped' | 'observation-unavailable';
+type ExitPhase = 'startup' | 'running' | 'cleanup';
+type ObserverClients = { source: Parameters<typeof createCctpAudit>[2]; destination: Parameters<typeof createCctpAudit>[3];
+  feeds: Parameters<typeof runCctpObserver>[0]['feeds'] };
+export interface ObserverExit {
+  exitCode: 0 | 70 | 74 | 75 | 78;
+  diagnostic?: { version: 1; mode: 'observe'; enforcement: false; phase: ExitPhase; reason: ExitReason; restartable: boolean };
+}
+function failedExit(reason: ExitReason, phase: ExitPhase): ObserverExit {
+  const exitCode = reason === 'rpc-unavailable' ? 75 : reason === 'publication' ? 74
+    : reason === 'internal' || reason === 'observation-unavailable' ? 70 : 78;
+  return { exitCode, diagnostic: { version: 1, mode: 'observe', enforcement: false, phase, reason, restartable: exitCode === 75 } };
+}
+export async function runObserveCommand(argv: string[], signal: AbortSignal, ports: {
+  clients?: (manifest: z.infer<typeof pilotManifestSchema>, signal: AbortSignal) => ObserverClients;
+  output?: (value: unknown) => void;
+} = {}): Promise<ObserverExit> {
+  if (signal.aborted) return { exitCode: 0 };
+  let args: ReturnType<typeof parseObserveArgs>, manifest: ReturnType<typeof pilotManifestSchema.parse>;
+  let readManifest: () => typeof manifest;
   try {
-    const clients = cctpPublicClients(manifest, abort.signal);
+    args = parseObserveArgs(argv);
+    readManifest = () => pilotManifestSchema.parse(JSON.parse(readFileSync(args.manifestPath, 'utf8')));
+    manifest = readManifest();
+    if (args.discovery && (manifest.version !== 3 || manifest.requests.length)) return failedExit('configuration', 'startup');
+  } catch { return failedExit('configuration', 'startup'); }
+  let failure: ObserverExit | undefined;
+  const emit = (value: unknown) => {
+    try {
+      if (args.reportPath) saveObservation(args.reportPath, value);
+      else { if (args.reportsDir) saveWatchObservation(args.reportsDir, value, args.keepReports); (ports.output ?? json)(value); }
+    } catch (error) { failure = failedExit('publication', 'running'); throw error; }
+  };
+  let audit: Awaited<ReturnType<typeof createCctpAudit>> | undefined;
+  let phase: ExitPhase = 'startup';
+  try {
+    let clients: ObserverClients;
+    try { clients = (ports.clients ?? cctpPublicClients)(manifest, signal); }
+    catch { return failedExit('configuration', phase); }
     audit = await createCctpAudit(manifest, args.statePath ?? resolve(`.tripwire/cctp-${manifest.vault}.sqlite`),
       clients.source, clients.destination, true);
+    phase = 'running';
     const outcome = await runCctpObserver({ audit, feeds: clients.feeds, initialManifest: manifest, readManifest,
-      options: args, signal: abort.signal, emit });
-    if (outcome === 'failed') process.exitCode = 1;
+      options: args, signal, emit });
+    if (outcome === 'failed') failure = failedExit(args.watch ? 'observation-stopped' : 'observation-unavailable', phase);
+  } catch (error) {
+    // Signal cancellation is clean, except storage/publication failures still need reconciliation.
+    failure ??= signal.aborted ? undefined : failedExit(error instanceof CctpAuditFailure ? error.reason
+      : error instanceof FinalityConflictError ? 'quarantine' : 'internal', phase);
   } finally {
-    audit?.close(); process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop);
+    try { audit?.close(); } catch { failure = failedExit('journal', 'cleanup'); }
   }
+  return failure ?? { exitCode: 0 };
+}
+async function main() {
+  if (process.argv.slice(2).includes('--help')) { console.log(observeUsage); return; }
+  const abort = new AbortController(), stop = () => abort.abort();
+  process.once('SIGINT', stop); process.once('SIGTERM', stop);
+  try {
+    const result = await runObserveCommand(process.argv.slice(2), abort.signal);
+    if (result.diagnostic) console.error(JSON.stringify(result.diagnostic));
+    process.exitCode = result.exitCode;
+  } finally { process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); }
 }
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
-  main().catch(() => { console.error('CCTP observer failed. Check arguments, manifest, accepted deployment, RPC, journal and public report storage/archive. No transaction was sent.'); process.exitCode = 1; });
+  main().catch(() => { console.error(JSON.stringify(failedExit('internal', 'cleanup').diagnostic)); process.exitCode = 70; });
 }

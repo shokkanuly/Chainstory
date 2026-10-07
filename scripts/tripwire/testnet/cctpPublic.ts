@@ -1,6 +1,7 @@
 // Keyless RPC wiring. No wallet client, configuration key loader or transaction sender.
 import { createPublicClient, http, TransactionReceiptNotFoundError, type Abi, type AbiEvent } from 'viem';
 import { baseSepolia, sepolia } from 'viem/chains';
+import { z } from 'zod';
 import guardian from '../../../src/tripwire/guardian.artifact.js';
 import { cctpEscrowAbi } from '../../../src/chains/evm/registry/cctp.js';
 import type { CctpRpc } from '../cctp.js';
@@ -18,11 +19,15 @@ export const cctpRpc = (client: CctpRpc): CctpRpc => ({
   },
 });
 export function cctpPublicClients(manifest: CctpManifest, signal: AbortSignal) {
+  const rpcUrl = z.string().url().refine((url) => ['http:', 'https:'].includes(new URL(url).protocol));
+  // Reject malformed local transport configuration before RPC/startup retry classification.
+  const sourceUrl = rpcUrl.parse(process.env.BASE_SEPOLIA_RPC_URL ?? baseSepolia.rpcUrls.default.http[0]);
+  const destinationUrl = rpcUrl.parse(process.env.SEPOLIA_RPC_URL ?? sepolia.rpcUrls.default.http[0]);
   const transport = (url: string) => http(url, { retryCount: 3, timeout: 30_000, fetchOptions: { signal } });
   const source = createPublicClient({ chain: baseSepolia,
-    transport: transport(process.env.BASE_SEPOLIA_RPC_URL ?? baseSepolia.rpcUrls.default.http[0]) });
+    transport: transport(sourceUrl) });
   const destination = createPublicClient({ chain: sepolia,
-    transport: transport(process.env.SEPOLIA_RPC_URL ?? sepolia.rpcUrls.default.http[0]) });
+    transport: transport(destinationUrl) });
   const reader: CctpAuditReader = { ...cctpRpc(destination),
     readPaymentEvents: async (messageId, fromBlock, toBlock) => {
       if (fromBlock > toBlock || toBlock - fromBlock >= PAYMENT_HISTORY_BLOCK_LIMIT) throw new Error('Payment history scan is out of bounds.');

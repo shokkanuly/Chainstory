@@ -97,6 +97,9 @@ Fresh public deployment, real receipts, behavioral shadow separation and audit
 remain pending.
 For the next developer, start with the [handoff and implementation queue](plans/tripwire-handoff.md):
 clean-clone setup, current limits, pending live gates and checkable next steps.
+Read the [current continuation checkpoint](plans/tripwire-progress.md) for the
+latest completed step and exact next gate. H2a adds classified observer startup
+and process exits; H2b running failure taxonomy, supervision and incidents are pending.
 
 The [operations viewer](plans/tripwire-operations.md) at `/tripwire/operations`
 now displays public funding/customer observer snapshots, reasons and receipt

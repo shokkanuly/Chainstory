@@ -4,6 +4,7 @@ import type { createCctpAudit, AuditReport } from './cctpAudit.js';
 import { pilotManifestSchema } from './cctpManifest.js';
 import { discoverCctpRequests, DiscoveryStoppedError, type DiscoveryCoverage } from './cctpDiscovery.js';
 import { FinalityConflictError } from '../finality.js';
+import { CctpAuditFailure } from './cctpAuditFailure.js';
 
 export interface WorkerStatus {
   version: 1; state: 'scheduled' | 'retrying' | 'stopped'; attempt: number;
@@ -67,9 +68,9 @@ export async function runCctpObserver(input: {
       if (input.signal.aborted) return 'stopped';
       if (error instanceof FinalityConflictError) input.audit.store.quarantineSource('Finalized observation history changed. Reconcile the operator journal.');
       const quarantine = quarantined(); failures++;
-      stop = quarantine || error instanceof DiscoveryStoppedError;
+      stop = quarantine || error instanceof DiscoveryStoppedError || (error instanceof CctpAuditFailure && error.reason !== 'rpc-unavailable');
       report = { version: 1, mode: 'observe', enforcement: false, status: quarantine ? 'quarantined' : 'unavailable', observedAt: now().toISOString(),
-        reason: stop ? `Observation stopped. ${error instanceof DiscoveryStoppedError ? error.message : 'Finalized history is quarantined; reconcile the operator journal.'} No authorization was produced.`
+        reason: stop ? `Observation stopped. ${quarantine ? 'Finalized history is quarantined; reconcile the operator journal.' : error instanceof CctpAuditFailure ? 'Deployment acceptance failed; reconcile configuration and runtime.' : error instanceof DiscoveryStoppedError ? error.message : 'Reconcile observation state.'} No authorization was produced.`
           : 'Observation failed. Check RPC finality, deployment and receipts; no authorization was produced.' };
     }
     if (input.signal.aborted) return 'stopped';

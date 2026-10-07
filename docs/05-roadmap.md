@@ -6,7 +6,7 @@ Update the status table in `docs/README.md` and the checkboxes here as work land
 
 ## Hackathon build (September 2026) — status
 
-### Active Tripwire work — 2026-10-06
+### Active Tripwire work — 2026-10-07
 
 The current project focus is Tripwire. [Hardening plan](plans/tripwire-hardening.md)
 supersedes the hackathon scope for new work; the legacy wallet/Solana phases below
@@ -37,6 +37,7 @@ remain historical context.
 | Continuous keyless customer observer | Implemented locally; [runbook](plans/tripwire-operations.md#continuous-keyless-observer-adr-030), ADR-030; sequential durable discovery, bounded catch-up, outage backoff, terminal stops, abort/restart and atomic public snapshots; 1,229 tests, build/typechecks and lint pass; public deployment and supervision/alerts pending; local folder refresh added below |
 | Local browser public-folder refresh | Implemented locally; [runbook](plans/tripwire-operations.md#automatic-local-report-folder-updates-adr-031), ADR-031; sequential read-only updates, no older-file fallback, scope/clock/bounds/cancellation guards; 1,257 tests, build/typechecks and lint pass; native folder selection/refresh end-to-end unverified because its dialog is inaccessible to automation; hosted service pending |
 | Bounded public observer report archival | Implemented locally; [runbook](plans/tripwire-operations.md#bounded-archival-of-public-reports-adr-032), ADR-032; optional keep count, reversible flushed archival, 100-file batches, same-inode crash recovery and unchanged journal; 1,294 tests, build/typechecks and lint pass; disk usage, discovery retention, supervision and public deployment remain separate |
+| Observer startup/exit classification (H2a) | Implemented locally; [exit contract](plans/tripwire-operations.md#observer-process-exit-contract-adr-033), ADR-033; fixed redacted diagnostics, typed startup RPC retry eligibility, terminal deployment/journal/quarantine and publication failures, cleanup/restart checks; 1,331 tests / 66 files, build/typechecks and lint pass; remaining runtime classification, supervisor and incidents are H2b in [current checkpoint](plans/tripwire-progress.md) |
 
 Tripwire and Check before you sign, planned in [plans/tripwire-hackathon.md](plans/tripwire-hackathon.md) (each stage's result is recorded there).
 
