@@ -4,7 +4,7 @@ import type { createCctpAudit, AuditReport } from './cctpAudit.js';
 import { pilotManifestSchema } from './cctpManifest.js';
 import { discoverCctpRequests, DiscoveryStoppedError, type DiscoveryCoverage } from './cctpDiscovery.js';
 import { FinalityConflictError } from '../finality.js';
-import { CctpAuditFailure } from './cctpAuditFailure.js';
+import { auditBoundary, CctpAuditFailure, journalOperation, retryableAuditFailure, type AuditFailureReason } from '../auditFailure.js';
 
 export interface WorkerStatus {
   version: 1; state: 'scheduled' | 'retrying' | 'stopped'; attempt: number;
@@ -19,6 +19,16 @@ const optionsSchema = z.object({ watch: z.boolean(), intervalSeconds: z.number()
   discoveryPersistent: z.boolean(),
 }).refine((o) => (!o.discoveryPersistent || Boolean(o.discovery)) && (!o.watch || !o.discovery || o.discoveryPersistent));
 export const retrySeconds = (interval: number, failures: number) => Math.min(300, interval * 2 ** Math.min(Math.max(0, failures - 1), 6));
+const failureText: Record<AuditFailureReason, string> = {
+  configuration: 'Observation configuration is unavailable or invalid.', deployment: 'Deployment acceptance failed; reconcile configuration and runtime.',
+  journal: 'Observation journal could not be read or updated; preserve it and reconcile storage.',
+  quarantine: 'Finalized history is quarantined; reconcile the operator journal.', scope: 'Observation scope changed; preserve the original manifest and journal.',
+  capacity: 'Discovery capacity reached; reconcile retained hints without resetting cursors.',
+  evidence: 'Global observation evidence is malformed or inconsistent; reconcile the provider and inputs.',
+  internal: 'An unclassified observation failure requires investigation.',
+  'rpc-unavailable': 'A recognized temporary RPC failure prevented this observation.',
+  'rpc-behind': 'Finalized RPC is behind previously observed history; saved cursors were preserved.',
+};
 export async function waitForObservation(seconds: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return;
   await new Promise<void>((done) => {
@@ -32,6 +42,7 @@ export async function waitForObservation(seconds: number, signal: AbortSignal): 
 export async function runCctpObserver(input: {
   audit: Audit; feeds: Feeds; initialManifest: unknown; readManifest(): unknown;
   options: z.input<typeof optionsSchema>; signal: AbortSignal; emit(report: ObserverReport): void | Promise<void>;
+  onFailure?(reason: AuditFailureReason): void;
   wait?: typeof waitForObservation; now?: () => Date;
 }): Promise<'complete' | 'stopped' | 'failed'> {
   const options = optionsSchema.parse(input.options), initial = pilotManifestSchema.parse(input.initialManifest);
@@ -39,21 +50,22 @@ export async function runCctpObserver(input: {
   const scope = (m: typeof initial) => JSON.stringify({ ...m, requests: [] }, (_k, v: unknown) => typeof v === 'bigint' ? v.toString() : v);
   const expectedScope = scope(initial), wait = input.wait ?? waitForObservation, now = input.now ?? (() => new Date());
   let attempt = 0, failures = 0;
-  const journal = <T>(read: () => T): T => { try { return read(); } catch { throw new DiscoveryStoppedError('Observation journal could not be read or updated.'); } };
+  const journal = journalOperation;
   const quarantined = () => journal(() => Boolean(input.audit.store.sourceQuarantine() || input.audit.store.loadWatcher()?.quarantine));
   while (!input.signal.aborted) {
     attempt++; const started = performance.now(); let report: ObserverReport, stop = false;
     try {
-      if (quarantined()) throw new DiscoveryStoppedError('Observation journal is quarantined.');
+      if (quarantined()) throw new CctpAuditFailure('quarantine', new Error('Observation journal is quarantined.'));
       let manifest: typeof initial;
       try { manifest = pilotManifestSchema.parse(input.readManifest()); }
-      catch { throw new DiscoveryStoppedError('Observation manifest is unavailable or malformed.'); }
-      if (scope(manifest) !== expectedScope) throw new DiscoveryStoppedError('Observation manifest scope changed.');
-      const discovered = options.discovery ? await discoverCctpRequests(manifest, input.feeds, options.discovery, input.signal,
-        options.discoveryPersistent ? { resume: journal(() => input.audit.store.loadDiscovery()) } : undefined) : undefined;
-      const observed = await input.audit.tick(discovered?.manifest ?? manifest);
+      catch (error) { throw new CctpAuditFailure('configuration', error); }
+      if (scope(manifest) !== expectedScope) throw new CctpAuditFailure('scope', new Error('Observation manifest scope changed.'));
+      const persistent = options.discoveryPersistent ? { resume: journal(() => input.audit.store.loadDiscovery()) } : undefined;
+      const starts = options.discovery;
+      const discovered = starts ? await auditBoundary('evidence', () => discoverCctpRequests(manifest, input.feeds, starts, input.signal, persistent), true) : undefined;
+      const observed = await auditBoundary('internal', () => input.audit.tick(discovered?.manifest ?? manifest));
       if (discovered) {
-        await discovered.assertCanonical();
+        await auditBoundary('evidence', () => discovered.assertCanonical(), true);
         if (input.signal.aborted) return 'stopped';
         const state = discovered.state;
         if (state) journal(() => input.audit.store.saveDiscovery(state));
@@ -65,13 +77,21 @@ export async function runCctpObserver(input: {
       failures = 0;
       report = { ...observed, ...(discovered ? { discovery: discovered.metadata } : {}), status: 'ok', observedAt: now().toISOString(), durationMs: Math.round(performance.now() - started) };
     } catch (error) {
-      if (input.signal.aborted) return 'stopped';
-      if (error instanceof FinalityConflictError) input.audit.store.quarantineSource('Finalized observation history changed. Reconcile the operator journal.');
-      const quarantine = quarantined(); failures++;
-      stop = quarantine || error instanceof DiscoveryStoppedError || (error instanceof CctpAuditFailure && error.reason !== 'rpc-unavailable');
+      if (input.signal.aborted) {
+        if (error instanceof CctpAuditFailure && !retryableAuditFailure(error.reason)) throw error;
+        return 'stopped';
+      }
+      let reason: AuditFailureReason = error instanceof CctpAuditFailure ? error.reason : error instanceof FinalityConflictError ? 'quarantine' : 'internal';
+      let quarantine = false;
+      try {
+        if (error instanceof FinalityConflictError) journal(() => input.audit.store.quarantineSource('Finalized observation history changed. Reconcile the operator journal.'));
+        quarantine = quarantined();
+      } catch { reason = 'journal'; }
+      if (quarantine && reason !== 'journal') reason = 'quarantine';
+      failures++; stop = !retryableAuditFailure(reason);
+      input.onFailure?.(reason);
       report = { version: 1, mode: 'observe', enforcement: false, status: quarantine ? 'quarantined' : 'unavailable', observedAt: now().toISOString(),
-        reason: stop ? `Observation stopped. ${quarantine ? 'Finalized history is quarantined; reconcile the operator journal.' : error instanceof CctpAuditFailure ? 'Deployment acceptance failed; reconcile configuration and runtime.' : error instanceof DiscoveryStoppedError ? error.message : 'Reconcile observation state.'} No authorization was produced.`
-          : 'Observation failed. Check RPC finality, deployment and receipts; no authorization was produced.' };
+        reason: `${stop ? 'Observation stopped.' : 'Observation failed.'} ${failureText[reason]} No authorization was produced.` };
     }
     if (input.signal.aborted) return 'stopped';
     const nextPollSeconds = stop || !options.watch ? 0 : failures ? retrySeconds(options.intervalSeconds, failures) : options.intervalSeconds;

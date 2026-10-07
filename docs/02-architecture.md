@@ -207,3 +207,13 @@ archive via flushed exclusive hard links, identity/collision checks and bounded
 batches. Failure stops publication scheduling without rolling back committed
 journal/proof state; retry keeps the same scoped journal. No browser writer,
 server storage, private-file reader, signing path or discovery pruning is added.
+
+ADR-034 moves shared audit failure types into `scripts/tripwire/auditFailure.ts`
+and separates local journal boundaries from network/evidence boundaries on the
+existing keyless observer path. Proof/quarantine/discovery read/write failures
+escape the source adapter and stop; only recognized transport faults or validated
+behind-head conditions retry. Unknown global/provider evidence stops, while safe
+per-payment HOLD/unavailable results remain. The old testnet failure entrypoint
+re-exports the single implementation. No report, manifest, SQLite, review or
+execution-permission change is introduced; supervision and local incidents remain
+the next separate milestone.

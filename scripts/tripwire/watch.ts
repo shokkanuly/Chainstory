@@ -7,6 +7,7 @@ import { burnEventSchema, releaseEventSchema, type BurnEvent, type LogFeed, type
 import type { OperatorStore, WatcherState } from './store.js';
 import { FinalityConflictError } from './finality.js';
 import type { sourceVerifierScopeSchema } from './sourceProof.js';
+import { CctpAuditFailure } from './auditFailure.js';
 
 export interface SourceAdapter {
   scope: z.infer<typeof sourceVerifierScopeSchema>;
@@ -169,6 +170,7 @@ export class Watcher {
             ? await this.cfg.verifySource(release, observedBurn)
             : { status: 'pending', reason: 'Independent source verification is not configured; observed events alone are insufficient.' });
       } catch (error) {
+        if (error instanceof CctpAuditFailure && error.reason === 'journal') throw error;
         if (error instanceof FinalityConflictError) this.enterQuarantine(error);
         source = { status: 'unavailable', reason: 'Source verification is unavailable; retry required.' };
       }

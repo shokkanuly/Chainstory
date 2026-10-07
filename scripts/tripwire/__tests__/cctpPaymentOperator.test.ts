@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { decodeFunctionData, hashStruct, keccak256, parseTransaction, recoverTypedDataAddress, stringToHex, toHex, zeroAddress,
+import { decodeFunctionData, hashStruct, keccak256, parseTransaction, recoverTypedDataAddress, stringToHex, toHex, zeroAddress, HttpRequestError,
   type Chain, type Hex, type PublicClient, type Transport } from 'viem';
 import { actors } from '../../../src/tripwire/guardianVM.js';
 import { CCTP_BASE_SEPOLIA_TO_SEPOLIA as route } from '../../../src/chains/evm/registry/cctp.js';
@@ -91,6 +91,24 @@ function fixture() {
 }
 
 describe('customer payment RPC operator integration', () => {
+  it.each(['before', 'after'] as const)('stops before signing when proof persistence fails %s commit, then resumes the original queue', async (phase) => {
+    const f = fixture(), operator = await f.open(), save = operator.store.saveSourceProof.bind(operator.store);
+    const spy = vi.spyOn(operator.store, 'saveSourceProof').mockImplementation((proof) => {
+      if (phase === 'after') save(proof);
+      throw new HttpRequestError({ url: 'https://rpc.invalid/?token=PRIVATE_SENTINEL', status: 503 });
+    });
+    try {
+      await expect(operator.tick()).rejects.toMatchObject({ reason: 'journal' });
+      expect(f.published).toEqual([]); expect(f.reviews).toEqual([]); expect(operator.store.transactions()).toEqual([]);
+      expect(operator.store.loadWatcher()?.pending).toHaveLength(1);
+      expect(operator.store.sourceProofs()).toHaveLength(phase === 'after' ? 1 : 0);
+    } finally { spy.mockRestore(); operator.close(); }
+    const restarted = await f.open();
+    try {
+      expect((await restarted.tick())[0].action).toBe('executed'); expect(f.reviews).toHaveLength(1);
+      expect(restarted.store.sourceProofs()).toHaveLength(1); expect(await restarted.tick()).toEqual([]);
+    } finally { restarted.close(); }
+  });
   it('refuses replaced runtime before journal creation or any signed transaction', async () => {
     const f = fixture(); f.pub.getCode.mockResolvedValue('0x');
     await expect(f.open()).rejects.toThrow('bytecode'); expect(existsSync(f.stateFile)).toBe(false); expect(f.published).toEqual([]);

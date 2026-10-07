@@ -8,6 +8,7 @@ import { blockHashSchema, FinalityConflictError, receiptFinality, type BlockRead
 import type { OperatorStore } from './store.js';
 import { sourceVerifierScopeSchema } from './sourceProof.js';
 import type { SourceAdapter, SourceEvidence } from './watch.js';
+import { CctpAuditFailure, journalOperation, RpcBehindError } from './auditFailure.js';
 
 export const cctpProofLocatorSchema = z.object({
   sourceTransactionHash: blockHashSchema, sourceLogIndex: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
@@ -90,19 +91,19 @@ export class CctpSourceAdapter implements SourceAdapter {
   }
 
   async assertCanonical(): Promise<void> {
-    const quarantine = this.store.sourceQuarantine();
+    const quarantine = journalOperation(() => this.store.sourceQuarantine());
     if (quarantine) throw new FinalityConflictError(`CCTP source quarantine: ${quarantine}`);
     const [source, destination] = await Promise.all([this.sourceRpc.getChainId(), this.destinationRpc.getChainId()]);
     const chainId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
     if (chainId.parse(source) !== route.source.chainId || chainId.parse(destination) !== route.destination.chainId) throw new Error('CCTP RPC chain identity does not match the supported route.');
-    for (const proof of this.store.sourceProofs()) {
+    for (const proof of journalOperation(() => this.store.sourceProofs())) {
       for (const [rpc, anchor] of [[this.sourceRpc, proof.source], [this.destinationRpc, proof.destination]] as const) {
         const result = await receiptFinality(rpc, anchor);
         if (result === 'orphaned') {
           const reason = 'An authenticated finalized CCTP proof block changed; reconcile the operator.';
-          this.store.quarantineSource(reason); throw new FinalityConflictError(reason);
+          journalOperation(() => this.store.quarantineSource(reason)); throw new FinalityConflictError(reason);
         }
-        if (result !== 'finalized') throw new Error('CCTP finalized RPC is behind an authenticated proof.');
+        if (result !== 'finalized') throw new RpcBehindError('CCTP finalized RPC is behind an authenticated proof.');
       }
     }
   }
@@ -128,7 +129,7 @@ export class CctpSourceAdapter implements SourceAdapter {
       if (release.origin && (release.origin.chainId !== route.destination.chainId || release.origin.address !== this.vault)) {
         return invalid('Release originated on the wrong chain or vault.');
       }
-      const cached = this.store.sourceProofs().find((p) => p.messageId === release.messageId);
+      const cached = journalOperation(() => this.store.sourceProofs()).find((p) => p.messageId === release.messageId);
       if (cached && this.policy !== 'customer-payment' && (this.policy === 'legacy-post-mint' || !release.origin)) return cached.recipient === release.recipient && cached.amount === release.amount
         ? { status: 'verified', amount: cached.amount } : invalid('Release fields differ from its authenticated source proof.');
       const rawLocator = await this.locate(release.messageId);
@@ -227,14 +228,15 @@ export class CctpSourceAdapter implements SourceAdapter {
       if (await receiptFinality(this.sourceRpc, sentReceipt) !== 'finalized' || await receiptFinality(this.destinationRpc, mintedReceipt) !== 'finalized') {
         return pending('CCTP receipt changed while evidence was being collected.');
       }
-      const saved = this.store.saveSourceProof({ messageId: release.messageId, recipient: release.recipient, amount: net, nonce: receive.nonce,
+      const proof = { messageId: release.messageId, recipient: release.recipient, amount: net, nonce: receive.nonce,
         source: origin(route.source.chainId, selected.log), destination: origin(route.destination.chainId, receives[0].log),
         sourceMessageHash: keccak256(message.raw), destinationBodyHash: keccak256(receivedBody.raw),
-        ...(paymentIntent ? { payment: paymentIntent } : {}) });
+        ...(paymentIntent ? { payment: paymentIntent } : {}) };
+      const saved = journalOperation(() => this.store.saveSourceProof(proof));
       return saved === 'reused' ? invalid('This source event, destination settlement or CCTP nonce is already claimed by another release.')
         : { status: 'verified', amount: net };
     } catch (error) {
-      if (error instanceof FinalityConflictError) throw error;
+      if (error instanceof FinalityConflictError || (error instanceof CctpAuditFailure && error.reason === 'journal')) throw error;
       return unavailable('CCTP evidence is unavailable, malformed or unsupported; retry or reconcile the inputs.');
     }
   }

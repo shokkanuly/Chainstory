@@ -98,8 +98,10 @@ SQLite schema **v3** binds the adapter policy fingerprint to the deployment. Bef
 VERIFIED, one atomic insert uniquely claims the source event position, destination
 settlement position and Circle nonce. Exact recipient/net amount, block anchors
 and payload hashes persist across restart. Rechecking the same release is
-idempotent; another release cannot claim those credits. A disk write failure
-returns unavailable, never VERIFIED.
+idempotent; another release cannot claim those credits. A disk read/write failure
+now propagates a terminal journal error (ADR-034), never VERIFIED or a per-payment
+RPC retry. Keep committed claims if a write completed before reporting failure;
+reconcile storage, then explicitly restart against the same file.
 
 Every tick, signature and raw-transaction publication also checks previously
 accepted proof anchors, including completed jobs. A changed committed finalized

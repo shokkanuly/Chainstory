@@ -104,7 +104,8 @@ Continue development with the [teammate handoff and implementation queue](docs/p
 The [current checkpoint](docs/plans/tripwire-progress.md) records each delivered
 step, verification and the next task. Observer startup now has a
 [classified exit contract](docs/plans/tripwire-operations.md#observer-process-exit-contract-adr-033);
-full running failure classification, supervision and incidents remain the next step.
+[running failures now stop or retry by cause](docs/plans/tripwire-operations.md#observer-running-failure-contract-adr-034).
+Supervision, process crash drills and local incidents remain the next step.
 
 The [read-only operations viewer](docs/plans/tripwire-operations.md) at
 `/tripwire/operations` imports public readiness or customer observer snapshots to

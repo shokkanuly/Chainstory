@@ -6,7 +6,48 @@
 Текущий коммит файла определяется через `git log -1 -- docs/plans/tripwire-progress.md`;
 не нужно вставлять в коммит его собственный будущий hash.
 
-## Завершённый шаг: H2a — причины завершения keyless observer
+## Завершённый шаг: H2b1 — ошибки во время наблюдения
+
+Исходная точка: `92d36c7`, отправлена и проверена на GitHub. Устранён legacy
+catch, который повторял неизвестные глобальные ошибки как RPC outage, и ошибка
+source adapter, которая скрывала отказ записи proof под per-payment unavailable.
+
+Теперь все чтения/записи proof, quarantine, discovery и watcher health на пути
+keyless observer имеют локальную journal boundary. Даже transport-shaped ошибка
+внутри этой boundary — terminal `journal`, а не RPC retry. Подтверждение/позиция,
+уже записанные до сбоя, сохраняются и читаются следующим запуском. Неизвестные
+глобальные ошибки, invalid configuration/scope, capacity, malformed/contradictory
+global evidence и deployment/runtime останавливают watch с пустым failure report.
+Повторяются только распознанные временные RPC failures и явно проверенное
+отставание finalized head (`rpc-behind`). Последнее не сбрасывает позиции.
+
+Несогласованный finalized customer-policy snapshot уходит в durable quarantine;
+неудачная запись quarantine даёт journal stop, а не утверждение об успешном
+карантине. Known journal failure не скрывается одновременной отменой. Обычная
+SIGINT/SIGTERM отмена остаётся чистой. Отсутствующие/испорченные данные отдельного
+платежа по-прежнему могут давать HOLD/unavailable без proof/ALLOW; это отдельный
+безопасный результат, не утверждение о здоровой оплате. Результат сканирования
+`ok` не означает, что все строки verified или что процесс работает сейчас.
+
+CLI сохраняет точную running reason в фиксированной stderr JSON-диагностике:
+75 — `rpc-unavailable`/`rpc-behind`, 78 — journal/evidence/configuration/scope/
+capacity/quarantine/deployment, 70 — internal, 74 — publication. Контракты,
+review/manifest/report formats и SQLite schema не изменены. Общая реализация
+failure types находится в `scripts/tripwire/auditFailure.ts`; старый
+`testnet/cctpAuditFailure.ts` только re-export для совместимости, не второй путь.
+
+Проверки: **1 363 теста / 67 файлов**, включая **32 новых** случая. Build/typechecks
+и lint прошли. Fault fixtures проверяют сбои до/после proof/discovery/quarantine
+commit, позднее чтение proof, same-journal restart без повторных claims,
+malformed/unknown global failures, typed outage/recovery/lag, per-payment HOLD,
+finalized policy conflict, cancellation/cleanup и точные one-shot running exits.
+Два новых signing-operator fixture случая также проверяют: journal failure до/после
+proof commit проходит через Watcher без превращения в HOLD, останавливает tick до
+signature/outbox/publication, а same-journal restart продолжает исходную очередь.
+Все chain данные synthetic. Supervisor, local incidents и реальные crash drills
+в управляемом child process ещё не реализованы; live pilot не запускался.
+
+## История: H2a — причины завершения keyless observer
 
 Исходная точка: `cc13777`, отправлена на GitHub. До этого CLI отдавал общий exit 1:
 supervisor не мог отличить временный отказ startup RPC от конфигурации/журнала.
@@ -31,34 +72,28 @@ startup recheck упал после открытия, lease освобождае
 прошли. Среда: Node 24.19.0, npm 11.17.0. Все новые chain данные synthetic;
 нет public deployment/payment, чтения ключей или внешнего аудита.
 
-## Следующий инженерный шаг: H2b
+## Следующий инженерный шаг: H2b2 — supervision и local incidents
 
-**Не устанавливать автоматический бесконечный restart сейчас.** Завершена H2a,
-а не вся эксплуатация H2. В уже запущенном watch ещё есть legacy catch для
-неразмеченных exceptions, который делает unavailable/retry: startup exit contract
-не доказывает классификацию всех внутренних storage/evidence failures.
+**H2 целиком ещё не закрыт.** Классификация H2a/H2b1 проверена; следующий шаг
+должен проверять управление настоящим дочерним процессом, а не только tick mocks.
 
-1. Проследить untyped failures в `cctpAudit.ts`/`cctp.ts`/`store.ts`, discovery и
-   payment-state reads. Отдельно проверить journal write во время authenticated
-   proof commit, quarantine write и lease close; ошибки локального state не должны
-   переходить в RPC retry. Не выдавать malformed/contradictory provider evidence
-   за доказанное outage. Сохранять per-payment HOLD/unavailable там, где это
-   безопасный существующий результат, а не авария всего процесса.
-2. Ввести согласованную классификацию running incidents без изменения execution
-   permission, review format, manifest/journal scope и без вывода raw exceptions.
-   Сначала regression fixtures, затем реализация; отразить совместимость в ADR.
-3. Только после этого подготовить repo supervisor template/harness для среды
+1. Подготовить repo supervisor template/harness для среды
    команды. Restart разрешать по exit 75 и явному crash policy с ограничением
-   частоты; 70/74/78 требуют разбирательства. Прямой Node/tsx entrypoint должен
+   частоты и общим лимитом попыток; 70/74/78 требуют разбирательства. Прямой Node/tsx entrypoint должен
    сохранять exit code; не полагаться на оболочку, скрывающую его.
-4. Добавить локальные incident records/наблюдение: report age, retrying, stopped,
+2. Проверить process crash/RPC outage → тот же scoped journal без повторных
+   claims; terminal error не обходится restart. При SIGTERM дождаться остановки
+   child и освобождения lease до нового старта; чистый exit 0 не перезапускать.
+   Включить failure до/после publication и bounded retry exhaustion. Реальные
+   subprocess fixtures использовать с synthetic RPC/receipts, не с ключами.
+3. Добавить локальные incident records/наблюдение: report age, retrying, stopped,
    quarantine, backlog/capacity и publication/archive failures. Report capture
    time не обновляется по факту проверки файла. Внешние уведомления без конкретного
    получателя и разрешения не отправлять.
-5. Done: synthetic process crash/RPC outage → тот же scoped journal без повторных
-   claims; terminal error не обходится restart; SIGTERM освобождает lease;
-   storage failure до/после publication не теряет состояние. Проверить реальные
-   subprocess exits, bounded restart и редактирование credential-bearing причин.
+4. Done: воспроизводимый supervisor harness и редактирование credential-bearing
+   причин, terminal failure действительно останавливает управление, outage/crash
+   восстанавливается в пределах лимита. Repo template не означает установку службы
+   на машине или успешный live pilot. Документировать запуск/остановку/reconciliation.
 
 ## Остальные gates
 
@@ -66,7 +101,8 @@ startup recheck упал после открытия, lease освобождае
 | :--- | :--- |
 | H1 | Открыт: ручной native directory picker smoke по handoff; mock/controller tests не закрывают этот gate |
 | H2a | Реализован и проверен локально; supervisor/incident monitoring ещё отсутствуют |
-| H2b | Следующий инженерный шаг выше; runtime failure classification + supervision + local incidents |
+| H2b1 | Реализован: runtime failure classification и защита journal failures от retry |
+| H2b2 | Следующий инженерный шаг выше: supervised child process, crash drills, local incidents |
 | H3 | Открыт: назначенный человек с тестовыми аккаунтами, финансирование, реальные finalized deployment/burn/mint/payout/return receipts |
 | H4 | Открыт: ADR/decision matrix обязательной политики и behavioral shadow |
 | H5 | Открыт: source bypass integration и независимый аудит конкретного коммита |

@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, w
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { toHex } from 'viem';
+import { toHex, HttpRequestError } from 'viem';
 import { createCctpAudit } from '../testnet/cctpAudit.js';
 import { runCctpObserver, waitForObservation, type ObserverReport } from '../testnet/cctpObserver.js';
 import { parseObserveArgs, saveObservation, saveWatchObservation } from '../testnet/observeCctp.js';
@@ -13,6 +13,7 @@ import { stringifyPublic } from '../testnet/cctpPreflight.js';
 import { observerFixture } from './fixtures/cctpObserver.js';
 
 const cleanups: (() => void)[] = [];
+const rpcOutage = () => new HttpRequestError({ url: 'https://rpc.invalid/?secret=PRIVATE', status: 503 });
 afterEach(() => { cleanups.reverse().forEach((f) => f()); cleanups.length = 0; });
 async function setup(before?: (f: ReturnType<typeof observerFixture>) => void) {
   const f = observerFixture(); before?.(f);
@@ -46,7 +47,7 @@ describe('continuous keyless CCTP observer', () => {
     expect(second.discovery?.incremental?.destinationFrom).toBe(200n);
   });
   it('preserves cursors during RPC outage, redacts provider errors, and resumes normally', async () => {
-    const s = await setup(); s.destination.getContractEvents.mockRejectedValueOnce(new Error('https://rpc.example/?secret=PRIVATE'));
+    const s = await setup(); s.destination.getContractEvents.mockRejectedValueOnce(rpcOutage());
     await s.run({ wait: async (seconds) => { s.delays.push(seconds); expect(s.audit.store.loadDiscovery()).toBeNull(); } });
     expect(s.reports[0]).toMatchObject({ status: 'unavailable', worker: { state: 'retrying', consecutiveFailures: 1, nextPollSeconds: 10 } });
     expect(stringifyPublic(s.reports[0])).not.toContain('PRIVATE');
@@ -55,7 +56,7 @@ describe('continuous keyless CCTP observer', () => {
   });
   it('increases retry delays up to five minutes, resets after recovery and then returns to normal polling', async () => {
     const s = await setup(); let n = 0; const original = s.source.getBlock.getMockImplementation(); if (!original) throw new Error('Fixture missing.');
-    s.source.getBlock.mockImplementation(async (args) => { if (args.blockTag === 'finalized' && n++ < 8) throw new Error('Offline'); return original(args); });
+    s.source.getBlock.mockImplementation(async (args) => { if (args.blockTag === 'finalized' && n++ < 8) throw rpcOutage(); return original(args); });
     await s.run({ emit: (r) => { s.reports.push(r); if (s.reports.length === 10) s.abort.abort(); } });
     expect(s.delays).toEqual([10, 20, 40, 80, 160, 300, 300, 300, 10]);
     expect(s.reports[8].worker).toMatchObject({ state: 'scheduled', consecutiveFailures: 0, nextPollSeconds: 10 });
@@ -155,7 +156,7 @@ describe('continuous keyless CCTP observer', () => {
   it('exports success, outage and recovery as distinct complete public snapshots', async () => {
     const s = await setup(), directory = join(s.dir, 'reports'), published: string[] = []; let waits = 0;
     await s.run({ emit: (r) => { s.reports.push(r); published.push(saveWatchObservation(directory, r)); if (s.reports.length === 3) s.abort.abort(); }, wait: async () => {
-      if (++waits === 1) s.destination.getContractEvents.mockRejectedValueOnce(new Error('Offline'));
+      if (++waits === 1) s.destination.getContractEvents.mockRejectedValueOnce(rpcOutage());
       s.destination.setHead(201n + BigInt(waits));
     } });
     const files = readdirSync(directory); expect(files).toHaveLength(3); expect(new Set(files).size).toBe(3);
@@ -172,7 +173,7 @@ describe('continuous keyless CCTP observer', () => {
   it('archives older success/outage exports without pruning discovery hints or source claims', async () => {
     const s = await setup(), directory = join(s.dir, 'public-reports'), published: string[] = []; let waits = 0;
     await s.run({ emit: (r) => { s.reports.push(r); published.push(saveWatchObservation(directory, r, 1)); if (s.reports.length === 3) s.abort.abort(); }, wait: async () => {
-      if (++waits === 1) s.destination.getContractEvents.mockRejectedValueOnce(new Error('Offline'));
+      if (++waits === 1) s.destination.getContractEvents.mockRejectedValueOnce(rpcOutage());
       s.destination.setHead(201n + BigInt(waits));
     } });
     const archive = join(directory, 'archive'), older = readdirSync(archive);

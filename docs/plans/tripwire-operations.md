@@ -230,7 +230,8 @@ lease BEFORE starting its loop. Startup failure, missing contracts, wrong scope,
 quarantine or an already-owned journal exits without entering polling. Startup
 RPC outages require a process restart; automatic retries apply after acceptance.
 ADR-033 below classifies startup exits for a future supervisor; no supervisor is
-installed and untyped running exceptions still need the H2b review.
+installed. ADR-034 below closes the generic running retry path; supervisor/crash
+drills and local incident monitoring remain H2b2.
 The CLI owns the lease and releases it in `finally`, including cancellation,
 terminal observation failure and publication failure. No daemon installation,
 OS supervisor, hosted API, alert delivery or background Codex automation is added.
@@ -245,7 +246,7 @@ consecutive scheduled increments of at most 4,096 new blocks per chain, without
 cursor jumps. Per-payment unavailable evidence stays unavailable in a successful
 scan report; the next regular check retries its receipt/state reads.
 
-On a recoverable thrown RPC/audit failure, publish a new unavailable snapshot with
+On a recognized temporary RPC failure or validated behind-head condition, publish a new unavailable snapshot with
 no payment rows. Retain the last committed index, retry after the configured
 interval, then double the delay for consecutive failures up to 300 seconds.
 A successful scan resets the failure counter and returns to the normal interval.
@@ -414,6 +415,10 @@ stack trace. It contains `mode: observe`, `enforcement: false`, `phase`
 | 74 | `publication` | Local public output or archival failed; inspect storage, keep the same journal, then explicitly retry |
 | 70 | `internal`, `observation-unavailable` | Unclassified failure or unsuccessful one-shot audit; inspect before restart, do not assume RPC outage |
 
+ADR-034 extends exit 75 with explicitly validated `rpc-behind` and exit 78 with
+`scope`, `capacity`, `evidence`. Running failures now preserve their exact reason
+instead of collapsing to `observation-stopped`/`observation-unavailable`.
+
 Example terminal diagnostic (fixed structure, not a live incident):
 
 ```json
@@ -439,12 +444,11 @@ that was never opened. Runtime acceptance failure inside watch stops the worker;
 it no longer endlessly polls a mismatched deployment. A partial publication/archive
 failure can follow committed proof/index state and a visible report; preserve both.
 
-**Remaining H2b boundary:** the running worker still has its prior catch/backoff
-for untyped audit/discovery exceptions. These have not all been distinguished from
-internal evidence/storage failures. This milestone therefore does not make an
-unconditional watch supervisor safe, does not prove crash recovery in a supervised
-process, and does not add incident monitoring/notifications. Detailed next task is
-in [the current checkpoint](tripwire-progress.md). Do not delete journals, reset
+**Historical H2a boundary, superseded by ADR-034:** H2a initially left the running
+catch/backoff for untyped audit/discovery exceptions in place. ADR-034 below now
+separates those from local journal failures and unknown global exceptions. Process
+supervision/crash drills and local incidents remain H2b2, described in
+[the current checkpoint](tripwire-progress.md). Do not delete journals, reset
 quarantine, change scope or regenerate intents to obtain a restartable result.
 
 For future supervision, invoke the Node entrypoint directly (with the repository's
@@ -464,6 +468,64 @@ cover startup input/URL/chain/runtime/RPC/journal/quarantine, bounded typed caus
 classification and redaction, same-journal lease recovery, runtime stop, committed
 publication failure recovery, cancellation and a real CLI subprocess exit 78.
 All chain data is synthetic. No live deployment/payment/key read/audit occurred.
+
+## Observer running failure contract (ADR-034)
+
+H2b1 removes the catch-all global retry in the existing keyless worker. Retry only
+typed temporary RPC failure from a marked network boundary, or an explicitly
+validated finalized head behind a saved cursor/proof/state minimum. Both publish
+an empty unavailable report and retain capped in-process backoff. Head lag does
+not reset journal history. Unknown global errors stop as `internal` (exit 70),
+not an assumed outage; invalid global/provider evidence stops as `evidence` (78).
+Manifest/scope/capacity/deployment/runtime/quarantine remain terminal (78).
+Failure reason text is an allowlisted catalog; native/underlying error messages
+never enter public reports or stderr diagnostics.
+
+All observer-path journal health/proof/discovery/quarantine reads and writes use
+a separate local boundary. A disk, schema, semantic journal guard or read/write
+failure is `journal` (78), even if its cause looks like HttpRequestError or timeout.
+Source authentication now propagates proof persistence failure, instead of
+returning per-payment unavailable and continuing. This also applies to the shared
+source adapter used by the signing operator; no execution policy is relaxed.
+Source adapter internals and audit/worker share one failure implementation under
+`scripts/tripwire/auditFailure.ts`; the earlier testnet import path re-exports it.
+
+After a terminal running failure, export a fresh empty unavailable/stopped report
+if storage permits, with no old payment rows or proof projection. A finalized
+conflict persists quarantine; if the quarantine write fails, report journal stop
+without claiming its persistence. A write may commit before reporting failure:
+proof/index/quarantine already present remains immutable. Explicit restart after
+reconciliation uses the SAME journal/manifest/bounds, does not repeat claims, and
+still refuses a committed quarantine. A finalized policy snapshot that changes
+hash/clock mid-read now follows the conflict/quarantine path; latest signing
+snapshots retain their existing refusal behavior.
+
+Per-payment missing/malformed receipts or release reads remain HOLD/unavailable
+without current proof or ALLOW; other candidates can still be observed. A scan
+report `ok` therefore says the scan completed, not that all listed credits are
+verified, paid, or that the worker is still alive. Contradictory customer-policy
+state and malformed global discovery headers/events stop the whole observation.
+These separate boundaries must be preserved by future monitoring.
+
+Known terminal journal errors are not suppressed by simultaneous cancellation.
+Ordinary signal cancellation remains clean and emits no partial success. CLI
+cleanup failure remains terminal journal, even if database/lease closure already
+completed. No SQLite/public report/manifest/signature format change or migration
+is introduced. Report/archive publication failure keeps exit 74 and its existing
+after-commit recovery semantics.
+
+Validation: **1,363 tests / 67 files**, including 32 new fault fixtures; build,
+typechecks and lint pass. Tests cover transport-shaped local failures, proof/index/
+quarantine failure before/after commit, late proof projection failure, same-journal
+restart, malformed/unknown global evidence, typed outage/recovery/lag, per-payment
+HOLD, finalized policy conflict, cancellation/cleanup, and exact one-shot running
+exit reasons. Two signing-operator cases also confirm journal fault propagation
+through Watcher before signature/outbox/publication, then original-queue restart.
+Existing outage fixtures now model actual typed HTTP 503 rather
+than a plain Error that merely says offline. Shared signing tests also pass.
+All chain evidence is synthetic. No supervisor was installed, no key was read,
+and no public payment/deployment/audit occurred. H2b2 is repo process supervision,
+real child crash/restart drills and local incidents; see [checkpoint](tripwire-progress.md).
 
 ## File and freshness boundary
 

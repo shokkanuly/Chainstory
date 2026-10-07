@@ -147,6 +147,11 @@ RPC, disk or malformed-state errors stop this CLI with its journal intact. Resta
 against the same file; never delete it to clear a pending transaction or quarantine.
 Preserve database/sidecars, proof locators and recorded receipts for investigation.
 Finalized-history conflicts retain the existing durable quarantine policy.
+ADR-034 makes the shared source adapter propagate terminal journal failures from
+proof/quarantine reads and writes. They no longer become per-payment unavailable;
+the signing CLI stops with its existing journal intact. Already committed claims
+remain idempotent. The new detailed process exit codes belong to the keyless
+observer CLI; they do not change this signing CLI's failure-code contract.
 
 ## Validation and next acceptance gate
 

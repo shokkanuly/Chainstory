@@ -104,7 +104,7 @@ describe('observer process exit contract', () => {
     const result = await s.run([s.manifestPath, s.state, '--watch', '--interval=5'], (r) => {
       s.reports.push(r); s.reader.readCode = async () => '0x6000';
     });
-    expect(result).toMatchObject({ exitCode: 78, diagnostic: { reason: 'observation-stopped', phase: 'running' } });
+    expect(result).toMatchObject({ exitCode: 78, diagnostic: { reason: 'deployment', phase: 'running' } });
     expect(s.reports).toHaveLength(2);
     expect(s.reports[1]).toMatchObject({ status: 'unavailable', worker: { state: 'stopped', nextPollSeconds: 0 } });
   }, 15_000);

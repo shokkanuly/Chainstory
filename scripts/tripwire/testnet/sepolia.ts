@@ -41,6 +41,7 @@ import { blockHeaderSchema, blockHashSchema, finalizedCheckpointSchema, Finality
 import { releaseDecision, releaseMinimumTier, signReleaseReview, type ReleaseReview } from '../review.js';
 import demo from './contracts.artifact.js';
 import { assertProtectionPolicy } from './protectionPolicy.js';
+import { RpcBehindError } from '../auditFailure.js';
 
 export const ROOT = resolve(import.meta.dirname, '../../..');
 export const EXPLORER = 'https://sepolia.etherscan.io';
@@ -325,7 +326,7 @@ export class ContractEventFeed<E> implements LogFeed<E> {
 
   private async checkAnchor(finalizedNumber: bigint): Promise<void> {
     if (!this.anchor) return;
-    if (finalizedNumber < this.anchor.number) throw new Error('Finalized RPC is behind the committed checkpoint; retry another healthy endpoint.');
+    if (finalizedNumber < this.anchor.number) throw new RpcBehindError('Finalized RPC is behind the committed checkpoint; retry another healthy endpoint.');
     const block = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: this.anchor.number }));
     if (block.number !== this.anchor.number) throw new Error('RPC returned the wrong checkpoint block.');
     if (block.hash !== this.anchor.hash) throw new FinalityConflictError('A committed finalized block changed; operator reconciliation is required.');
@@ -385,7 +386,7 @@ export class ContractEventFeed<E> implements LogFeed<E> {
       out.push({ ...mapped, origin });
     }
     const final = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: 'finalized' }));
-    if (final.number < end) throw new Error('Finalized RPC moved behind the queried range.');
+    if (final.number < end) throw new RpcBehindError('Finalized RPC moved behind the queried range.');
     await this.checkAnchor(final.number);
     const checked = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: end }));
     if (checked.number !== end || checked.hash !== endpoint.hash) throw new Error('Canonical endpoint changed while fetching logs.');

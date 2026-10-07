@@ -8,7 +8,7 @@ import { pilotManifestSchema } from './cctpManifest.js';
 import { cctpPublicClients } from './cctpPublic.js';
 import { runCctpObserver } from './cctpObserver.js';
 import { archivePublicReports, reportKeepSchema } from './reportArchive.js';
-import { CctpAuditFailure, type AuditFailureReason } from './cctpAuditFailure.js';
+import { CctpAuditFailure, retryableAuditFailure, type AuditFailureReason } from '../auditFailure.js';
 import { FinalityConflictError } from '../finality.js';
 
 export const observeUsage = 'Usage: npm run tripwire:cctp:observe -- manifest.json [state.sqlite] [--watch] [--interval=10] [--report=new-report.json (one-shot) OR --reports=directory (watch)] [--keep-reports=10..1000 (requires --reports; archives older public files)] [--discover=sourceStart:destinationStart OR --discover-resume=sourceStart:destinationStart (empty manifest v3; only resume supports watch)]';
@@ -66,7 +66,7 @@ export interface ObserverExit {
   diagnostic?: { version: 1; mode: 'observe'; enforcement: false; phase: ExitPhase; reason: ExitReason; restartable: boolean };
 }
 function failedExit(reason: ExitReason, phase: ExitPhase): ObserverExit {
-  const exitCode = reason === 'rpc-unavailable' ? 75 : reason === 'publication' ? 74
+  const exitCode = reason === 'rpc-unavailable' || reason === 'rpc-behind' ? 75 : reason === 'publication' ? 74
     : reason === 'internal' || reason === 'observation-unavailable' ? 70 : 78;
   return { exitCode, diagnostic: { version: 1, mode: 'observe', enforcement: false, phase, reason, restartable: exitCode === 75 } };
 }
@@ -99,12 +99,14 @@ export async function runObserveCommand(argv: string[], signal: AbortSignal, por
     audit = await createCctpAudit(manifest, args.statePath ?? resolve(`.tripwire/cctp-${manifest.vault}.sqlite`),
       clients.source, clients.destination, true);
     phase = 'running';
+    let observedFailure: AuditFailureReason | undefined;
     const outcome = await runCctpObserver({ audit, feeds: clients.feeds, initialManifest: manifest, readManifest,
-      options: args, signal, emit });
-    if (outcome === 'failed') failure = failedExit(args.watch ? 'observation-stopped' : 'observation-unavailable', phase);
+      options: args, signal, emit, onFailure: (reason) => { observedFailure = reason; } });
+    if (outcome === 'failed') failure = failedExit(observedFailure ?? (args.watch ? 'observation-stopped' : 'observation-unavailable'), phase);
   } catch (error) {
     // Signal cancellation is clean, except storage/publication failures still need reconciliation.
-    failure ??= signal.aborted ? undefined : failedExit(error instanceof CctpAuditFailure ? error.reason
+    const terminal = error instanceof CctpAuditFailure && !retryableAuditFailure(error.reason);
+    failure ??= signal.aborted && !terminal ? undefined : failedExit(error instanceof CctpAuditFailure ? error.reason
       : error instanceof FinalityConflictError ? 'quarantine' : 'internal', phase);
   } finally {
     try { audit?.close(); } catch { failure = failedExit('journal', 'cleanup'); }

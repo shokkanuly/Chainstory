@@ -99,7 +99,8 @@ For the next developer, start with the [handoff and implementation queue](plans/
 clean-clone setup, current limits, pending live gates and checkable next steps.
 Read the [current continuation checkpoint](plans/tripwire-progress.md) for the
 latest completed step and exact next gate. H2a adds classified observer startup
-and process exits; H2b running failure taxonomy, supervision and incidents are pending.
+and process exits; H2b1 now classifies running failures and stops on journal faults.
+H2b2 supervision, process crash drills and local incidents remain pending.
 
 The [operations viewer](plans/tripwire-operations.md) at `/tripwire/operations`
 now displays public funding/customer observer snapshots, reasons and receipt

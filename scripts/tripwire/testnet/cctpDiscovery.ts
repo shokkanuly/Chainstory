@@ -8,10 +8,11 @@ import { blockHeaderSchema, blockHashSchema, finalizedCheckpointSchema, Finality
 import { pilotManifestSchema } from './cctpManifest.js';
 import { ContractEventFeed, type EventFeedClient } from './sepolia.js';
 import paymentArtifact from './cctpPaymentEscrow.artifact.js';
+import { CctpAuditFailure, RpcBehindError, ObservationCanceledError, type AuditFailureReason } from '../auditFailure.js';
 
 export const DISCOVERY_BLOCK_LIMIT = 4096n;
-export class DiscoveryStoppedError extends Error {
-  constructor(message: string) { super(message); this.name = 'DiscoveryStoppedError'; }
+export class DiscoveryStoppedError extends CctpAuditFailure {
+  constructor(message: string, reason: AuditFailureReason = 'configuration') { super(reason, new Error(message)); this.name = 'DiscoveryStoppedError'; }
 }
 const nonzeroHash = blockHashSchema.refine((v) => !/^0x0{64}$/.test(v));
 const boundSchema = z.object({ messageId: nonzeroHash, operationId: nonzeroHash,
@@ -32,11 +33,11 @@ export async function discoverCctpRequests(input: unknown, clients: {
   destination: EventFeedClient & { pub: EventFeedClient['pub'] & { getChainId(): Promise<unknown> } };
 }, starts: { source: bigint; destination: bigint }, signal: AbortSignal, persistent?: { resume: DiscoveryState | null }) {
   const manifest = pilotManifestSchema.parse(input);
-  if (signal.aborted) throw new Error('Discovery canceled.');
+  if (signal.aborted) throw new ObservationCanceledError('Discovery canceled.');
   if (manifest.version !== 3 || manifest.requests.length) throw new DiscoveryStoppedError('Discovery requires an empty customer-payment manifest. Manual requests remain a separate mode.');
   const fingerprint = keccak256(stringToHex(JSON.stringify(manifest, (_key, v: unknown) => typeof v === 'bigint' ? v.toString() : v)));
   const previous = persistent?.resume ? discoveryStateSchema.parse(persistent.resume) : null;
-  if (previous && (previous.fingerprint !== fingerprint || previous.source.from !== starts.source || previous.destination.from !== starts.destination)) throw new DiscoveryStoppedError('Discovery manifest or initial bounds differ from the journal.');
+  if (previous && (previous.fingerprint !== fingerprint || previous.source.from !== starts.source || previous.destination.from !== starts.destination)) throw new DiscoveryStoppedError('Discovery manifest or initial bounds differ from the journal.', 'scope');
   const next = { source: previous ? previous.source.through.number + 1n : starts.source,
     destination: previous ? previous.destination.through.number + 1n : starts.destination };
   if (clients.source.chainId !== route.source.chainId || clients.destination.chainId !== route.destination.chainId ||
@@ -46,7 +47,7 @@ export async function discoverCctpRequests(input: unknown, clients: {
   for (const side of ['source', 'destination'] as const) {
     const start = next[side], head = heads[side];
     if (start < 0n || (!previous && start > head.number) || (!persistent && head.number - start >= DISCOVERY_BLOCK_LIMIT)) throw new DiscoveryStoppedError('Discovery range must cover 1–4096 finalized blocks on each chain (zero new blocks allowed on resume).');
-    if (previous && start > head.number + 1n) throw new Error('Finalized RPC is behind the saved discovery cursor.');
+    if (previous && start > head.number + 1n) throw new RpcBehindError('Finalized RPC is behind the saved discovery cursor.');
   }
   const through = async (side: 'source' | 'destination') => {
     const head = heads[side], cap = next[side] + DISCOVERY_BLOCK_LIMIT - 1n;
@@ -81,7 +82,7 @@ export async function discoverCctpRequests(input: unknown, clients: {
       const blocks = new Map(rows.map((h) => [h.origin.blockNumber, { hash: h.origin.blockHash }]));
       blocks.set(range.through.number, { hash: range.through.hash });
       for (const [number, expected] of blocks) {
-        if (signal.aborted) throw new Error('Discovery canceled.');
+        if (signal.aborted) throw new ObservationCanceledError('Discovery canceled.');
         const block = blockHeaderSchema.parse(await client.pub.getBlock({ blockNumber: number }));
         if (block.number !== number || block.hash !== expected.hash || (number === range.through.number && block.timestamp !== range.through.timestamp)) throw new FinalityConflictError('Persisted discovery history changed.');
       }
@@ -93,10 +94,10 @@ export async function discoverCctpRequests(input: unknown, clients: {
   const collect = async <T>(feed: ContractEventFeed<T>, through: bigint) => {
     const hints: T[] = [];
     while (BigInt(finalizedCheckpointSchema.parse(JSON.parse(feed.checkpoint())).next) <= through) {
-      if (signal.aborted || peerFailed) throw new Error('Discovery canceled.');
+      if (signal.aborted || peerFailed) throw new ObservationCanceledError('Discovery canceled.');
       const before = feed.checkpoint(); hints.push(...await feed.poll());
-      if (hints.length > 100) throw new DiscoveryStoppedError('Discovery exceeds 100 candidate events; narrow the range.');
-      if (feed.checkpoint() === before) throw new Error('Discovery finalized RPC is behind its pinned range.');
+      if (hints.length > 100) throw new DiscoveryStoppedError('Discovery exceeds 100 candidate events; narrow the range.', 'capacity');
+      if (feed.checkpoint() === before) throw new RpcBehindError('Discovery finalized RPC is behind its pinned range.');
     }
     await feed.assertCanonical(); return hints;
   };
@@ -107,7 +108,7 @@ export async function discoverCctpRequests(input: unknown, clients: {
   if (sourceResult.status === 'rejected') throw sourceResult.reason;
   if (destinationResult.status === 'rejected') throw destinationResult.reason;
   const burns = [...(previous?.burns ?? []), ...sourceResult.value], credits = [...(previous?.credits ?? []), ...destinationResult.value];
-  if (burns.length > 100 || credits.length > 100) throw new DiscoveryStoppedError('Discovery journal capacity reached (100 hints per chain); reconcile without resetting its cursor.');
+  if (burns.length > 100 || credits.length > 100) throw new DiscoveryStoppedError('Discovery journal capacity reached (100 hints per chain); reconcile without resetting its cursor.', 'capacity');
   const groups = <T extends { operationId: Hex }>(rows: T[]) => {
     const map = new Map<Hex, T[]>(); for (const row of rows) map.set(row.operationId, [...(map.get(row.operationId) ?? []), row]); return map;
   };
@@ -134,7 +135,7 @@ export async function discoverCctpRequests(input: unknown, clients: {
   // Close both complete ranges against their captured hashes/clocks before export.
   const assertSnapshots = async () => {
     for (const [client, head] of [[clients.source, source], [clients.destination, destination], [clients.source, heads.source], [clients.destination, heads.destination]] as const) {
-      if (signal.aborted) throw new Error('Discovery canceled.');
+      if (signal.aborted) throw new ObservationCanceledError('Discovery canceled.');
       const now = blockHeaderSchema.parse(await client.pub.getBlock({ blockNumber: head.number }));
       if (now.number !== head.number || now.hash !== head.hash || now.timestamp !== head.timestamp) throw new FinalityConflictError('Discovery snapshot changed.');
     }
