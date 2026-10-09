@@ -55,7 +55,7 @@ remain historical context.
 | Pure screening evidence verifier (H4c2) | Implemented 2026-10-09; [checkpoint](plans/tripwire-progress.md), ADR-045; S01–S16 in 29 tests with hand-built digests; not wired into review/operator/contracts (H4c3 next) |
 | Report-folder follow in a real browser (H1) | Automated Chromium run with a real directory handle, 12/12 synthetic checks (`scripts/smoke/operationsFolder.mjs`); native dialog and permission revocation still need a human |
 | Audit package (H5) | Prepared: [tripwire-audit-package.md](plans/tripwire-audit-package.md); vendor, pinned commit and independent audit open |
-| Integration verification, 2026-10-09 | Clean clone: npm ci, lint, typecheck, build and artifact drift clean; demos and 20/20 route checks pass; full test and mutation totals recorded when the runs finish |
+| Integration verification, 2026-10-09 | Clean clone: npm ci, lint, typecheck, build and artifact drift clean; **1,668 tests / 80 files** pass (twice); **80 / 80 mutants caught**; both local demos pass; every route passes in real Chromium at 1280 and 390 px (20/20) after fixing two phone overflows |
 
 Tripwire and Check before you sign, planned in [plans/tripwire-hackathon.md](plans/tripwire-hackathon.md) (each stage's result is recorded there).
 

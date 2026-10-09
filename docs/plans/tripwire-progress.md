@@ -65,9 +65,16 @@ holds:
 
 No vendor has been chosen and no audit has been done.
 
-**Checks:** full suite, lint, typecheck, build, artifact drift and the mutation
-suite. See the roadmap row and the integration PR for the final counts of this
-step. No public RPC, keys, deployment, payment or external audit.
+**Checks (clean clone, Node 22.22.2):**
+- `npm ci`, lint, typecheck and build pass; a fresh compile reproduces the committed artifacts.
+- **1,668 tests / 80 files**, passing twice; **80 / 80 mutants caught**.
+- Both local demos pass.
+- Every route passes in real Chromium at 1280 and 390 px (`scripts/smoke/siteRoutes.mjs`, 20/20).
+
+The route check found two phone overflows, now fixed: `/app`'s toolbar and the
+home page's scroll-in cards. Two real-subprocess tests got a 30 s budget because
+they start up to four Node/tsx processes. No public RPC, keys, deployment, payment
+or external audit.
 
 ## Next independent engineering step: H4c3 — coordinated screening integration
 
