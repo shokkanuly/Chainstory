@@ -108,14 +108,16 @@ For Tripwire implementation, read `docs/plans/tripwire-progress.md` and
 file is the current checkpoint; the handoff contains the larger plan and historical
 evidence. Do not mark a manual/live/audit gate complete using synthetic tests.
 
-The human explicitly requested on 2026-10-07 that each completed implementation
-step be committed and pushed to `codex/tripwire-route-limits`. Include the updated
-checkpoint and relevant runbooks in that step's commit. Record behavior, checks,
-remaining limits and the exact next task before committing. Verify the remote
-branch SHA after pushing. Preserve concurrent teammate changes; no force push or
-automatic merge into `main`. Do not include wallets, `.env*`, `.tripwire/`, signed
-outboxes or SQLite journals. If delivery fails, record the local commit and report
-the failure instead of claiming it is on GitHub.
+Commit and push each completed implementation step to your own working branch
+and open a PR into `main`; do not push to a teammate's branch or straight to
+`main`. Start from current `main` (it carries policy v4; ADR-046) and merge
+`main` back in before you push again. Include the updated checkpoint and relevant
+runbooks in that step's commit. Record behavior, checks, remaining limits and the
+exact next task before committing. Verify the remote branch SHA after pushing.
+Preserve concurrent teammate changes; no force push on a shared branch. Do not
+include wallets, `.env*`, `.tripwire/`, signed outboxes or SQLite journals. If
+delivery fails, record the local commit and report the failure instead of
+claiming it is on GitHub.
 
 ## 11. Glossary
 
