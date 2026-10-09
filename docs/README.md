@@ -77,6 +77,67 @@ takes two days and a kill switch is instant, the oracle alone holds a route at m
 72 hours, DELAY counts split payouts, a REJECT is a 7-day hold rather than stranded
 funds, keys are split by role with separate nonce lanes and fee-bumped replacement,
 and the live operator computes a rolling baseline.
+
+The eighth adds a keyless CCTP observer and unsigned deployment planner for the
+selected Base Sepolia → Ethereum Sepolia pilot. Separate local role wallets are
+prepared; public deployment and real transfers remain pending. See the
+[pilot runbook](plans/tripwire-pilot.md).
+The ninth milestone validates scorer inputs and screening snapshots: unavailable
+or malformed inputs cannot clear, and watcher retries recover after a screening
+outage. The [v1 product contract and P0 backlog](plans/tripwire-product.md) now
+define customer policy, funded recovery and source bypass boundaries; live
+acceptance remains pending. A [partner interview and pilot kit](plans/tripwire-partners.md)
+is prepared; no outreach or partnership is claimed.
+The next local milestone adds [customer policy and destination recovery](plans/tripwire-payment-policy.md)
+in `CctpPaymentEscrow`, with review format 3. Legacy signing profiles refuse it.
+The new local command demonstrates approval, delay, return and exact credit accounting;
+The [product operator integration](plans/tripwire-payment-operator.md) now verifies
+new receipt/operation bindings, reads coherent policies, signs format-3 reviews and
+reconciles customer returns through the existing durable outbox. Manifest v3 and
+unsigned product deployment encoding are available. [Exact runtime acceptance and
+keyless preflight](plans/tripwire-testnet-readiness.md) now cover product startup,
+observer polls and unsigned preparation. [Receipt-backed initial deployment
+acceptance](plans/tripwire-deployment-acceptance.md) now verifies the prepared
+package's actual transactions, initial policy/storage and complete sole-grant
+history. The [first-payment planner](plans/tripwire-first-payment.md) adds current
+Standard fee checks, bounded approval/reset and one simulated unsigned action,
+with a reserved burn nonce; 950 tests pass locally. Its actual public run is blocked
+by four missing deployment transactions. A live read-only
+snapshot shows missing testnet gas/source USDC; a fresh unsigned v3 package is prepared.
+Fresh public deployment, real receipts, behavioral shadow separation and audit
+remain pending.
+For the next developer, start with the [handoff and implementation queue](plans/tripwire-handoff.md):
+clean-clone setup, current limits, pending live gates and checkable next steps.
+Read the [current continuation checkpoint](plans/tripwire-progress.md) for the
+latest completed step and exact next gate. H2a adds classified observer startup
+and process exits; H2b1 now classifies running failures and stops on journal faults.
+H2b2 now adds a foreground supervisor, actual subprocess recovery drills and local
+incident records; installation and acceptance in the team's live environment remain
+pending. See the [supervision runbook](plans/tripwire-operations.md#bounded-observer-supervision-and-local-incidents-adr-042).
+H4a adds the [mandatory/behavioral matrix](plans/tripwire-decision-matrix.md) and
+a pure read-only signal model. Current payment enforcement remains unchanged;
+H4b adds [optional advisory reports/display](plans/tripwire-operations.md#behavioral-advisory-reports-and-viewer-adr-044)
+with honest keyless-observer unavailability. Reviewed shadow-only execution remains pending.
+
+H4c1 records [the proposed customer advisory/screening policy](plans/tripwire-behavioral-policy.md), ADR-045:
+independent issuer evidence, explicit customer consent and coordinated new-version
+migration. This is a design only; execution still uses legacy enforcement.
+The next H4c2 step implements pure read-only evidence verification, not ALLOW.
+
+The [operations viewer](plans/tripwire-operations.md) at `/tripwire/operations`
+now displays public funding/customer observer snapshots, reasons and receipt
+anchors with explicit stale/error states. Receipt-backed lifecycle milestones now
+separate settlement and escrow block-time durations. Bounded one-shot operation
+discovery adds automatic locators and explicit coverage/gaps. Durable hint journals
+now resume searches, retain conflicts and process finalized backlog in bounded
+increments while rechecking receipts. Continuous keyless observation now adds
+sequential polling, capped RPC retry delays, terminal stops and atomic public
+files with capture-time worker health. Read-only local-folder refresh is now
+implemented with continuity/failure guards; native folder selection end-to-end
+remains unverified by automation. Optional bounded archival now preserves older public reports outside the viewer
+top level, with crash/collision guards and unchanged discovery claims. 1,294 tests
+pass locally. Imports do not
+authenticate or authorize payments.
 See [the plan](plans/tripwire-hardening.md)
 for implemented behavior, remaining P0 work and the old Sepolia deployment boundary.
 The wallet/Solana phase table below describes the earlier project work.

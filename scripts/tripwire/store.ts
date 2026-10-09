@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { burnEventSchema, releaseEventSchema, eventOriginSchema } from './events.js';
 import { blockHashSchema, feedCheckpointSchema, finalizedCheckpointSchema } from './finality.js';
 import { proofPosition, sourceProofSchema, sourceVerifierScopeSchema, type SourceProof } from './sourceProof.js';
+import { discoveryStateSchema, type DiscoveryState } from './discoveryState.js';
 
 const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((v) => v.toLowerCase());
 const hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
@@ -57,6 +58,8 @@ export const transactionStateSchema = z.object({
     return new Set(hashes).size === hashes.length && (v.minedHash === undefined || hashes.slice(1).includes(v.minedHash));
   }, 'Transaction versions must be distinct, and a receipt must belong to one of them.');
 export type TransactionState = z.infer<typeof transactionStateSchema>;
+const outcomeSchema = z.object({ messageId: blockHashSchema, action: z.enum(['executed', 'rejected', 'returned']), recipient: address, amount }).strict();
+export type ReleaseOutcome = z.output<typeof outcomeSchema>;
 const encode = (value: unknown) => JSON.stringify(value, (_k, v: unknown) => typeof v === 'bigint' ? v.toString() : v);
 
 export class OperatorStore {
@@ -87,16 +90,17 @@ export class OperatorStore {
         CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS source_proofs (id TEXT PRIMARY KEY, source_key TEXT UNIQUE NOT NULL,
-          settlement_key TEXT UNIQUE NOT NULL, nonce TEXT UNIQUE NOT NULL, value TEXT NOT NULL);`);
+          settlement_key TEXT UNIQUE NOT NULL, nonce TEXT UNIQUE NOT NULL, value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS release_outcomes (id TEXT PRIMARY KEY, value TEXT NOT NULL);`);
       const expected = encode({ version: 3, scope: this.scope });
       const metadata = this.db.prepare('SELECT value FROM state WHERE key=?').get('metadata');
-      if (!metadata && (this.db.prepare('SELECT key FROM state LIMIT 1').get() || this.db.prepare('SELECT id FROM transactions LIMIT 1').get() || this.db.prepare('SELECT id FROM source_proofs LIMIT 1').get())) {
+      if (!metadata && (this.db.prepare('SELECT key FROM state LIMIT 1').get() || this.db.prepare('SELECT id FROM transactions LIMIT 1').get() || this.db.prepare('SELECT id FROM source_proofs LIMIT 1').get() || this.db.prepare('SELECT id FROM release_outcomes LIMIT 1').get())) {
         throw new Error('Operator state metadata is missing. Refusing to assume its deployment scope.');
       }
       if (metadata && metadata.value !== expected) throw new Error('Operator state schema version or deployment scope does not match.');
       this.db.prepare('INSERT OR IGNORE INTO state VALUES (?, ?)').run('metadata', expected);
       // Validate persisted input before any caller may poll or sign.
-      this.loadWatcher(); this.transactions(); this.sourceProofs(); this.sourceQuarantine();
+      this.loadWatcher(); this.transactions(); this.sourceProofs(); this.sourceQuarantine(); this.outcomes(); this.loadDiscovery();
     } catch (error) { this.close(); throw error; }
   }
 
@@ -112,6 +116,44 @@ export class OperatorStore {
     // One atomic row contains BOTH cursors, events, pending jobs and history.
     this.db.prepare('INSERT INTO state VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
       .run('watcher', encode(checked));
+  }
+
+  loadDiscovery(): DiscoveryState | null {
+    const row = this.db.prepare('SELECT value FROM state WHERE key=?').get('discovery');
+    if (!row) return null;
+    const state = discoveryStateSchema.parse(JSON.parse(String(row.value)));
+    this.checkDiscoveryScope(state); return state;
+  }
+
+  /** BOTH feed cursors and all hints commit in one SQLite row under the lease. */
+  saveDiscovery(input: DiscoveryState): void {
+    if (this.sourceQuarantine() || this.loadWatcher()?.quarantine) throw new Error('Discovery journal is quarantined; reconcile before advancing.');
+    const state = discoveryStateSchema.parse(input); this.checkDiscoveryScope(state);
+    const previous = this.loadDiscovery();
+    if (previous) {
+      if (state.fingerprint !== previous.fingerprint) throw new Error('Discovery manifest scope cannot change.');
+      for (const side of ['source', 'destination'] as const) {
+        const old = previous[side], next = state[side];
+        if (old.from !== next.from || next.through.number < old.through.number ||
+          (old.through.number === next.through.number && encode(old) !== encode(next))) throw new Error('Discovery cursor cannot reset or replace its anchor.');
+      }
+      for (const key of ['burns', 'credits'] as const) {
+        if (state[key].length < previous[key].length || encode(state[key].slice(0, previous[key].length)) !== encode(previous[key])) throw new Error('Discovery hints cannot be replaced or dropped.');
+        const side = key === 'burns' ? 'source' : 'destination';
+        if (state[key].slice(previous[key].length).some((h) => h.origin.blockNumber <= previous[side].through.number)) throw new Error('Discovery cannot insert a hint behind its committed cursor.');
+      }
+    }
+    this.db.prepare('INSERT INTO state VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+      .run('discovery', encode(state));
+  }
+
+  private checkDiscoveryScope(state: DiscoveryState): void {
+    if (this.scope.finalityMode !== 'finalized' || this.scope.sourceVerifier?.profile !== 'customer-payment-v1') throw new Error('Discovery requires a finalized customer-payment journal.');
+    for (const [range, chainId, address, event] of [[state.source, this.scope.sourceChainId, this.scope.source, 'MessageSent'],
+      [state.destination, this.scope.chainId, this.scope.vault, 'PaymentCreditBound']] as const) {
+      const c = finalizedCheckpointSchema.parse(JSON.parse(range.checkpoint));
+      if (c.chainId !== chainId || c.address !== address || c.event !== event) throw new Error('Discovery checkpoint deployment scope does not match.');
+    }
   }
 
   sourceProofs(): SourceProof[] {
@@ -148,7 +190,8 @@ export class OperatorStore {
       return 'saved'; // Idempotent recheck; never a second credit.
     }
     if (prior.some((p) => p.nonce === proof.nonce || proofPosition(p.source) === proofPosition(proof.source) ||
-      proofPosition(p.destination) === proofPosition(proof.destination))) return 'reused';
+      proofPosition(p.destination) === proofPosition(proof.destination) ||
+      (proof.payment && p.payment?.operationId === proof.payment.operationId))) return 'reused';
     this.db.prepare('INSERT INTO source_proofs VALUES (?, ?, ?, ?, ?)')
       .run(proof.messageId, proofPosition(proof.source), proofPosition(proof.destination), proof.nonce, encode(proof));
     return 'saved';
@@ -160,6 +203,22 @@ export class OperatorStore {
       proof.destination.chainId !== this.scope.chainId || proof.destination.address !== this.scope.sourceVerifier.settlement) {
       throw new Error('Source proof deployment scope does not match.');
     }
+    if ((this.scope.sourceVerifier.profile === 'customer-payment-v1') !== Boolean(proof.payment)) throw new Error('Source proof customer intent profile does not match.');
+  }
+
+  outcomes(): ReleaseOutcome[] {
+    return this.db.prepare('SELECT * FROM release_outcomes ORDER BY rowid').all().map((row) => {
+      const outcome = outcomeSchema.parse(JSON.parse(String(row.value)));
+      if (row.id !== outcome.messageId) throw new Error('Release outcome journal identity is corrupt.');
+      return outcome;
+    });
+  }
+
+  /** Caller must confirm terminal state at a hash-checked finalized block first. */
+  saveOutcome(input: ReleaseOutcome): void {
+    const outcome = outcomeSchema.parse(input), previous = this.outcomes().find((o) => o.messageId === outcome.messageId);
+    if (previous && encode(previous) !== encode(outcome)) throw new Error('Cannot replace a terminal release outcome.');
+    this.db.prepare('INSERT OR IGNORE INTO release_outcomes VALUES (?, ?)').run(outcome.messageId, encode(outcome));
   }
 
   private checkOrigins(state: WatcherState): void {

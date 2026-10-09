@@ -80,20 +80,22 @@ export default function TripwireDashboard() {
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
       <header>
-        <p className="b-eyebrow">Tripwire · a circuit breaker for bridges</p>
+        <p className="b-eyebrow">Tripwire · local risk replay</p>
         <DecodeText
           as="h1"
-          text="Would it have stopped them?"
+          text="Modeling a payout gate"
           duration={900}
           delay={120}
           className="mt-2 block font-display text-[clamp(2rem,4.4vw,3.2rem)] font-semibold leading-[1.02] tracking-[-0.04em]"
         />
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Every major bridge drain of 2026 was a single transaction, so a breaker has to act before it executes.
-          Tripwire checks that each payout is backed by a burn it can verify — and if not, pauses that route. Replay
-          three real exploits through its oracle and guardian contract, and see where that works, and where it can’t.
+          Compare guardian protection before and after a modeled payout using synthetic incident patterns.
+          These illustrative inputs do not reproduce the original exploit transactions or establish prevented
+          losses. The current authenticated CCTP escrow gate is tested separately.
         </p>
       </header>
+
+      <a href="/tripwire/operations" className="b-card flex flex-wrap items-center justify-between gap-3 p-4 text-sm hover:bg-muted"><span>Inspect your testnet funding and customer payment reports</span><span className="font-semibold">Open operations →</span></a>
 
       <IncidentPicker selected={state.incidentId} onSelect={select} />
 
@@ -174,7 +176,7 @@ function Outcomes({ incident, snap }: { incident: Incident; snap: ReplaySnapshot
     const status: Status = lost > 0 ? 'drained' : tripped ? 'protected' : 'watching';
     return (
       <Tile
-        label={`Tripwire · ${STRATEGY_LABEL[strategy].toLowerCase()}`}
+        label={`Model · ${STRATEGY_LABEL[strategy].toLowerCase()}`}
         value={usd(lost)}
         status={status}
         note={
@@ -191,7 +193,7 @@ function Outcomes({ incident, snap }: { incident: Incident; snap: ReplaySnapshot
   return (
     <div className="grid gap-3 sm:grid-cols-3">
       <Tile
-        label="What actually happened"
+        label="Reconstruction without protection"
         value={usd(realityLost)}
         status={realityLost > 0 ? 'drained' : 'watching'}
         note={`Reported loss ${usd(incident.reportedLossUsd)}${incident.reportedLossDetail ? ` · ${incident.reportedLossDetail}` : ''}.`}
@@ -205,7 +207,7 @@ function Outcomes({ incident, snap }: { incident: Incident; snap: ReplaySnapshot
 type Status = 'watching' | 'protected' | 'drained';
 const STATUS: Record<Status, { label: string; color: string; icon: Icon }> = {
   watching: { label: 'Watching', color: 'var(--b-text-faint)', icon: GaugeIcon },
-  protected: { label: 'Nothing lost', color: 'var(--tw-clear)', icon: CheckCircleIcon },
+  protected: { label: 'No modeled loss', color: 'var(--tw-clear)', icon: CheckCircleIcon },
   drained: { label: 'Drained', color: 'var(--tw-trip)', icon: ProhibitIcon },
 };
 

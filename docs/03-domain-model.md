@@ -1,7 +1,66 @@
 # 03 — Domain Model
 
+Tripwire's standalone operations view adds `OperationsSnapshot` / `OperationsPayment`
+in `src/domain/operations.ts`: display-only imported provenance, capture time,
+generic blocks/accounts/contracts, bigint balances with symbol/decimals, listed
+payment states/reasons and public receipt references. Optional lifecycle data
+contains reported milestones and exact bigint durations, with unavailable/old
+reports and incompatible cross-chain clocks handled explicitly. It is separate from
+`NormalizedTx`, classification and tax. The EVM adapter validates the supported
+operator JSON boundary; imported canonical operator addresses remain lowercase.
+No field authorizes execution or establishes a complete treasury inventory.
+Optional discovery coverage separates searched ranges, paired audit candidates,
+source-only hints, unmatched destination hints and ambiguous operation IDs. Hints
+are not normalized authenticated credits or unminted balances. Persistent reports
+also separate cumulative coverage from new/idle scan windows and exact bigint
+remaining finalized-block counts; these fields describe search progress, not
+settlement finality or complete treasury exposure. Optional observer data records
+process-local attempts/failures, stopped/retry/planned-check state and a reported
+next delay. It is capture-time display data, never independent worker liveness or
+an execution grant. Optional `observationScope` is a canonical projection of the
+validated successful manifest-version/vault/guardian/operator scope, used only to
+refuse silently switching deployments within a local folder connection. Failure
+envelopes have no scope token. ADR-038 browser folder-check time and connection
+state stay separate from snapshot capture time and worker metadata; refreshing a
+file neither authenticates its publisher nor establishes process liveness.
+The pure shared public-report filename codec (ADR-039) returns a bigint local
+publication timestamp for browser selection/standalone archival only; it is not
+a chain clock, authenticated origin, credit amount or freshness reset.
+
 This is the contract between adapters and everything else. It lives in code at `src/domain/` (zod schemas + inferred types).
 If you change it, update this file in the same change and grep for every consumer (duplicated types drift silently).
+
+ADR-043 adds a separate `BehavioralShadow` vocabulary/schema for read-only scorer
+signal display, outside `OperationsSnapshot`, `RiskAssessment` and signed reviews.
+Fixed markers are version 1, mode `behavioral-shadow`, enforcement false,
+authorization none, executionPolicy `legacy-enforced` and source `existing-scorer`.
+Expected opaque route/transfer identity, synthetic provenance and caller-supplied
+original capture/check Unix seconds bind the projection; timestamps do not
+authenticate a publisher. Exactly three ordered signal slots represent size,
+velocity and optional contract indicators. Reported slots copy a bounded original
+score with a scorer-output reference; unavailable slots have null scores and
+fixed not-reported/invalid/stale/future reasons. A stale/future report cannot
+retain current scores, and refreshing the check clock cannot refresh capture.
+No proof, screening, payment amount, ALLOW, signature, tier, aggregate verdict,
+raw source prose, storage or network operation enters this model. It is a pure
+display projection, not enabled shadow-only enforcement. See the [decision matrix](plans/tripwire-decision-matrix.md) for exact
+freshness/scope bounds, compatibility and required future integration.
+
+ADR-044/H4b adds optional `OperationsPayment.behavioral: BehavioralAdvisory`.
+Its strict version-1 union is reported plus an H4a assessment, or unavailable
+plus a fixed assessment-not-produced/invalid-input/scope-mismatch reason and
+no assessment or score. Absence preserves old-report compatibility and is shown
+as not included, never zero risk. Reported route/transfer identity and synthetic
+marker must match the enclosing observer report; checkedAt must equal the report
+observedAt floored to Unix seconds. capturedAt stays the original assessment
+clock, independent of transfer block time. Imported availability is not data
+authentication, proof completeness, aggregate scorer health or payment permission.
+The viewer applies later display expiry without mutating the imported assessment.
+
+H4c1 records [the proposed customer advisory/screening policy](plans/tripwire-behavioral-policy.md), ADR-045:
+independent issuer evidence, explicit customer consent and coordinated new-version
+migration. This is a design only; execution still uses legacy enforcement.
+The next H4c2 step implements pure read-only evidence verification, not ALLOW.
 
 ## Identifiers
 

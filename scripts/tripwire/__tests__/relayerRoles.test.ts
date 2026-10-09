@@ -144,7 +144,7 @@ describe('deployment roles (ADR-026, CRIT-1)', () => {
 
   function demoChain(owner: Hex, tier: number) {
     const readContract = vi.fn(async ({ functionName }: { functionName: string }) => ({
-      GUARDIAN_POLICY_VERSION: 4n, RELEASE_POLICY_VERSION: 4n, isProtected: true, MAX_REVIEW_TTL: 600n, rollingUsage: 0n,
+      GUARDIAN_POLICY_VERSION: 4n, RELEASE_POLICY_VERSION: 4n, REVIEW_FORMAT_VERSION: 2n, isProtected: true, MAX_REVIEW_TTL: 600n, rollingUsage: 0n,
       getRoute: { cap: CAP, windowSeconds: WINDOW_SECONDS }, currentTier: tier, isPaused: tier === 3, owner,
     } as Record<string, unknown>)[functionName]);
     const writeContract = vi.fn(async () => { throw new Error('stop after the reset decision'); });

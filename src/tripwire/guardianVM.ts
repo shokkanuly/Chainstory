@@ -141,6 +141,11 @@ export class GuardianVM {
     );
   }
 
+  /** Read deployed bytes for artifact acceptance fixtures; no transaction/signing. */
+  readBytecode(address: Hex = this.address): Promise<Hex> {
+    return this.exclusive(async () => bytesToHex(await this.vm.stateManager.getCode(new Address(hexToBytes(address)))) as Hex);
+  }
+
   private raw(from: PrivateKeyAccount, data: Hex, to: Hex | undefined) {
     const nonce = this.nonces.get(from.address) ?? 0n;
     this.nonces.set(from.address, nonce + 1n);

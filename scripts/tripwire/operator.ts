@@ -1,4 +1,5 @@
-// Durable release queue. HOLD, REJECT holds and guardian-delayed payouts remain pending.
+// Durable release queue. HOLD, REJECT holds, guardian-delayed payouts and
+// customer returns that have not matured remain pending.
 import type { Hex } from 'viem';
 import { z } from 'zod';
 import type { AttestationOutcome, Attestor } from './attest.js';
@@ -7,6 +8,7 @@ import { ReleaseDecision, settlementVerdict } from './settlement.js';
 import type { DurableSender } from './sender.js';
 import type { TransactionRequest } from './store.js';
 import type { Observation, Watcher } from './watch.js';
+import { paymentStatusSchema } from './testnet/paymentState.js';
 
 export enum ReleaseState { PENDING, VERIFIED, HELD, REJECTED, EXECUTED }
 const clock = z.object({ until: z.bigint().nonnegative(), now: z.bigint().nonnegative() });
@@ -16,18 +18,22 @@ const releaseStatusSchema = z.object({
   delay: clock.optional(),
   /** Policy v4: a REJECT holds until `until`, then a fresh review may reopen it. Absent: it never reopens. */
   rejection: clock.optional(),
+  /** Customer payment escrow (ADR-028): policy version, approval, return clock. Absent on plain vaults. */
+  payment: paymentStatusSchema.optional(),
 });
 export type ReleaseStatus = z.infer<typeof releaseStatusSchema>;
 export interface ReleasePort {
   read(messageId: Hex): Promise<ReleaseStatus>;
-  review(observation: Observation, nonce: bigint): Promise<TransactionRequest>;
+  review(observation: Observation, nonce: bigint, decision?: ReleaseDecision): Promise<TransactionRequest>;
   canExecute(messageId: Hex): Promise<boolean>;
   execute(messageId: Hex): TransactionRequest;
   /** Real RPC ports must confirm terminal state at a hash-checked finalized block. */
   terminalFinalized(messageId: Hex, state: ReleaseStatus): Promise<boolean>;
+  /** Permissionless completion only. The operator never initiates customer returns. */
+  returnCredit?(messageId: Hex): TransactionRequest;
 }
 export interface OperatorResult {
-  messageId: Hex; action: 'held' | 'delayed' | 'rejected' | 'executed' | 'retry';
+  messageId: Hex; action: 'held' | 'delayed' | 'rejected' | 'executed' | 'return-pending' | 'returned' | 'retry';
   /** The settlement check that decided a hold or rejection (ADR-023), or what blocked a retry. */
   reason?: string;
 }
@@ -82,18 +88,46 @@ export class ReleaseOperator {
   private async handle(observation: Observation, blocked: string | null): Promise<{ result: OperatorResult; state?: ReleaseStatus }> {
     const { messageId } = observation.release;
     let state = await this.read(observation);
+    // Customer payment escrow (ADR-028): a finished return is terminal, and a
+    // requested one replaces the payout path. The operator never starts a
+    // return; it only completes a matured one, which pays the fixed recipient.
+    if (state.payment?.returned) {
+      if (!(await this.finalized(messageId, state))) return { result: { messageId, action: 'retry' } };
+      await this.watcher.acknowledge(messageId, 'returned');
+      return { result: { messageId, action: 'returned' } };
+    }
+    if (state.payment && state.payment.returnAt > 0n) {
+      if (state.state === ReleaseState.EXECUTED) throw new Error('Executed customer credit has a pending return. Reconcile.');
+      if (observation.source.status !== 'verified' || !this.port.returnCredit) return { result: { messageId, action: 'held' }, state };
+      if (state.payment.now < state.payment.returnAt) return { result: { messageId, action: 'return-pending' } };
+      if (blocked) return { result: { messageId, action: 'retry', reason: `Release transactions are blocked: ${blocked}` } };
+      const id = this.sender.nextAttemptId(`return/${messageId}/${state.payment.returnAt}`);
+      if (!id) return { result: { messageId, action: 'retry' } };
+      await this.sender.send(id, this.port.returnCredit(messageId));
+      state = await this.read(observation);
+      if (state.payment?.returned && await this.finalized(messageId, state)) {
+        await this.watcher.acknowledge(messageId, 'returned');
+        return { result: { messageId, action: 'returned' } };
+      }
+      return { result: { messageId, action: 'retry' } };
+    }
     if (state.state === ReleaseState.EXECUTED) {
       if (!(await this.finalized(messageId, state))) return { result: { messageId, action: 'retry' } };
-      await this.watcher.acknowledge(messageId);
+      await this.watcher.acknowledge(messageId, 'executed');
       return { result: { messageId, action: 'executed' } };
     }
     const verdict = settlementVerdict(observation);
-    const decision = verdict.decision;
+    // A customer policy blocker (recipient, limit, approval, pause, stale policy)
+    // turns an ALLOW into a HOLD; it never softens an established REJECT.
+    const blockers = state.payment?.blockers ?? [];
+    const decision = blockers.length && verdict.decision !== ReleaseDecision.REJECT ? ReleaseDecision.HOLD : verdict.decision;
+    const reason = decision === verdict.decision ? verdict.reason : `Customer payment policy: ${blockers.join(', ')}`;
     // A REJECT is a hold, not an end (CRIT-2): it is never acknowledged. Once
     // the vault's hold lapses, only evidence that now passes every check may
-    // reopen it, and the vault can pay only the request's own recipient.
+    // reopen it, and the vault can pay only the request's own recipient. A
+    // funded customer credit can also leave through its fixed return meanwhile.
     if (state.state === ReleaseState.REJECTED && !(decision === ReleaseDecision.ALLOW && rejectionLapsed(state))) {
-      return { result: { messageId, action: 'rejected', reason: rejectionLapsed(state) ? verdict.reason
+      return { result: { messageId, action: 'rejected', reason: rejectionLapsed(state) ? reason
         : `Rejected; reviewable again after ${state.rejection?.until.toString() ?? 'never'}.` }, state };
     }
     let protection: AttestationOutcome;
@@ -106,13 +140,14 @@ export class ReleaseOperator {
     // Pending/held vault states already block execution. Preserve the job
     // without signing the same HOLD repeatedly while data is missing.
     if (decision === ReleaseDecision.HOLD && state.state !== ReleaseState.VERIFIED) {
-      return { result: { messageId, action: 'held', reason: verdict.reason }, state };
+      return { result: { messageId, action: 'held', reason }, state };
     }
     // Keep reevaluating risk/protection, but do not spend a review nonce/gas
     // every tick during an already established per-request hold. At maturity
     // a fresh review is required; HOLD/REJECT can still revoke an old ALLOW now.
+    // A changed customer policy needs a fresh review even while a delay runs.
     if (decision === ReleaseDecision.ALLOW && state.state === ReleaseState.VERIFIED &&
-      state.delay && state.delay.now < state.delay.until) {
+      (!state.payment || state.payment.reviewedVersion === state.payment.version) && state.delay && state.delay.now < state.delay.until) {
       return { result: { messageId, action: 'delayed' } };
     }
     if (blocked) return { result: { messageId, action: 'retry', reason: `Release transactions are blocked: ${blocked}` } };
@@ -120,20 +155,23 @@ export class ReleaseOperator {
     state = await this.read(observation);
     const attempt = this.sender.nextAttemptId(`review/${messageId}/${state.nonce + 1n}`);
     if (!attempt) return { result: { messageId, action: 'retry' } };
-    const review = await this.sender.send(attempt, await this.port.review(observation, state.nonce + 1n));
+    const review = await this.sender.send(attempt, await this.port.review(observation, state.nonce + 1n, decision));
     if (review.status !== 'confirmed' && !(review.status === 'included' && review.receiptStatus === 'success')) {
       return { result: { messageId, action: 'retry' } };
     }
     state = await this.read(observation);
-    if (state.state === ReleaseState.REJECTED) return { result: { messageId, action: 'rejected', reason: verdict.reason }, state };
-    if (decision !== ReleaseDecision.ALLOW) return { result: { messageId, action: 'held', reason: verdict.reason }, state };
+    if (state.state === ReleaseState.REJECTED) return { result: { messageId, action: 'rejected', reason }, state };
+    if (decision !== ReleaseDecision.ALLOW) return { result: { messageId, action: 'held', reason }, state };
+    if (state.payment && (state.payment.blockers.length || state.payment.returnAt > 0n || state.payment.reviewedVersion !== state.payment.version)) {
+      return { result: { messageId, action: 'held', reason: `Customer payment policy: ${state.payment.blockers.join(', ') || 'policy changed'}` }, state };
+    }
     if (!(await this.port.canExecute(messageId))) return { result: { messageId, action: 'delayed' } };
     // A new review nonce identifies a consciously retried execution after a
     // recorded revert. Crashes replay the original raw tx through recover().
     const execution = await this.sender.send(`execute/${messageId}/${state.nonce}`, this.port.execute(messageId));
     state = await this.read(observation);
     if (execution.status === 'confirmed' && state.state === ReleaseState.EXECUTED && await this.finalized(messageId, state)) {
-      await this.watcher.acknowledge(messageId); return { result: { messageId, action: 'executed' } };
+      await this.watcher.acknowledge(messageId, 'executed'); return { result: { messageId, action: 'executed' } };
     }
     return { result: { messageId, action: 'retry' } };
   }
