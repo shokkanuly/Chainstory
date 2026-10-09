@@ -128,7 +128,8 @@ export class ReleaseOperator {
     // funded customer credit can also leave through its fixed return meanwhile.
     if (state.state === ReleaseState.REJECTED && !(decision === ReleaseDecision.ALLOW && rejectionLapsed(state))) {
       return { result: { messageId, action: 'rejected', reason: rejectionLapsed(state) ? reason
-        : `Rejected; reviewable again after ${state.rejection?.until.toString() ?? 'never'}.` }, state };
+        : state.payment ? 'Rejected; a customer payment leaves only through its fixed return.'
+          : `Rejected; reviewable again after ${state.rejection?.until.toString() ?? 'never'}.` }, state };
     }
     let protection: AttestationOutcome;
     try { protection = await this.attestor.handle(this.routeId, observation.assessment); }

@@ -122,7 +122,13 @@ with honest keyless-observer unavailability. Reviewed shadow-only execution rema
 H4c1 records [the proposed customer advisory/screening policy](plans/tripwire-behavioral-policy.md), ADR-045:
 independent issuer evidence, explicit customer consent and coordinated new-version
 migration. This is a design only; execution still uses legacy enforcement.
-The next H4c2 step implements pure read-only evidence verification, not ALLOW.
+The H4c2 pure read-only evidence verifier is now implemented (`src/chains/evm/screening.ts`);
+it never returns ALLOW. Next is H4c3, the coordinated contract/operator integration.
+
+On 2026-10-09 the payment track was merged into `main` on top of guardian policy v4
+(ADR-046); its ADRs are now numbered 028–045. The handoff and checkpoint are in
+English, an [audit package](plans/tripwire-audit-package.md) is ready for a reviewer,
+and `scripts/smoke/` holds real-browser checks of every route and of the report-folder flow.
 
 The [operations viewer](plans/tripwire-operations.md) at `/tripwire/operations`
 now displays public funding/customer observer snapshots, reasons and receipt

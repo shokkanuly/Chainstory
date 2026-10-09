@@ -71,7 +71,11 @@ describe('durable release queue', () => {
   });
   it('keeps a funded rejection available for a later customer return', async () => {
     const f = fixture(); f.setState({ state: ReleaseState.REJECTED, payment: payment() });
-    expect((await f.operator.tick())[0].action).toBe('rejected'); expect(f.store.loadWatcher()?.pending).toHaveLength(1);
+    const review = vi.spyOn(f.releasePort, 'review');
+    const [rejected] = await f.operator.tick();
+    // Never reopened for payout (ADR-046): the fixed return is the only exit, and nothing is signed.
+    expect(rejected).toMatchObject({ action: 'rejected', reason: 'Rejected; a customer payment leaves only through its fixed return.' });
+    expect(review).not.toHaveBeenCalled(); expect(f.store.loadWatcher()?.pending).toHaveLength(1);
     f.setState({ payment: { ...payment(), returnAt: 100n } });
     expect((await f.operator.tick())[0].action).toBe('returned'); expect(f.store.loadWatcher()?.pending).toEqual([]);
   });
