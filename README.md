@@ -266,6 +266,31 @@ if a rotation is ever pending ([runbook](docs/plans/tripwire-operator.md#redeplo
 | Gas: check an outflow · accept an attestation | 79.0k · 88.3k |
 | **Total** | **749 tests passing** |
 
+## Next: the customer payment escrow
+
+The same checks, for teams that pay in USDC across chains. A company pays from
+Base to Ethereum through Circle's CCTP v2; the USDC lands in
+`CctpPaymentEscrow`, and is paid out only when the burn and the mint are both
+proven **and** the company's own rules allow it: an approved recipient, an
+amount under its limit, the company's approval and a waiting period for large
+payments, and no pause. Tightening a rule is instant; loosening one waits a day.
+If anything is wrong, the money goes back to a fixed return address after a
+delay, never anywhere else.
+
+| | Status |
+| :--- | :--- |
+| Escrow contract, customer rules, fixed return, exact accounting | Built and tested locally, on guardian policy v4 ([ADR-046](docs/07-decisions-adr.md)) |
+| Operator that signs reviews, completes returns, survives crashes | Built and tested locally ([runbook](docs/plans/tripwire-payment-operator.md)) |
+| Keyless deployment plan, preflight, receipt acceptance, first-payment planner | Built; [readiness](docs/plans/tripwire-testnet-readiness.md) |
+| Continuous keyless observer, supervisor, operations page at `/tripwire/operations` | Built; [operations runbook](docs/plans/tripwire-operations.md) |
+| Sanctions-screening evidence verifier (read-only) | Built; [policy](docs/plans/tripwire-behavioral-policy.md) |
+| Testnet deployment, first real payment, external audit, design partner | **Not yet.** [Plan](docs/plans/tripwire-product.md) · [audit package](docs/plans/tripwire-audit-package.md) · [handoff](docs/plans/tripwire-handoff.md) |
+
+`npm run tripwire:payment:demo:local` runs the whole flow against the real
+bytecode in a local EVM: an ordinary payment, a large one that needs approval
+and a delay, a refund for a recipient that is not on the list, and an old
+approval refused after a rule change.
+
 ## Honest limits
 
 - **Tripwire must see the release before it executes**: through the bridge's
@@ -283,7 +308,7 @@ if a rotation is ever pending ([runbook](docs/plans/tripwire-operator.md#redeplo
 - **One oracle key.** The contracts already accept a k-of-n `TripwireQuorum`,
   but its members do not yet run on separate machines, so the live operator
   signs with one key, behind the 2-day rotation and the Safe's kill switch.
-- **Our audit is not an external one.** It found and fixed ten issues; an
+- **Our audit is not an external one.** It found and fixed eleven issues; an
   independent review is still the next step before mainnet.
 
 ## Run it locally
@@ -312,19 +337,23 @@ shared key and an owner that is not a contract. Step-by-step:
 
 | Path | What |
 | :--- | :--- |
-| [`contracts/evm/`](contracts/evm/) | TripwireGuardian, ProtectedVault, CctpEscrow and TripwireQuorum in Solidity; EVM tests; the mutation runner |
+| [`contracts/evm/`](contracts/evm/) | TripwireGuardian, ProtectedVault, CctpEscrow, CctpPaymentEscrow and TripwireQuorum in Solidity; EVM tests; the mutation runner |
 | [`scripts/tripwire/`](scripts/tripwire/) | The watcher, settlement verdict, attestor, durable sender, operator, and the Sepolia deploy / verify / demo / operator |
 | [`src/tripwire/`](src/tripwire/) | The risk oracle and the in-browser guardian |
 | [`src/tripwire/replay/`](src/tripwire/replay/) | The three incidents and the replay engine |
 | [`src/components/tripwire/`](src/components/tripwire/) | The `/tripwire` dashboard |
-| [`src/chains/evm/`](src/chains/evm/) | Pure EVM codecs, including CCTP v2 message decoding |
+| [`src/chains/evm/`](src/chains/evm/) | Pure EVM codecs: CCTP v2 messages, payment policy, the screening evidence verifier |
+| [`src/pages/TripwireOperations.tsx`](src/pages/TripwireOperations.tsx) | The read-only payment operations page at `/tripwire/operations` |
+| [`scripts/smoke/`](scripts/smoke/) | Real-browser checks: every route at desktop and phone width, and the report-folder flow |
 | [`src/services/preSignCheck.ts`](src/services/preSignCheck.ts) | Check before you sign, at `/check` |
 | [`src/pages/Workspace.tsx`](src/pages/Workspace.tsx) | Retold, the wallet analyser at `/app` |
 | [`api/`](api/), [`server/`](server/) | Retold's stateless API proxy; keeps explorer keys server-side |
 
 | Document | Read it for |
 | :--- | :--- |
-| [Decision records](docs/07-decisions-adr.md) | 27 ADRs: every trade-off, its limits and its tests |
+| [Decision records](docs/07-decisions-adr.md) | 46 ADRs: every trade-off, its limits and its tests |
+| [Payment product plan](docs/plans/tripwire-product.md) · [handoff](docs/plans/tripwire-handoff.md) · [checkpoint](docs/plans/tripwire-progress.md) | The 12-week plan, what is done, and the next step |
+| [Audit package](docs/plans/tripwire-audit-package.md) | Scope, exact build, role powers and bypass paths for an external auditor |
 | [Settlement firewall build map](docs/plans/tripwire-settlement-firewall.md) | How each part of the brief maps to code, and what is still open |
 | [Operator runbook](docs/plans/tripwire-operator.md) | Keys, lanes, fees, recovery, and the exact redeploy steps |
 | [CCTP runbook](docs/plans/tripwire-cctp.md) | The Circle CCTP v2 adapter and escrow |
@@ -338,6 +367,7 @@ shared key and an owner that is not a contract. Step-by-step:
 | Tripwire oracle | Five rules, graduated tiers, `indeterminate` when blind, rolling baseline from finalized burns, proof-first verdict | A trained model |
 | Guardian | THROTTLE / DELAY / FREEZE, escalate-only, 24 h expiry, 72 h oracle span, time-locked oracle rotation, kill switch; **policy v4 live on Sepolia, owned by a Safe** | External audit; mainnet; a Solana (Anchor) guardian |
 | Operations | Durable journal, finalized and safe-head feeds, reorg quarantine, multi-RPC proof agreement, separate key roles and nonce lanes, fee-bumped replacement, RPC failover, authenticated CCTP v2 escrow | Live CCTP pilot; quorum members on separate machines |
+| Payment escrow | Customer rules, approval, delay, pause, fixed return, exact accounting; payment operator, keyless observer, operations page, screening evidence verifier | Testnet deployment and first real payment; screening wired into review (H4c3); external audit; a design partner |
 | Further ideas | | zkML proofs of the score (EZKL), a sentinel network, bounties for reporters |
 
 ## Sources

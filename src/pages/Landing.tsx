@@ -84,15 +84,15 @@ const FAQ = [
   },
   {
     q: 'What is Tripwire?',
-    a: 'A prototype for controlled cross-chain USDC escrow payouts. Local contracts enforce authenticated funding, fresh reviews, customer payment rules and delayed returns to a fixed customer address. Product operator integration, a live pilot and external review remain pending.',
+    a: 'A circuit breaker for bridges. Before a bridge pays out, it checks that the payout is backed by a burn it can verify, and if not, pauses just that route for 24 hours while a human reviews. Next: the same checks for USDC payment escrows, with customer rules and a fixed return address.',
   },
   {
     q: 'Is Tripwire live on a chain?',
-    a: 'An earlier guardian demo was deployed on Sepolia. The current CCTP escrow pilot still needs a fresh deployment and external review. This browser replay runs synthetic incident patterns in a local EVM; it does not establish prevented historical losses.',
+    a: 'On the Ethereum Sepolia testnet, yes: the policy v4 guardian and a demo vault, owned by a Safe multisig. Not on mainnet, and not externally audited. The replay on this site runs the same guardian contract in your browser against reconstructions of three 2026 exploits; sources and assumptions are listed on the page.',
   },
   {
     q: 'Which networks are supported?',
-    a: 'Retold reads Ethereum, Arbitrum, Base, Optimism and Polygon. The first Tripwire pilot targets CCTP v2 Standard USDC from Base Sepolia to Ethereum Sepolia. Other routes require separate integration and review.',
+    a: 'Retold reads Ethereum, Arbitrum, Base, Optimism and Polygon. Tripwire’s guardian is one EVM contract that deploys unchanged to any of them; the first payment pilot targets CCTP v2 USDC from Base Sepolia to Ethereum Sepolia.',
   },
 ];
 
@@ -249,8 +249,8 @@ function Hero() {
           <motion.p className="l-body mt-7 max-w-xl sm:text-[1.125rem]" {...body}>
             <span className="text-foreground">Retold</span> turns any EVM wallet into plain-English history, a draft
             FIFO tax report and a sharper view of token approvals.{' '}
-            <span className="text-foreground">Tripwire</span> is a prototype for controlling funded cross-chain USDC
-            payouts through an escrow.
+            <span className="text-foreground">Tripwire</span> stops a bridge paying out money that was never burned —
+            before it executes.
           </motion.p>
           <motion.div className="mt-9 flex flex-wrap items-center gap-3" {...ctas}>
             <Magnetic>
@@ -260,7 +260,7 @@ function Hero() {
             </Magnetic>
             <Magnetic strength={0.18}>
               <a href="/tripwire?incident=kelp" className="rounded-full border border-border bg-[color-mix(in_srgb,var(--b-canvas)_55%,transparent)] px-5 py-3 text-sm font-semibold backdrop-blur-sm transition-colors hover:bg-secondary">
-                Explore the Tripwire replay ↘
+                Watch Tripwire stop $292M ↘
               </a>
             </Magnetic>
           </motion.div>
@@ -538,14 +538,16 @@ function Tripwire() {
     { label: 'Model: one block later', value: kelp.reportedLossUsd, color: 'var(--b-text-muted)' },
   ];
   return (
-    <Section id="tripwire" n="03" label="Tripwire · payout controls prototype" className="border-t border-border">
+    <Section id="tripwire" n="03" label="Tripwire · a circuit breaker for bridges" className="border-t border-border">
       <div className="mt-6 grid gap-12 lg:grid-cols-[1.1fr_1fr] lg:items-center">
         <div>
-          <RevealText className="l-h2" parts={[{ text: 'Check the payout' }, { text: 'before it executes.', color: 'var(--b-red)' }]} />
+          <RevealText className="l-h2" parts={[{ text: 'Stop the drain' }, { text: 'before it executes.', color: 'var(--b-red)' }]} />
           <p className="l-body mt-6 max-w-xl">
-            Explore how a guardian responds to synthetic incident patterns before and after a modeled payout.
-            The replay uses illustrative inputs; it does not reproduce original exploit transactions or prove
-            prevented losses. The current escrow gate and real CCTP traffic need separate pilot validation.
+            Every major bridge drain of 2026 was a single transaction — Kelp DAO, Verus, Syscoin. Anything that reacts
+            after a transaction lands is too late. Tripwire checks one thing first:{' '}
+            <span className="text-foreground">is this payout backed by a burn we can verify?</span> If not, it pauses
+            that one route for 24 hours while a human looks. The replay is a reconstruction of each attack, not its
+            original transactions.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Magnetic>
@@ -558,10 +560,10 @@ function Tripwire() {
             </a>
           </div>
         </div>
-        <RiseCard as="div" className="l-card fx-spot p-0" style={glowStyle('var(--b-red)')}>
+        <RiseCard as="div" className="l-card fx-spot min-w-0 p-0" style={glowStyle('var(--b-red)')}>
           <div ref={cardRef}>
             <p className="l-label border-b border-border px-6 py-4">
-              {kelp.name} · synthetic guardian reconstruction
+              {kelp.name} · reconstruction through the guardian contract
             </p>
             {/* The wire: the payout runs toward release and is cut at the guardian. */}
             <svg viewBox="0 0 400 28" className="block h-7 w-full px-6" aria-hidden preserveAspectRatio="none">
@@ -648,7 +650,7 @@ function PutToWork() {
             Try <button type="button" onClick={() => setAddress('vitalik.eth')} className="underline underline-offset-4 hover:text-foreground">vitalik.eth</button>
           </p>
         </div>
-        <RiseCard as="div" className="l-card fx-spot p-0" style={glowStyle('var(--b-cyan)')}>
+        <RiseCard as="div" className="l-card fx-spot min-w-0 p-0" style={glowStyle('var(--b-cyan)')}>
           <p className="l-label flex justify-between border-b border-border px-6 py-4">
             <span>Story feed / read-only</span>
             <span style={{ color: 'var(--b-amber)' }}>Illustrative</span>

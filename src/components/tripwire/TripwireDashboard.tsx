@@ -80,18 +80,19 @@ export default function TripwireDashboard() {
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
       <header>
-        <p className="b-eyebrow">Tripwire · local risk replay</p>
+        <p className="b-eyebrow">Tripwire · a circuit breaker for bridges</p>
         <DecodeText
           as="h1"
-          text="Modeling a payout gate"
+          text="Would it have stopped them?"
           duration={900}
           delay={120}
           className="mt-2 block font-display text-[clamp(2rem,4.4vw,3.2rem)] font-semibold leading-[1.02] tracking-[-0.04em]"
         />
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Compare guardian protection before and after a modeled payout using synthetic incident patterns.
-          These illustrative inputs do not reproduce the original exploit transactions or establish prevented
-          losses. The current authenticated CCTP escrow gate is tested separately.
+          Every major bridge drain of 2026 was a single transaction, so a breaker has to act before it executes.
+          Tripwire checks that each payout is backed by a burn it can verify — and if not, pauses that route. Replay
+          reconstructions of three real exploits through its oracle and guardian contract, and see where that works,
+          and where it can’t.
         </p>
       </header>
 

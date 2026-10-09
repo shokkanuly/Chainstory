@@ -68,5 +68,5 @@
     "vite": "^8.1.1",
     "vitest": "^3.2.7"
   },
-  "description": "Evidence-backed controls for cross-chain USDC escrow payouts."
+  "description": "A cross-chain circuit breaker for bridges, and evidence-backed controls for USDC escrow payouts."
 }
