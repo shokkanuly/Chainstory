@@ -128,7 +128,7 @@ describe('observer process exit contract', () => {
     expect(child.status).toBe(78); expect(child.stdout).toBe('');
     expect(JSON.parse(child.stderr.trim())).toMatchObject({ phase: 'startup', reason: 'configuration', restartable: false });
     expect(child.stderr).not.toContain('REDACTION_SENTINEL'); expect(existsSync(s.state)).toBe(false);
-  });
+  }, 30_000); // A real Node/tsx process boot.
 });
 describe('bounded typed RPC classification', () => {
   it('does not accept names or messages impersonating a transport exception', () => {

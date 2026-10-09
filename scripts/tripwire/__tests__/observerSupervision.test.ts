@@ -69,7 +69,8 @@ describe('bounded observer supervision policy', () => {
       .toEqual({ PATH: '/usr/bin', SEPOLIA_RPC_URL: 'https://rpc.invalid' });
   });
 });
-describe('actual child process recovery with synthetic receipts and the same journal', () => {
+// These start real Node/tsx processes (up to four in a row); 5 s is too tight under a parallel suite or CI.
+describe('actual child process recovery with synthetic receipts and the same journal', { timeout: 30_000 }, () => {
   it.each(['rpc-outage', 'crash-before-publication', 'crash-after-publication'])('recovers %s without duplicate proofs or cursor reset', async (scenario) => {
     const s = await setup(); expect(await s.run(scenario)).toEqual({ exitCode: 0, attempts: 2 });
     expect(s.waits).toEqual([10]); expect(s.state().proofs).toBe(1);
