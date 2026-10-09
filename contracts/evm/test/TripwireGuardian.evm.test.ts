@@ -63,7 +63,7 @@ describe('artifact', () => {
     expect(fresh.errors).toEqual([]);
     expect(fresh.ours).toEqual([]);
     expect(artifact.bytecode, 'stale artifact: run `node contracts/evm/compile.mjs`').toBe(fresh.artifact.bytecode);
-  });
+  }, 60_000); // A full solc compile: over 6 s on GitHub's runners.
 });
 
 describe('deployment', () => {
