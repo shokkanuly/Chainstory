@@ -123,7 +123,9 @@ H4c1 records [the proposed customer advisory/screening policy](plans/tripwire-be
 independent issuer evidence, explicit customer consent and coordinated new-version
 migration. This is a design only; execution still uses legacy enforcement.
 The H4c2 pure read-only evidence verifier is now implemented (`src/chains/evm/screening.ts`);
-it never returns ALLOW. Next is H4c3, the coordinated contract/operator integration.
+it never returns ALLOW. H4c3a adds the on-chain half: `CctpScreenedPaymentEscrow`
+verifies the issuer's receipt at review and again at execution (ADR-047). Next is
+H4c3b, the operator integration.
 
 On 2026-10-09 the payment track was merged into `main` on top of guardian policy v4
 (ADR-046); its ADRs are now numbered 028–045. The handoff and checkpoint are in

@@ -6,7 +6,7 @@ Update the status table in `docs/README.md` and the checkboxes here as work land
 
 ## Hackathon build (September 2026) — status
 
-### Active Tripwire work — 2026-10-09
+### Active Tripwire work — 2026-10-10
 
 The current project focus is Tripwire. [Hardening plan](plans/tripwire-hardening.md)
 supersedes the hackathon scope for new work; the legacy wallet/Solana phases below
@@ -53,6 +53,7 @@ remain historical context.
 | Customer advisory/screening policy design (H4c1) | Design recorded only; [proposed policy](plans/tripwire-behavioral-policy.md), ADR-045; exact field/decision/version/consent/expiry/rotation/replay matrices, separate issuer trust and guardian denial powers, future acceptance vectors and H4c2 read-only verifier gate; existing 1,496 tests / 72 files, build/typechecks and lint pass; no execution/configuration/signature/contract changes or live evidence |
 | One codebase: payment escrow on guardian policy v4 | Integrated 2026-10-09; ADR-046; payment ADRs renumbered 028–045; payment REJECT stays final (customer return is the exit); operator keeps v4 semantics; live v4 Sepolia vault still accepted; observer stderr clean on Node 22. Totals in the integration row below |
 | Pure screening evidence verifier (H4c2) | Implemented 2026-10-09; [checkpoint](plans/tripwire-progress.md), ADR-045; S01–S16 in 29 tests with hand-built digests; not wired into review/operator/contracts (H4c3 next) |
+| On-chain screening gate (H4c3a) | Implemented locally 2026-10-10; ADR-047; `CctpScreenedPaymentEscrow` verifies issuer receipts and list heads at review and execution, consent queue, paused start; 32 local-EVM tests and 17 mutants; operator integration H4c3b next; not deployed |
 | Report-folder follow in a real browser (H1) | Automated Chromium run with a real directory handle, 12/12 synthetic checks (`scripts/smoke/operationsFolder.mjs`); native dialog and permission revocation still need a human |
 | Audit package (H5) | Prepared: [tripwire-audit-package.md](plans/tripwire-audit-package.md); vendor, pinned commit and independent audit open |
 | Integration verification, 2026-10-09 | Clean clone: npm ci, lint, typecheck, build and artifact drift clean; **1,668 tests / 80 files** pass (twice); **80 / 80 mutants caught**; both local demos pass; every route passes in real Chromium at 1280 and 390 px (20/20) after fixing two phone overflows |

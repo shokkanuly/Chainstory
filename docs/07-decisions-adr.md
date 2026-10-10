@@ -373,3 +373,24 @@ Keys are server environment variables (`ETHERSCAN_API_KEY`, `GEMINI_API_KEY`), n
 **Keyless reads:** The audit/observer keeps failover RPCs (MED-3) and the independent verifier quorum (ADR-022) through a new keyless `testnet/rpc.ts`, so it still imports no key loader. Observer launchers pass `--disable-warning=ExperimentalWarning`, because Node 22 (CI) prints a SQLite warning that broke the one-line stderr diagnostic (ADR-040).
 **Limits/next:** No payment escrow is deployed. A payment pilot needs a fresh deployment against a v4 guardian owned by a Safe. Translated handoff and checkpoint: [handoff](plans/tripwire-handoff.md), [progress](plans/tripwire-progress.md).
 **Validation:** 1,639 tests / 79 files at the merge commit; 1,668 / 80 with the H4c2 verifier and follow-ups, passing twice in a clean clone; lint, typecheck, build and artifact drift clean; 80 / 80 mutants caught, including a new payment-REJECT mutant.
+
+### ADR-047 — On-chain screening gate: the screened payment escrow (H4c3a)
+
+**Status:** Implemented locally 2026-10-10 as the contract half of H4c3 under the human's instruction to continue the plan. Not deployed or externally audited. The operator half (manifest 4, receipt fetching and journaling, format-4 signing, attestor separation) is H4c3b.
+**Problem:** ADR-045 requires that a reviewer cannot invent a NOT_LISTED result. The H4c2 verifier checks evidence off chain only, so a compromised or careless oracle could still sign an ALLOW that the current escrow (format 3) would execute.
+**Decision:** `CctpScreenedPaymentEscrow` extends `CctpPaymentEscrow` (version marker `SCREENING_ESCROW_VERSION = 2`, review format 4).
+- It pins a screening profile bound to chain, escrow, guardian, route and token: provider, list, issuer and age limits. The issuer may not be the oracle or the customer authority.
+- It keeps one active issuer-signed list head: revisions only increase, there is no same-revision conflict or rollback, no future or expired head, and repeats are idempotent.
+- `reviewScreenedRelease` verifies the issuer's receipt on chain before the oracle's review lands: active head and profile, exact payment context, NOT_LISTED, original clocks and the issuer's signature. It then binds the format-4 review to the receipt's hash, head and expiry.
+- Execution rechecks all of it, and also refuses an issuer that has since become the oracle or the authority. HOLD and REJECT still go through `reviewRelease` with zero commitments, so an outage never blocks a revocation.
+- Advisory mode and profile changes go through the one-day consent queue; revocation is immediate. The escrow starts paused in legacy mode with no head, and uses its own v2 hook and id namespaces.
+
+**Deviations from the H4c1 proposal:**
+1. The vault's EIP-712 domain stays `TripwireProtectedVault` version `2`. The base constructor fixes it, and changing it would change the live vault's bytecode. Format 4 stays separate anyway, because its signed type has different fields (a different type hash). An old format-3 signature is refused, and a test covers it.
+2. `PAYMENT_ESCROW_VERSION` is an inherited constant and still reads 1. Readers must check `SCREENING_ESCROW_VERSION` and `REVIEW_FORMAT_VERSION() == 4`.
+3. The guardian is policy v4 (ADR-024), not the proposal's policy 2.
+4. The contract takes exactly one receipt per review; batch, deduplication and contradiction handling stay in the H4c2 verifier and the H4c3b operator.
+5. The base constructor's version-1 `PolicyCommitted` event is followed by the v2 one; the last is authoritative.
+
+**Limits:** The issuer's honesty, the provider's list and its timestamps remain trusted. The chain cannot see an update the issuer never publishes. The runtime is 23,430 of 24,576 bytes, so the next contract feature must move screening into a library or a separate registry.
+**Validation:** 32 local-EVM tests (the S03–S27 vectors a contract can decide) and an artifact drift test. Every accepted signature was made over digests computed by the H4c2 TypeScript codec, so the codec and the contract agree. 17 new mutants in `contracts/evm/mutate.mjs`. Full suite: 1,701 tests.

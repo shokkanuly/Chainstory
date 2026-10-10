@@ -13,7 +13,8 @@ questions at the end need answers from the people who will run a pilot.
 | Guardian, policy v4 | `contracts/evm/src/TripwireGuardian.sol`, `ITripwireGuardian.sol` | 487 | Per-route caps, graduated tiers, oracle rotation and kill switch |
 | Release gate | `contracts/evm/src/TripwireDemo.sol` (`ProtectedVault`) | 218 | Signed per-release review, REJECT hold, delays |
 | CCTP escrow | `contracts/evm/src/CctpEscrow.sol` | 122 | Credits only from an authenticated Circle mint, exact net amount |
-| Customer payment escrow | `contracts/evm/src/CctpPaymentEscrow.sol` | 287 | Customer policy, approvals, delay, pause, fixed return, accounting |
+| Customer payment escrow | `contracts/evm/src/CctpPaymentEscrow.sol` | 290 | Customer policy, approvals, delay, pause, fixed return, accounting |
+| Screened payment escrow | `contracts/evm/src/CctpScreenedPaymentEscrow.sol` | 258 | Issuer-signed screening receipts and list heads, checked at review and execution; consent queue (ADR-047) |
 | k-of-n oracle | `contracts/evm/src/TripwireQuorum.sol` | 114 | ERC-1271 threshold signer that can replace the single oracle key |
 | Off-chain operator | `scripts/tripwire/operator.ts`, `watch.ts`, `settlement.ts`, `review.ts`, `sender.ts`, `store.ts`, `cctp.ts`, `sourceProof.ts`, `rpcQuorum.ts`, `testnet/operator.ts`, `testnet/cctpOperator.ts`, `testnet/paymentState.ts` | — | Decides and signs reviews; crash-safe journal; source/settlement proofs |
 
@@ -37,11 +38,12 @@ Circle's own contracts and attestation service, and OpenZeppelin libraries.
 | TripwireGuardian | 10,876 | `0xd41e6556127ed214f90d9f926df8c6b65da41f08bfe12908e8e1b0b2f9231480` |
 | ProtectedVault | 8,402 | `0x494e6765ebfc4f977eb7fe6a92ee8b858962790d7b4354d815948d26c1713c4d` |
 | CctpEscrow | 12,638 | `0x05d7bf9676eb2f7c3fa47d6d64b118ffc777b1a4fce56eb32872b534ecf05910` |
-| CctpPaymentEscrow | 20,308 | `0x70a61156004aff981d0097349763dbdf514e86efe6419bdb27c7fbfba2394cfc` |
+| CctpPaymentEscrow | 20,308 | `0x69f29e9ea02234cbe82005c42bfe77d58d85d229695ddd3e7b2da83fdb286cf9` |
+| CctpScreenedPaymentEscrow | 28,747 | `0x882363ac355d23c254a6db3709646a2591d41cbf6570d9eb53c7d766d5af4265` |
 | TripwireQuorum | 5,968 | `0xf31917bf8a71dc62cc0396f74620c45a00188b3120a80d9ddf204e343e1fd094` |
 
-Runtime sizes: guardian 9,599 bytes, CCTP escrow 10,434, payment escrow 16,309
-(EIP-170 limit 24,576).
+Runtime sizes: guardian 9,599 bytes, CCTP escrow 10,434, payment escrow 16,309,
+screened payment escrow 23,430 (EIP-170 limit 24,576: little room left).
 
 ## Roles and their powers
 
@@ -82,7 +84,9 @@ From the product plan's review brief, in order of money at risk:
    `credited = outstanding + paid + returned`.
 4. Owner and oracle powers: rotation timing, kill switch, protection span and
    cooldown, cap changes during protection, route isolation.
-5. Operator: crash between signing and broadcast, same-nonce replacement,
+5. Screening (if in scope): issuer receipt and head verification, the transient
+   review binding in `reviewScreenedRelease`, execution recheck, consent queue.
+6. Operator: crash between signing and broadcast, same-nonce replacement,
    finality conflicts and quarantine, RPC disagreement, policy read at one block.
 
 ## Evidence already in the repository

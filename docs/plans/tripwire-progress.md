@@ -1,12 +1,60 @@
 # Tripwire: current continuation point
 
-Updated **9 October 2026**. Branch: `main` (via the integration PR from
+Updated **10 October 2026**. Branch: `main` (via the integration PR from
 `claude/platform-motion-site-animations-65pkoi`). Main plan and limits:
 [handoff](tripwire-handoff.md). This file is updated with every completed step,
 together with its code and checks. Find this file's current commit with
 `git log -1 -- docs/plans/tripwire-progress.md`; do not paste a commit's own
 future hash into it. History before 9 October was translated from Russian;
 its facts and numbers are unchanged.
+
+## Completed step: H4c3a — on-chain screening gate — 2026-10-10
+
+`contracts/evm/src/CctpScreenedPaymentEscrow.sol` (ADR-047) extends the payment
+escrow so every ALLOW carries an independent issuer's signed receipt for that
+exact payment. The contract checks the receipt when the review lands and again
+at execution. What it adds:
+- a screening profile, and an issuer that may not be the oracle or the authority;
+- issuer-signed list heads, with no rollback or same-revision conflict;
+- review format 4, bound to the receipt;
+- an execution recheck against newer heads, revoked profiles, expiry and an
+  issuer that later becomes the oracle;
+- consent to advisory mode and profile changes through the one-day queue;
+- a paused start, and its own v2 hook and namespace.
+
+HOLD and REJECT still need no receipt. The parent escrow only gained
+virtual/internal hooks; its code is byte-identical apart from the metadata hash.
+
+Tests: `contracts/evm/test/cctpScreenedPaymentEscrow.evm.test.ts`, 32 local-EVM
+cases for the vectors a contract can decide (S03, S05, S09–S13, S16–S22,
+S24–S27), plus an artifact drift test. Fixture: `scripts/tripwire/screenedLocal.ts`.
+Every signature the contract accepts was made over digests from the H4c2
+TypeScript codec, so the off-chain verifier and the contract agree. 17 new
+mutants. Full suite: 1,701 tests / 82 files; lint and typecheck clean.
+
+Deviations from the H4c1 proposal (ADR-047):
+- the vault's EIP-712 domain stays version 2;
+- `PAYMENT_ESCROW_VERSION` still reads 1 (check `SCREENING_ESCROW_VERSION` = 2);
+- the guardian is policy v4;
+- one receipt per on-chain review.
+
+The runtime is 23,430 of 24,576 bytes: split before adding more.
+
+## Next independent engineering step: H4c3b — operator integration of screening
+
+Wire the screened escrow into the signing operator, per
+[the H4c1 policy](tripwire-behavioral-policy.md) and ADR-047:
+- manifest 4 and exact runtime acceptance for `CctpScreenedPaymentEscrow`;
+- a typed provider adapter that returns signed heads/receipts or a typed outage;
+- relay heads, and verify receipts with the H4c2 verifier against state read at
+  one hash-checked block;
+- journal the original signed bytes before signing;
+- sign format 4 with `signScreenedPaymentReleaseReview` and submit
+  `reviewScreenedRelease`;
+- in advisory mode, stop the aggregate attestor;
+- S23 and S28 on the operator.
+
+Do not activate advisory mode before this lands and is reviewed.
 
 ## Completed step: integration onto policy v4, H4c2, H1 (automated), H5 package — 2026-10-09
 
@@ -75,15 +123,6 @@ The route check found two phone overflows, now fixed: `/app`'s toolbar and the
 home page's scroll-in cards. Two real-subprocess tests got a 30 s budget because
 they start up to four Node/tsx processes. No public RPC, keys, deployment, payment
 or external audit.
-
-## Next independent engineering step: H4c3 — coordinated screening integration
-
-The contract, profile, review, operator, attestor, state and journal boundaries,
-with S17–S28 on a local EVM, per [the H4c1 policy](tripwire-behavioral-policy.md).
-This means new escrow/release/review-format/domain/manifest versions and a new
-deployment. Do not activate advisory mode before this lands and is reviewed. The
-H4c2 verifier is the building block: H4c3 must feed it scope, roles, active head
-and payment context read at one coherent, hash-checked block.
 
 ## History: H4c1 — policy design and compatibility contract (7 October)
 
@@ -370,7 +409,7 @@ synthetic.
 | H2b1 | Implemented: runtime failure classification; journal failures are never retried |
 | H2b2 | Repo supervisor, crash drills and local incidents implemented; host/service/process-tree/live acceptance open |
 | H3 | Open: a designated person with test accounts, funding, and real finalized deployment/burn/mint/payout/return receipts. The guardian must be policy v4 (ADR-046) |
-| H4 | H4a model, H4b report/viewer, H4c1 design and H4c2 pure verifier done; next H4c3 coordinated integration; execution separation open |
+| H4 | H4a model, H4b report/viewer, H4c1 design, H4c2 pure verifier and H4c3a on-chain gate done; next H4c3b operator integration; execution separation open |
 | H5 | Audit package prepared ([tripwire-audit-package.md](tripwire-audit-package.md)); vendor, pinned commit and independent audit open |
 | H6 | Open: discovery owner, interviews and a real design-partner commitment |
 

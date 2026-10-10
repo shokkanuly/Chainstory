@@ -1,10 +1,12 @@
 # H4c1: mandatory screening and customer-authorized advisory policy
 
-**Status: proposed design, 2026-10-07; ADR-045. Documentation only.**
-The repository still executes `legacy-enforced`. No fields, signatures, contracts,
-manifest versions or runtime switches below have been implemented or deployed.
-This document specifies a project-owned protocol, not an existing Circle feature
-or a screening vendor API. The next step is H4c2, a pure read-only evidence verifier.
+**Status: design 2026-10-07 (ADR-045); H4c2 verifier implemented 2026-10-09;
+H4c3a on-chain gate implemented 2026-10-10 (ADR-047), with listed deviations.**
+`CctpScreenedPaymentEscrow` now enforces the receipt, head, profile and consent
+rules below on a local EVM. Nothing is deployed, and the operator still signs only
+formats 2 and 3 until H4c3b (manifest 4, receipt journaling, format-4 signing,
+attestor separation). This document specifies a project-owned protocol, not an
+existing Circle feature or a screening vendor API.
 
 ## Product boundary and current behavior
 
@@ -446,6 +448,15 @@ only, never real local wallets. No new provider purchase, executable configurati
 contract/artifact, manifest/journal/report or browser behavior in this step.
 Document unknown/provider outage and original-capture preservation. Existing
 legacy decisions/attestor fixtures must remain unchanged and pass.
+
+**H4c2 status:** implemented 2026-10-09 (`src/chains/evm/screening.ts`, 29 tests).
+
+**H4c3a status:** the contract half is implemented 2026-10-10 (ADR-047): S03,
+S05, S09–S13, S16–S22 and S24–S27 run as 32 local-EVM tests against
+`CctpScreenedPaymentEscrow`, with 17 mutants. The vault's EIP-712 domain stays
+version 2 (format-4's distinct type separates it); see ADR-047 for this and the
+other deviations. **H4c3b** remains: manifest 4, receipt fetching and journaling,
+format-4 signing, head relaying, attestor separation, and S23/S28 in the operator.
 
 **H4c3:** implement and review the coordinated contract/profile/review/operator/
 attestor/state/journal boundaries and S17–S28 on local EVM. Pin exact new ABI/hook,
