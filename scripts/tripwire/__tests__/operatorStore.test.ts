@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -138,5 +139,22 @@ describe('durable operator state', () => {
     for (const amount of [release.amount, release.amount + 1n]) ingress.emit({ messageId, amount, timestamp: now });
     await new Watcher(config(store, ingress, egress)).tick(); store.close();
     expect((await new Watcher(config(open(path).store, ingress, egress)).tick())[0].source.status).toBe('unavailable');
+  });
+  it('keeps the screening evidence journal append-only across restart and refuses a corrupted or oversized record (ADR-048)', () => {
+    const { store, path } = open();
+    const zero = `0x${'0'.repeat(64)}`, word = keccak256(toHex('head'));
+    const evidence = { kind: 'evidence' as const, messageId, profileHash: word, headHash: zero, contextHash: word,
+      block: { number: '7', hash: word }, now: '100', evidence: { status: 'available' as const, head: { signed: 'bytes' }, receipts: [{ raw: 1 }] } };
+    store.saveScreeningRecord(evidence);
+    store.saveScreeningRecord({ kind: 'result', messageId, profileHash: word, headHash: zero, contextHash: word, now: '100', status: 'unavailable', reason: 'head-mismatch' });
+    expect(() => store.saveScreeningRecord({ ...evidence, evidence: { status: 'available', head: 'x'.repeat(70_000), receipts: [] } })).toThrow('too large');
+    expect(() => store.saveScreeningRecord({ ...evidence, kind: 'verdict' } as never)).toThrow();
+    store.close();
+    const reopened = open(path).store;
+    expect(reopened.screeningRecords(messageId).map((r) => r.kind)).toEqual(['evidence', 'result']);
+    expect(reopened.screeningRecords(messageId)[0]).toEqual(evidence);
+    reopened.close();
+    const db = new DatabaseSync(path); db.prepare('UPDATE screening_journal SET message_id=? WHERE seq=1').run(word); db.close();
+    expect(() => new OperatorStore(path, scope)).toThrow('Screening journal identity is corrupt');
   });
 });

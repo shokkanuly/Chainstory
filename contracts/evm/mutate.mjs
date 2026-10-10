@@ -2,7 +2,8 @@
 // the k-of-n attestor quorum, the audit remediation (policy v4: time-locked
 // oracle rotation, bounded oracle protection, cumulative DELAY, REJECT cooldown)
 // the customer payment escrow (policy, approval, delay and funded return) and
-// its screened version (issuer receipt, list head, consent).
+// its screened version (issuer receipt, list head, consent), and the operator's
+// screening gate and advisory mode (TypeScript; no recompile needed).
 //
 //   npm run test:mutants
 //
@@ -25,6 +26,9 @@ const payment = readFileSync(PAYMENT, 'utf8'), paymentArt = readFileSync(PAYMENT
 const ACCEPTANCE_ART = 'scripts/tripwire/testnet/cctpAcceptance.artifact.ts', acceptanceArt = readFileSync(ACCEPTANCE_ART, 'utf8');
 const SCREENED = 'contracts/evm/src/CctpScreenedPaymentEscrow.sol', SCREENED_ART = 'scripts/tripwire/testnet/cctpScreenedPaymentEscrow.artifact.ts';
 const screenedSol = readFileSync(SCREENED, 'utf8'), screenedArt = readFileSync(SCREENED_ART, 'utf8');
+const GATE = 'scripts/tripwire/screeningGate.ts', OPERATOR = 'scripts/tripwire/operator.ts', SETTLEMENT = 'scripts/tripwire/settlement.ts';
+const SCREENED_STATE = 'scripts/tripwire/testnet/screenedState.ts';
+const OPERATOR_SOURCES = Object.fromEntries([GATE, OPERATOR, SETTLEMENT, SCREENED_STATE].map((file) => [file, readFileSync(file, 'utf8')]));
 const M = [
  ['DELAY cap: DELAY gets the full cap', 'tier == Tier.THROTTLE || tier == Tier.DELAY ? uint256(cap) / 2', 'tier == Tier.THROTTLE ? uint256(cap) / 2'],
  ['DELAY hold: never holds', 'if (held > r.cap / 10) revert OutflowDelayed', 'if (false) revert OutflowDelayed'],
@@ -111,6 +115,7 @@ const restore = () => {
   writeFileSync(ACCEPTANCE_ART, acceptanceArt);
   writeFileSync(SCREENED, screenedSol); writeFileSync(SCREENED_ART, screenedArt);
   writeFileSync(QUORUM, quorum);
+  for (const [file, source] of Object.entries(OPERATOR_SOURCES)) writeFileSync(file, source);
 };
 // `finally` does not run when the process is killed. Restore on the way out.
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.once(signal, () => { restore(); process.exit(130); });
@@ -157,6 +162,20 @@ const SCREENED_MUTANTS = [
  ['deployment: starts unpaused', 'paymentsPaused = true;', ''],
  ['hook: a v1 payment hook is accepted', 'returns (bytes32) { return PAYMENT_HOOK_V2; }', 'returns (bytes32) { return PAYMENT_HOOK; }'],
 ];
+const OPERATOR_MUTANTS = [
+ [GATE, 'operator gate: any verified outcome passes', "result.status === 'verified' && result.outcome === 'NOT_LISTED'", "result.status === 'verified'"],
+ [GATE, 'operator gate: evidence is not journaled before relaying or signing', "this.save({ kind: 'evidence'", "void ({ kind: 'evidence'"],
+ [GATE, 'operator gate: a retained contradiction clears on a later clean receipt', 'return retained || contradictory ?', 'return contradictory ?'],
+ [GATE, 'operator gate: outcomes across evaluations are not compared', 'const contradictory = outcomes.length > 1 ||', 'const contradictory ='],
+ [GATE, 'operator gate: an older head is relayed back', '(head.revision <= s.head.revision || head.listAsOf < s.head.listAsOf)', 'false'],
+ [GATE, 'operator review: ALLOW outlives its receipt', 'validUntil: proof && proof.receipt.validUntil < ttl ? proof.receipt.validUntil : ttl', 'validUntil: ttl'],
+ [GATE, 'operator review: advisory keeps a heuristic minimum tier', 'minimumTier: screening?.advisory ? ResponseTier.NONE : releaseMinimumTier(observation)', 'minimumTier: releaseMinimumTier(observation)'],
+ [OPERATOR, 'operator: a screened ALLOW skips the gate', 'if (decision === ReleaseDecision.ALLOW && state.screening) {', 'if (false) {'],
+ [OPERATOR, 'operator: advisory mode still calls the aggregate attestor', 'if (!advisory) {', 'if (true) {'],
+ [SETTLEMENT, 'advisory verdict: heuristic checks still hold', "if (mode === 'advisory') {", 'if (false) {'],
+ [SCREENED_STATE, 'screened state: a revoked or replaced profile is not a blocker', 'const blocked = !accepted ||', 'const blocked ='],
+ [SCREENED_STATE, 'screened state: the oracle may be the issuer', 'issuer === oracle || issuer === authority', 'issuer === authority'],
+];
 
 try {
   for (const [name, from, to] of M) {
@@ -182,6 +201,7 @@ try {
   }
   writeFileSync(VAULT, vault);
   for (const [file, name, from, to] of ORACLE_MUTANTS) {
+    if (!matches(name)) continue;
     const source = ORIGINAL[file];
     if (!source.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
     writeFileSync(file, source.replace(from, to));
@@ -221,6 +241,17 @@ try {
     execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
     let caught;
     try { execSync('npx vitest run contracts/evm/test/cctpScreenedPaymentEscrow.evm.test.ts', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
+    results.push([name, caught ? 'caught' : 'SURVIVED']);
+    console.log(results.at(-1)[1].padEnd(18), name);
+  }
+  for (const [file, name, from, to] of OPERATOR_MUTANTS) {
+    if (!matches(name)) continue;
+    const source = OPERATOR_SOURCES[file];
+    if (!source.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
+    writeFileSync(file, source.replace(from, to));
+    let caught;
+    try { execSync('npx vitest run scripts/tripwire/__tests__/screenedOperator.test.ts scripts/tripwire/__tests__/settlement.test.ts', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
+    writeFileSync(file, source);
     results.push([name, caught ? 'caught' : 'SURVIVED']);
     console.log(results.at(-1)[1].padEnd(18), name);
   }

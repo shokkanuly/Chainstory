@@ -7,6 +7,7 @@ import type { SourceProof } from '../sourceProof.js';
 import { releaseTuple } from './releaseState.js';
 import { RpcBehindError } from '../auditFailure.js';
 import { FinalityConflictError } from '../finality.js';
+import { readScreeningFacts, type ScreenedReadSpec } from './screenedState.js';
 
 const uint = z.bigint().nonnegative().max((1n << 256n) - 1n);
 export const paymentPolicyTuple = z.tuple([uint.positive(), uint, uint, uint.max(30n * 86400n)])
@@ -15,7 +16,8 @@ export const paymentCreditTuple = z.tuple([cctpAddressSchema, blockHashSchema, b
 export const paymentStatusSchema = z.object({
   version: uint.positive(), hash: blockHashSchema, reviewedVersion: uint,
   returnAt: uint, returned: z.boolean(), now: uint,
-  blockers: z.array(z.enum(['paused', 'recipient', 'amount', 'approval'])).max(4),
+  /** `screening`: the screened escrow's profile is revoked or not the accepted one, or its issuer collides with a role (ADR-048). */
+  blockers: z.array(z.enum(['paused', 'recipient', 'amount', 'approval', 'screening'])).max(5),
 }).strict();
 export type PaymentStatus = z.infer<typeof paymentStatusSchema>;
 export class PaymentStateBehindError extends RpcBehindError {}
@@ -23,7 +25,7 @@ export async function readPaymentState(reader: {
   getBlock(args: { blockTag: 'latest' | 'finalized' } | { blockNumber: bigint }): Promise<unknown>;
   read(name: string, block: bigint, args?: readonly string[]): Promise<unknown>;
   minimumBlock(): bigint;
-}, messageId: string, proof: SourceProof | undefined, tag: 'latest' | 'finalized' = 'latest'): Promise<ReleaseStatus> {
+}, messageId: string, proof: SourceProof | undefined, tag: 'latest' | 'finalized' = 'latest', screened?: ScreenedReadSpec): Promise<ReleaseStatus> {
   if (proof && (!proof.payment || proof.messageId !== messageId)) throw new Error('Authenticated customer payment proof is malformed.');
   const head = blockHeaderSchema.parse(await reader.getBlock({ blockTag: tag }));
   if (head.number < reader.minimumBlock() || (proof && head.number < proof.destination.blockNumber)) throw new PaymentStateBehindError('Customer policy RPC is behind observed settlement/transactions.');
@@ -49,6 +51,11 @@ export async function readPaymentState(reader: {
   if (!allowed) blockers.push('recipient');
   if (r[1] > max) blockers.push('amount');
   if ((r[1] > manual || credit[2] !== hash) && approved !== version) blockers.push('approval');
+  // Screened escrow (ADR-048): screening facts come from this same block.
+  const screening = screened ? await readScreeningFacts(read, screened, head.number, { messageId: blockHashSchema.parse(messageId), blockHash: head.hash,
+    now: head.timestamp, recipient: r[0], amount: r[1], policy: { version, hash },
+    credit: { returnRecipient: credit[0], operationId: credit[1], intentPolicyHash: credit[2] } }) : undefined;
+  if (screening?.blocked) blockers.push('screening');
   const checked = blockHeaderSchema.parse(await reader.getBlock({ blockNumber: head.number }));
   if (checked.number !== head.number || checked.hash !== head.hash || checked.timestamp !== head.timestamp) {
     const reason = 'Customer policy block changed while reading.';
@@ -57,5 +64,6 @@ export async function readPaymentState(reader: {
   }
   return { recipient: r[0], amount: r[1], state: r[2], nonce: r[5],
     delay: { until: customerDelay > guardianDelay ? customerDelay : guardianDelay, now: head.timestamp },
-    payment: { version, hash, reviewedVersion, returnAt: credit[3], returned: credit[4], now: head.timestamp, blockers } };
+    payment: { version, hash, reviewedVersion, returnAt: credit[3], returned: credit[4], now: head.timestamp, blockers },
+    ...(screening ? { screening: screening.screening } : {}) };
 }

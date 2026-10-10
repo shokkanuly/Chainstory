@@ -9,6 +9,8 @@ import type { DurableSender } from './sender.js';
 import type { TransactionRequest } from './store.js';
 import type { Observation, Watcher } from './watch.js';
 import { paymentStatusSchema } from './testnet/paymentState.js';
+import { screeningStatusSchema } from './testnet/screenedState.js';
+import type { ScreeningCheck, ScreeningProof } from './screeningGate.js';
 
 export enum ReleaseState { PENDING, VERIFIED, HELD, REJECTED, EXECUTED }
 const clock = z.object({ until: z.bigint().nonnegative(), now: z.bigint().nonnegative() });
@@ -20,11 +22,15 @@ const releaseStatusSchema = z.object({
   rejection: clock.optional(),
   /** Customer payment escrow (ADR-028): policy version, approval, return clock. Absent on plain vaults. */
   payment: paymentStatusSchema.optional(),
+  /** Screened payment escrow (ADR-048): mode, profile, head and payment context at the same block. Absent elsewhere. */
+  screening: screeningStatusSchema.optional(),
 });
 export type ReleaseStatus = z.infer<typeof releaseStatusSchema>;
+/** Format 4 (screened escrow): the accepted receipt for an ALLOW, and whether the customer consented to advisory mode. */
+export interface ReviewScreening { proof?: ScreeningProof; advisory: boolean }
 export interface ReleasePort {
   read(messageId: Hex): Promise<ReleaseStatus>;
-  review(observation: Observation, nonce: bigint, decision?: ReleaseDecision): Promise<TransactionRequest>;
+  review(observation: Observation, nonce: bigint, decision?: ReleaseDecision, screening?: ReviewScreening): Promise<TransactionRequest>;
   canExecute(messageId: Hex): Promise<boolean>;
   execute(messageId: Hex): TransactionRequest;
   /** Real RPC ports must confirm terminal state at a hash-checked finalized block. */
@@ -45,6 +51,8 @@ export interface ReleaseOperatorOptions {
    * meanwhile. A REJECT is not re-checked before its hold ends. Off by default.
    */
   heldBackoff?: { initial: number; max: number };
+  /** Screened escrow (ADR-048): issuer evidence for every ALLOW. Without it a screened release only ever holds. */
+  screening?: ScreeningCheck;
 }
 
 const describe = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 512);
@@ -116,12 +124,17 @@ export class ReleaseOperator {
       await this.watcher.acknowledge(messageId, 'executed');
       return { result: { messageId, action: 'executed' } };
     }
-    const verdict = settlementVerdict(observation);
+    // Advisory mode is the customer's on-chain consent on a screened escrow
+    // (ADR-045/048): behavioral checks stop deciding and the aggregate
+    // attestor is not called. Mandatory proofs, customer policy, issuer
+    // screening and guardian execution checks still apply.
+    const advisory = state.screening?.mode === 'advisory';
+    const verdict = settlementVerdict(observation, advisory ? 'advisory' : 'legacy');
     // A customer policy blocker (recipient, limit, approval, pause, stale policy)
     // turns an ALLOW into a HOLD; it never softens an established REJECT.
     const blockers = state.payment?.blockers ?? [];
-    const decision = blockers.length && verdict.decision !== ReleaseDecision.REJECT ? ReleaseDecision.HOLD : verdict.decision;
-    const reason = decision === verdict.decision ? verdict.reason : `Customer payment policy: ${blockers.join(', ')}`;
+    let decision = blockers.length && verdict.decision !== ReleaseDecision.REJECT ? ReleaseDecision.HOLD : verdict.decision;
+    let reason = decision === verdict.decision ? verdict.reason : `Customer payment policy: ${blockers.join(', ')}`;
     // A REJECT is a hold, not an end (CRIT-2): it is never acknowledged. Once
     // the vault's hold lapses, only evidence that now passes every check may
     // reopen it, and the vault can pay only the request's own recipient. A
@@ -131,13 +144,15 @@ export class ReleaseOperator {
         : state.payment ? 'Rejected; a customer payment leaves only through its fixed return.'
           : `Rejected; reviewable again after ${state.rejection?.until.toString() ?? 'never'}.` }, state };
     }
-    let protection: AttestationOutcome;
-    try { protection = await this.attestor.handle(this.routeId, observation.assessment); }
-    catch (error) {
-      if (this.watcher.quarantineReason || error instanceof FinalityConflictError) throw error;
-      return { result: { messageId, action: 'retry', reason: `Route protection was not submitted: ${describe(error)}` } };
+    if (!advisory) {
+      let protection: AttestationOutcome;
+      try { protection = await this.attestor.handle(this.routeId, observation.assessment); }
+      catch (error) {
+        if (this.watcher.quarantineReason || error instanceof FinalityConflictError) throw error;
+        return { result: { messageId, action: 'retry', reason: `Route protection was not submitted: ${describe(error)}` } };
+      }
+      if (protection.action === 'rejected' || protection.action === 'unavailable') return { result: { messageId, action: 'retry' } };
     }
-    if (protection.action === 'rejected' || protection.action === 'unavailable') return { result: { messageId, action: 'retry' } };
     // Pending/held vault states already block execution. Preserve the job
     // without signing the same HOLD repeatedly while data is missing.
     if (decision === ReleaseDecision.HOLD && state.state !== ReleaseState.VERIFIED) {
@@ -154,9 +169,23 @@ export class ReleaseOperator {
     if (blocked) return { result: { messageId, action: 'retry', reason: `Release transactions are blocked: ${blocked}` } };
     // Re-read the per-message nonce after route protection settles.
     state = await this.read(observation);
+    // Screened escrow: an ALLOW needs a verified NOT_LISTED receipt for the
+    // active head and this exact payment, fetched now. Anything else holds; an
+    // existing ALLOW is then revoked by a HOLD with zero screening commitments.
+    let proof: ScreeningProof | undefined;
+    if (decision === ReleaseDecision.ALLOW && state.screening) {
+      const gate = this.opts.screening ? await this.opts.screening.check(messageId, state)
+        : { status: 'held', reason: 'Screening gate is not configured.' } as const;
+      if (gate.status === 'retry') return { result: { messageId, action: 'retry', reason: gate.reason } };
+      if (gate.status === 'held') {
+        decision = ReleaseDecision.HOLD; reason = gate.reason;
+        if (state.state !== ReleaseState.VERIFIED) return { result: { messageId, action: 'held', reason }, state };
+      } else { proof = gate.proof; state = gate.state; }
+    }
     const attempt = this.sender.nextAttemptId(`review/${messageId}/${state.nonce + 1n}`);
     if (!attempt) return { result: { messageId, action: 'retry' } };
-    const review = await this.sender.send(attempt, await this.port.review(observation, state.nonce + 1n, decision));
+    const review = await this.sender.send(attempt, await this.port.review(observation, state.nonce + 1n, decision,
+      state.screening ? { proof, advisory } : undefined));
     if (review.status !== 'confirmed' && !(review.status === 'included' && review.receiptStatus === 'success')) {
       return { result: { messageId, action: 'retry' } };
     }
