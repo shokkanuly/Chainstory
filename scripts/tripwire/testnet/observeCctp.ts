@@ -81,7 +81,7 @@ export async function runObserveCommand(argv: string[], signal: AbortSignal, por
     args = parseObserveArgs(argv);
     readManifest = () => parseObserverManifest(JSON.parse(readFileSync(args.manifestPath, 'utf8')));
     manifest = readManifest();
-    if (args.discovery && (manifest.version !== 3 || manifest.requests.length)) return failedExit('configuration', 'startup');
+    if (args.discovery && ((manifest.version !== 3 && manifest.version !== 4) || manifest.requests.length)) return failedExit('configuration', 'startup');
   } catch { return failedExit('configuration', 'startup'); }
   let failure: ObserverExit | undefined;
   const emit = (value: unknown) => {

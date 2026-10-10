@@ -465,7 +465,7 @@ contradictions, attestor separation in advisory mode, and S02, S03, S07, S09, S1
 S14, S16/S18, S20, S23, S25, S26 and S28 at the operator boundary.
 
 **H4c3c status:** implemented 2026-10-10 (ADR-049): a version-4 deploy package and
-receipt-backed acceptance, manifest 4 in the keyless audit/observer/verify with a
+receipt-backed acceptance, manifest 4 in the keyless audit/observer/discovery/verify with a
 versioned `screened-payment` public report, and a journal-based provider-call floor.
 H4c4 (independent review, a real provider, paused deployment and consent) remains.
 

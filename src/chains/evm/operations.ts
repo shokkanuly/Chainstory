@@ -124,7 +124,7 @@ const observation = z.object({ ...envelope, mode: z.literal('observe'), status: 
   if (r.worker && r.worker.state !== 'scheduled') ctx.addIssue({ code: 'custom', message: 'Successful observation has failed/stopped worker metadata.' });
   // A screened report is its own version: manifest 4 only, and every payment row carries its screening state.
   const screened = r.policy === 'screened-payment';
-  if (screened !== (r.scope.manifestVersion === 4) || (screened && r.discovery) ||
+  if (screened !== (r.scope.manifestVersion === 4) ||
     r.results.some((row) => (row.payment !== undefined && screened) !== (row.screening !== undefined))) ctx.addIssue({ code: 'custom', message: 'Screened report version or rows are inconsistent.' });
   for (const row of r.results) if (row.behavioral?.status === 'reported') {
     const a = row.behavioral.assessment;

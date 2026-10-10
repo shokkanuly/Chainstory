@@ -169,7 +169,7 @@ export class OperatorStore {
   }
 
   private checkDiscoveryScope(state: DiscoveryState): void {
-    if (this.scope.finalityMode !== 'finalized' || this.scope.sourceVerifier?.profile !== 'customer-payment-v1') throw new Error('Discovery requires a finalized customer-payment journal.');
+    if (this.scope.finalityMode !== 'finalized' || !this.scope.sourceVerifier?.profile) throw new Error('Discovery requires a finalized customer-payment journal.');
     for (const [range, chainId, address, event] of [[state.source, this.scope.sourceChainId, this.scope.source, 'MessageSent'],
       [state.destination, this.scope.chainId, this.scope.vault, 'PaymentCreditBound']] as const) {
       const c = finalizedCheckpointSchema.parse(JSON.parse(range.checkpoint));

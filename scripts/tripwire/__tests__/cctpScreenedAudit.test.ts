@@ -17,6 +17,8 @@ import { expectedGuardianRuntime, expectedPaymentRuntime } from '../testnet/arti
 import { stringifyPublic } from '../testnet/cctpPreflight.js';
 import { LOCAL_PROFILE, SCREENING_ISSUER } from '../screenedLocal.js';
 import { paymentBindings, paymentFixture } from './fixtures/cctpPayment.js';
+import { discoveryFixture } from './fixtures/cctpDiscovery.js';
+import { discoverCctpRequests } from '../testnet/cctpDiscovery.js';
 import { sender, vault } from './fixtures/cctp.js';
 
 const ZERO = `0x${'0'.repeat(64)}` as Hex;
@@ -143,5 +145,34 @@ describe('keyless screened audit and observer (manifest 4)', () => {
     expect(() => s.view({ ...report, results: [{ ...row, screening: { ...row.screening, authorization: 'allow' } }] })).toThrow();
     expect(() => s.view({ ...report, results: [{ ...row, payment: { ...row.payment, blockers: ['screening'] } }] })).toThrow();
     expect(() => s.view({ ...report, results: [{ ...row, screening: { ...row.screening, allowEvidence: { validUntil: 1n, current: true } } }] })).toThrow();
+  });
+
+  it('discovers a v2-hook payment under manifest 4 and feeds the screened audit; the public page shows both', async () => {
+    const s = setup(), d = discoveryFixture(2);
+    s.f.source.port.getBlock = d.source.client.pub.getBlock; s.reader.getBlock = d.destination.client.pub.getBlock;
+    s.f.source.port.getTransactionReceipt = d.f.source.port.getTransactionReceipt;
+    const seed = { ...s.manifest, requests: [] };
+    const audit = await createCctpAudit(seed, s.stateFile, s.f.source.port, s.reader, true);
+    try {
+      const found = await discoverCctpRequests(seed, d.clients, d.starts, new AbortController().signal, { resume: audit.store.loadDiscovery() });
+      expect(found.manifest.version).toBe(4); expect(found.metadata.counts).toMatchObject({ paired: 1, sourceHints: 1, destinationHints: 1 });
+      const report = await audit.tick(found.manifest); await found.assertCanonical();
+      if (!found.state) throw new Error('Missing discovery state.');
+      audit.store.saveDiscovery(found.state);
+      expect(report.results[0].evidence.status).toBe('verified');
+      const page = readOperationsText(stringifyPublic({ ...report, discovery: found.metadata, status: 'ok', observedAt: '2026-10-10T09:00:00.000Z' }));
+      expect(page.discovery).toMatchObject({ paired: 1 }); expect(page.contracts[1].label).toBe('Screened payment escrow');
+      expect(audit.store.loadDiscovery()?.credits).toHaveLength(1);
+    } finally { audit.close(); }
+  });
+
+  it('never takes a v1-hook burn as a hint for a manifest-4 escrow, or a v2 burn for manifest 3', async () => {
+    const v1 = discoveryFixture(1), screenedSeed = { ...discoveryFixture(2).manifest };
+    const found = await discoverCctpRequests(screenedSeed, v1.clients, v1.starts, new AbortController().signal);
+    expect(found.metadata.counts).toMatchObject({ sourceHints: 0, paired: 0 });
+    expect(found.metadata.unmatchedDestination).toEqual([expect.objectContaining({ reason: 'source-not-in-range' })]);
+    const v2 = discoveryFixture(2);
+    const plain = await discoverCctpRequests(discoveryFixture(1).manifest, v2.clients, v2.starts, new AbortController().signal);
+    expect(plain.metadata.counts).toMatchObject({ sourceHints: 0, paired: 0 });
   });
 });

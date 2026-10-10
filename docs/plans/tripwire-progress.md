@@ -45,17 +45,17 @@ ADR-049:
   `CctpScreenedPaymentEscrow` and manifest 4. `initialScreenedPolicyHash`
   matches the compiled constructor. Acceptance checks the screened runtime,
   format 4, a paused start, legacy mode, the exact profile and no head.
-- **Keyless audit/observer and verify** load manifest 4 by its version only,
-  and report a display-only screening state per payment. The public report
-  has a versioned `screened-payment` variant that the operations page reads;
-  discovery stays manifest 3 only.
+- **Keyless audit/observer, discovery and verify** load manifest 4 by its
+  version only (discovery decodes only the v2 hook for it), and report a
+  display-only screening state per payment. The public report has a versioned
+  `screened-payment` variant that the operations page reads.
 - **Provider-call floor.** The gate reads its journal and does not ask the
   provider again for 30 s of chain time after a non-passing result for the
   same scope. Restarts cannot hammer a provider; it only ever holds.
 
 Tests: deploy plan (8) and acceptance (10), policy-hash agreement with the compiled
-escrow, keyless screened audit (6, through the public schema), fetch floor (4),
-2 new mutants. Full suite: 1,779 tests / 85 files.
+escrow, keyless screened audit and discovery (8, through the public schema),
+fetch floor (4), 2 new mutants. Full suite: 1,781 tests / 85 files.
 
 ## Next step: H4c4 — human-owned review, deployment and consent
 
@@ -68,8 +68,8 @@ Engineering for H4c is complete locally. What remains needs people:
 - real receipts for a screened payment, its hold on MATCHED or outage, and a
   fixed return.
 
-Independent engineering that can continue meanwhile: discovery for manifest 4,
-and moving screening into a library before the escrow outgrows EIP-170.
+Independent engineering that can continue meanwhile: moving screening into a
+library before the escrow outgrows EIP-170.
 
 ## Completed step: H4c3a — on-chain screening gate — 2026-10-10
 

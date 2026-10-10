@@ -22,8 +22,8 @@ export type CctpManifest = z.infer<typeof cctpManifestSchema>;
 /**
  * Manifest 4 (ADR-048): the screened customer escrow and the exact screening
  * profile it was accepted with (integers as canonical decimal strings). The
- * operator, the keyless audit/observer and verify load it explicitly (H4c3c);
- * discovery and the plain loaders refuse it, and nothing infers screening from 3.
+ * operator, the keyless audit/observer, discovery and verify load it explicitly
+ * (H4c3c); the plain loaders refuse it, and nothing infers screening from 3.
  */
 export const screenedManifestSchema = z.object({ version: z.literal(4), ...fields, payment: cctpPaymentBindingsSchema,
   screening: screeningProfileSchema, requests: z.array(request).max(100),
@@ -37,7 +37,7 @@ function wire(input: unknown): unknown {
   if (!input || typeof input !== 'object' || !('screening' in input) || !input.screening || typeof input.screening !== 'object') return input;
   return { ...input, screening: Object.fromEntries(Object.entries(input.screening).map(([k, v]) => [k, typeof v === 'bigint' ? v.toString() : v])) };
 }
-/** The keyless observer watches the same deployments the operator signs for (H4c3c); discovery stays manifest 3 only. */
+/** The keyless observer and discovery watch the same deployments the operator signs for (H4c3c). */
 export function parseObserverManifest(input: unknown): OperatorManifest { return operatorManifestSchema.parse(wire(input)); }
 const auditScreened = screenedManifestSchema.extend({ requests: z.array(request).min(1).max(100) }).refine(unique, 'Duplicate request IDs.');
 // Pilot may start before the first burn/mint and reload requests while watching.

@@ -6,9 +6,11 @@ import { CCTP_BASE_SEPOLIA_TO_SEPOLIA as route, cctpTransmitterAbi } from '../..
 import { cctpPaymentAbi } from '../../../../src/chains/evm/registry/cctp.js';
 import { paymentFixture, paymentBindings } from './cctpPayment.js';
 import { sender, vault } from './cctp.js';
+import { LOCAL_PROFILE, SCREENING_ISSUER } from '../../screenedLocal.js';
 
-export function discoveryFixture() {
-  const f = paymentFixture();
+/** `version` 2: the screened escrow's v2 hook, discovered under manifest 4 (ADR-049). */
+export function discoveryFixture(version: 1 | 2 = 1) {
+  const f = paymentFixture(version);
   const decode = (log: typeof f.sourceReceipt.logs[number], abi: Abi, eventName: string) => ({ ...log,
     args: z.record(z.string(), z.unknown()).parse(decodeEventLog({ abi, eventName, data: log.data, topics: log.topics as [Hex, ...Hex[]], strict: true }).args) });
   const sourceEvents = [decode(f.sourceReceipt.logs[0], cctpTransmitterAbi, 'MessageSent')];
@@ -25,7 +27,10 @@ export function discoveryFixture() {
       getBlock, getContractEvents, block, setHead: (n: bigint) => { head = n; } };
   };
   const source = make(true), destination = make(false);
-  const manifest = { version: 3, vault, guardian: sender, operator: sender, payment: paymentBindings, requests: [] };
+  const manifest = version === 2 ? { version: 4, vault, guardian: sender, operator: sender, payment: paymentBindings, requests: [],
+    screening: { version: 1, providerIdHash: LOCAL_PROFILE.providerIdHash, listIdHash: LOCAL_PROFILE.listIdHash, issuer: SCREENING_ISSUER.address,
+      subject: 'payout-recipient', maxObservationAgeSeconds: '300', maxSnapshotAgeSeconds: '3600' } }
+    : { version: 3, vault, guardian: sender, operator: sender, payment: paymentBindings, requests: [] };
   return { f, manifest, sourceEvents, destinationEvents, source, destination,
     clients: { source: source.client, destination: destination.client }, starts: { source: 100n, destination: 200n } };
 }

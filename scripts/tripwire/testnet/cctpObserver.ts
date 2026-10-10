@@ -46,7 +46,7 @@ export async function runCctpObserver(input: {
   wait?: typeof waitForObservation; now?: () => Date;
 }): Promise<'complete' | 'stopped' | 'failed'> {
   const options = optionsSchema.parse(input.options), initial = parseObserverManifest(input.initialManifest);
-  if (options.discovery && (initial.version !== 3 || initial.requests.length)) throw new DiscoveryStoppedError('Discovery requires an empty customer-payment manifest.');
+  if (options.discovery && ((initial.version !== 3 && initial.version !== 4) || initial.requests.length)) throw new DiscoveryStoppedError('Discovery requires an empty customer-payment manifest.');
   const scope = (m: typeof initial) => JSON.stringify({ ...m, requests: [] }, (_k, v: unknown) => typeof v === 'bigint' ? v.toString() : v);
   const expectedScope = scope(initial), wait = input.wait ?? waitForObservation, now = input.now ?? (() => new Date());
   let attempt = 0, failures = 0;

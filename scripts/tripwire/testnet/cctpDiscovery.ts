@@ -5,7 +5,7 @@ import { cctpAddressSchema, decodeCctpMessage, decodeCctpPaymentHook } from '../
 import { CCTP_BASE_SEPOLIA_TO_SEPOLIA as route, CCTP_STANDARD_FINALITY, cctpTransmitterAbi } from '../../../src/chains/evm/registry/cctp.js';
 import { discoveryStateSchema, type DiscoveryState, type SourceHint, type DestinationHint } from '../discoveryState.js';
 import { blockHeaderSchema, blockHashSchema, finalizedCheckpointSchema, FinalityConflictError } from '../finality.js';
-import { pilotManifestSchema } from './cctpManifest.js';
+import { parseObserverManifest } from './cctpManifest.js';
 import { ContractEventFeed, type EventFeedClient } from './sepolia.js';
 import paymentArtifact from './cctpPaymentEscrow.artifact.js';
 import { CctpAuditFailure, RpcBehindError, ObservationCanceledError, type AuditFailureReason } from '../auditFailure.js';
@@ -32,9 +32,11 @@ export async function discoverCctpRequests(input: unknown, clients: {
   source: EventFeedClient & { pub: EventFeedClient['pub'] & { getChainId(): Promise<unknown> } };
   destination: EventFeedClient & { pub: EventFeedClient['pub'] & { getChainId(): Promise<unknown> } };
 }, starts: { source: bigint; destination: bigint }, signal: AbortSignal, persistent?: { resume: DiscoveryState | null }) {
-  const manifest = pilotManifestSchema.parse(input);
+  const manifest = parseObserverManifest(input);
   if (signal.aborted) throw new ObservationCanceledError('Discovery canceled.');
-  if (manifest.version !== 3 || manifest.requests.length) throw new DiscoveryStoppedError('Discovery requires an empty customer-payment manifest. Manual requests remain a separate mode.');
+  if ((manifest.version !== 3 && manifest.version !== 4) || manifest.requests.length) throw new DiscoveryStoppedError('Discovery requires an empty customer-payment manifest. Manual requests remain a separate mode.');
+  // The screened escrow (manifest 4) has its own v2 hook: a v1 intent is never a hint for it, and vice versa.
+  const hookVersion = manifest.version === 4 ? 2 : 1;
   const fingerprint = keccak256(stringToHex(JSON.stringify(manifest, (_key, v: unknown) => typeof v === 'bigint' ? v.toString() : v)));
   const previous = persistent?.resume ? discoveryStateSchema.parse(persistent.resume) : null;
   if (previous && (previous.fingerprint !== fingerprint || previous.source.from !== starts.source || previous.destination.from !== starts.destination)) throw new DiscoveryStoppedError('Discovery manifest or initial bounds differ from the journal.', 'scope');
@@ -61,7 +63,7 @@ export async function discoverCctpRequests(input: unknown, clients: {
     'MessageSent', starts.source, (args, _time, origin) => {
       if (!origin) throw new Error('Source discovery lacks finalized provenance.');
       let message: ReturnType<typeof decodeCctpMessage>, intent: ReturnType<typeof decodeCctpPaymentHook>;
-      try { message = decodeCctpMessage(args.message); intent = decodeCctpPaymentHook(message.body.hookData); }
+      try { message = decodeCctpMessage(args.message); intent = decodeCctpPaymentHook(message.body.hookData, hookVersion); }
       catch { return null; } // Unrelated/unsupported messages are never approval evidence.
       if (message.sourceDomain !== route.source.domain || message.destinationDomain !== route.destination.domain ||
         message.sender !== route.source.messenger || message.recipient !== route.destination.messenger ||
@@ -146,6 +148,6 @@ export async function discoverCctpRequests(input: unknown, clients: {
     source: { ...metadata.source, checkpoint: sourceFeed.checkpoint() },
     destination: { ...metadata.destination, checkpoint: destinationFeed.checkpoint() }, burns, credits }) : undefined;
   // Schema validation also rejects duplicate IDs; no caller receives a partial manifest.
-  return { manifest: pilotManifestSchema.parse({ ...manifest, requests }), metadata, state,
+  return { manifest: parseObserverManifest({ ...manifest, requests }), metadata, state,
     assertCanonical: async () => { await sourceFeed.assertCanonical(); await destinationFeed.assertCanonical(); await assertSnapshots(); await assertSaved(); } };
 }
