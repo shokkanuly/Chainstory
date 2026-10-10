@@ -127,7 +127,8 @@ it never returns ALLOW. H4c3a adds the on-chain half: `CctpScreenedPaymentEscrow
 verifies the issuer's receipt at review and again at execution (ADR-047). H4c3b
 wires it into the operator: evidence is fetched, journaled, verified and submitted
 with a format-4 review, and advisory mode follows only on-chain consent (ADR-048).
-Next is H4c3c, manifest 4 in the audit/observer tooling.
+H4c3c adds the deploy package, acceptance and keyless observer for it (ADR-049);
+H4c4 (review, provider, deployment, consent) needs people.
 
 On 2026-10-09 the payment track was merged into `main` on top of guardian policy v4
 (ADR-046); its ADRs are now numbered 028–045. The handoff and checkpoint are in

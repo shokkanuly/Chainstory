@@ -462,8 +462,12 @@ other deviations.
 4, exact runtime acceptance, a typed provider port with a file-inbox adapter,
 evidence journaling before signing, head relaying, format-4 signing, retained
 contradictions, attestor separation in advisory mode, and S02, S03, S07, S09, S12,
-S14, S16/S18, S20, S23, S25, S26 and S28 at the operator boundary. Audit/observer
-support for manifest 4 is the next step (H4c3c).
+S14, S16/S18, S20, S23, S25, S26 and S28 at the operator boundary.
+
+**H4c3c status:** implemented 2026-10-10 (ADR-049): a version-4 deploy package and
+receipt-backed acceptance, manifest 4 in the keyless audit/observer/verify with a
+versioned `screened-payment` public report, and a journal-based provider-call floor.
+H4c4 (independent review, a real provider, paused deployment and consent) remains.
 
 **H4c3:** implement and review the coordinated contract/profile/review/operator/
 attestor/state/journal boundaries and S17–S28 on local EVM. Pin exact new ABI/hook,

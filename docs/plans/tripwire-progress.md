@@ -37,16 +37,39 @@ Not done: audit, observer, discovery and verify still refuse manifest 4; no real
 provider; nothing deployed. Do not activate advisory mode on a funded escrow
 before an independent review.
 
-## Next independent engineering step: H4c3c — screened pilot tooling
+## Completed step: H4c3c — screened pilot tooling — 2026-10-10
 
-Before any screened pilot (H4c4 is human-owned):
-- teach the keyless audit/observer and `verifyCctp` manifest 4: screening
-  status per payment (head, receipt expiry, held reason), never execution
-  meaning for old report fields;
-- a deploy plan and deployment acceptance for `CctpScreenedPaymentEscrow`
-  (paused start, profile hash, no head) like the payment escrow's;
-- persist the held backoff, or rate-limit provider calls after a restart;
-- record whether a real provider can sign the H4c2 envelopes (discovery gate).
+ADR-049:
+- **Deployment.** Deploy config version 4 (exact profile; an issuer who is
+  nobody else in the package) produces an unsigned package for
+  `CctpScreenedPaymentEscrow` and manifest 4. `initialScreenedPolicyHash`
+  matches the compiled constructor. Acceptance checks the screened runtime,
+  format 4, a paused start, legacy mode, the exact profile and no head.
+- **Keyless audit/observer and verify** load manifest 4 by its version only,
+  and report a display-only screening state per payment. The public report
+  has a versioned `screened-payment` variant that the operations page reads;
+  discovery stays manifest 3 only.
+- **Provider-call floor.** The gate reads its journal and does not ask the
+  provider again for 30 s of chain time after a non-passing result for the
+  same scope. Restarts cannot hammer a provider; it only ever holds.
+
+Tests: deploy plan (8) and acceptance (10), policy-hash agreement with the compiled
+escrow, keyless screened audit (6, through the public schema), fetch floor (4),
+2 new mutants. Full suite: 1,779 tests / 85 files.
+
+## Next step: H4c4 — human-owned review, deployment and consent
+
+Engineering for H4c is complete locally. What remains needs people:
+- an independent review of a pinned commit and configuration (H5 package);
+- a provider that can sign the H4c2 envelopes, or an issuer integration that
+  converts its answers faithfully (discovery gate);
+- a paused Sepolia deployment from the version-4 package, its acceptance
+  report, then the customer's queued unpause; advisory mode only after review;
+- real receipts for a screened payment, its hold on MATCHED or outage, and a
+  fixed return.
+
+Independent engineering that can continue meanwhile: discovery for manifest 4,
+and moving screening into a library before the escrow outgrows EIP-170.
 
 ## Completed step: H4c3a — on-chain screening gate — 2026-10-10
 
@@ -434,7 +457,7 @@ synthetic.
 | H2b1 | Implemented: runtime failure classification; journal failures are never retried |
 | H2b2 | Repo supervisor, crash drills and local incidents implemented; host/service/process-tree/live acceptance open |
 | H3 | Open: a designated person with test accounts, funding, and real finalized deployment/burn/mint/payout/return receipts. The guardian must be policy v4 (ADR-046) |
-| H4 | H4a model, H4b report/viewer, H4c1 design, H4c2 pure verifier, H4c3a on-chain gate and H4c3b operator integration done; next H4c3c screened pilot tooling; H4c4 review/deployment/consent is human-owned |
+| H4 | H4a model, H4b report/viewer, H4c1 design, H4c2 pure verifier, H4c3a on-chain gate, H4c3b operator integration and H4c3c pilot tooling done; H4c4 review/deployment/consent is human-owned |
 | H5 | Audit package prepared ([tripwire-audit-package.md](tripwire-audit-package.md)); vendor, pinned commit and independent audit open |
 | H6 | Open: discovery owner, interviews and a real design-partner commitment |
 

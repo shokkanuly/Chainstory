@@ -18,6 +18,7 @@ questions at the end need answers from the people who will run a pilot.
 | k-of-n oracle | `contracts/evm/src/TripwireQuorum.sol` | 114 | ERC-1271 threshold signer that can replace the single oracle key |
 | Off-chain operator | `scripts/tripwire/operator.ts`, `watch.ts`, `settlement.ts`, `review.ts`, `sender.ts`, `store.ts`, `cctp.ts`, `sourceProof.ts`, `rpcQuorum.ts`, `testnet/operator.ts`, `testnet/cctpOperator.ts`, `testnet/paymentState.ts` | — | Decides and signs reviews; crash-safe journal; source/settlement proofs |
 | Operator screening | `scripts/tripwire/screeningGate.ts`, `testnet/screenedState.ts`, `testnet/screeningInbox.ts`, `src/chains/evm/screening.ts` | — | Fetches, journals and verifies issuer evidence before a format-4 ALLOW; advisory mode from on-chain consent (ADR-048) |
+| Screened deployment and reports | `testnet/cctpDeployPlan.ts`, `testnet/cctpDeploymentAcceptance.ts`, `testnet/cctpAudit.ts`, `src/chains/evm/paymentPolicy.ts`, `src/chains/evm/operations.ts` | — | Version-4 package and acceptance; keyless screened report, display only (ADR-049) |
 
 Out of scope unless the client asks: the browser app, the Retold wallet reader,
 the demo token/bridge contracts (`DemoUSDC`, `MockSourceBridge`, `DrainReceiver`),
