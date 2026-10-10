@@ -62,12 +62,24 @@ export class ScreeningGate implements ScreeningCheck {
     scope: ScreeningScope; profile: ScreeningProfile;
     /** The operator's coherent reader; used again after a head relay. */
     read(messageId: Hex): Promise<ReleaseStatus>;
-  }) {}
+    /**
+     * After a result that did not pass, ask the provider again only once this
+     * many seconds of chain time have passed for the same profile, head and
+     * payment. Read from the journal, so a restart loop cannot hammer the
+     * provider. It can only ever hold. Default 0: ask on every check.
+     */
+    minimumFetchSeconds?: number;
+  }) {
+    const floor = deps.minimumFetchSeconds ?? 0;
+    if (!Number.isInteger(floor) || floor < 0 || floor > 3600) throw new Error('Screening fetch interval must be whole seconds within an hour.');
+  }
 
   async check(messageId: Hex, state: ReleaseStatus): Promise<ScreeningGateResult> {
     let s = state.screening;
     if (!s) return { status: 'held', reason: 'Screening state is unavailable.' };
     if (!s.accepted || s.profileHash === ZERO_WORD) return { status: 'held', reason: 'Screening profile is revoked or is not the accepted profile.' };
+    const recent = this.recentHold(messageId, s);
+    if (recent) return { status: 'held', reason: recent };
     let fetched: ScreeningFetch;
     try {
       fetched = fetchSchema.parse(await this.deps.provider.fetch({ messageId, profileHash: s.profileHash, paymentContextHash: s.contextHash,
@@ -150,6 +162,20 @@ export class ScreeningGate implements ScreeningCheck {
       if (screeningReceiptHash(this.deps.scope, receipt) === receiptHash) return { receipt: { ...receipt, outcome: 1 }, signature, receiptHash };
     }
     return null;
+  }
+
+  /** The last non-passing result for this exact scope, if it is younger than the fetch floor. */
+  private recentHold(messageId: Hex, s: ScreeningStatus): string | null {
+    const floor = BigInt(this.deps.minimumFetchSeconds ?? 0);
+    if (floor === 0n) return null;
+    const records = this.deps.store.screeningRecords(messageId);
+    let last: ScreeningRecord | undefined;
+    for (let i = records.length - 1; i >= 0 && !last; i--) if (records[i].kind === 'result') last = records[i];
+    if (!last || last.kind !== 'result' || last.profileHash !== s.profileHash || last.headHash !== s.head.hash || last.contextHash !== s.contextHash ||
+      s.now >= BigInt(last.now) + floor) return null;
+    const retained = records.some((r) => r.kind === 'incident' && r.profileHash === s.profileHash && r.headHash === s.head.hash);
+    if (!retained && last.status === 'verified' && last.outcome === 'NOT_LISTED') return null; // a pass that was not used: ask again
+    return `Screening: ${retained ? 'contradictory' : last.status === 'verified' ? last.outcome : last.reason}.`;
   }
 
   private scopeOf(messageId: Hex, s: ScreeningStatus) {

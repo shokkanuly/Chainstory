@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { resolve, join } from 'node:path';
 import { z } from 'zod';
 import { createCctpAudit } from './cctpAudit.js';
-import { pilotManifestSchema } from './cctpManifest.js';
+import { parseObserverManifest, type OperatorManifest } from './cctpManifest.js';
 import { cctpPublicClients } from './cctpPublic.js';
 import { runCctpObserver } from './cctpObserver.js';
 import { archivePublicReports, reportKeepSchema } from './reportArchive.js';
@@ -71,15 +71,15 @@ function failedExit(reason: ExitReason, phase: ExitPhase): ObserverExit {
   return { exitCode, diagnostic: { version: 1, mode: 'observe', enforcement: false, phase, reason, restartable: exitCode === 75 } };
 }
 export async function runObserveCommand(argv: string[], signal: AbortSignal, ports: {
-  clients?: (manifest: z.infer<typeof pilotManifestSchema>, signal: AbortSignal) => ObserverClients;
+  clients?: (manifest: OperatorManifest, signal: AbortSignal) => ObserverClients;
   output?: (value: unknown) => void;
 } = {}): Promise<ObserverExit> {
   if (signal.aborted) return { exitCode: 0 };
-  let args: ReturnType<typeof parseObserveArgs>, manifest: ReturnType<typeof pilotManifestSchema.parse>;
+  let args: ReturnType<typeof parseObserveArgs>, manifest: OperatorManifest;
   let readManifest: () => typeof manifest;
   try {
     args = parseObserveArgs(argv);
-    readManifest = () => pilotManifestSchema.parse(JSON.parse(readFileSync(args.manifestPath, 'utf8')));
+    readManifest = () => parseObserverManifest(JSON.parse(readFileSync(args.manifestPath, 'utf8')));
     manifest = readManifest();
     if (args.discovery && (manifest.version !== 3 || manifest.requests.length)) return failedExit('configuration', 'startup');
   } catch { return failedExit('configuration', 'startup'); }

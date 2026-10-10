@@ -4,11 +4,13 @@ import { z } from 'zod';
 import { cctpAddressSchema } from '../../../src/chains/evm/cctp.js';
 import { CCTP_BASE_SEPOLIA_TO_SEPOLIA as route } from '../../../src/chains/evm/registry/cctp.js';
 import { CctpSourceAdapter, cctpVerifierScope, type CctpPolicy, type CctpRpc } from '../cctp.js';
-import { blockHeaderSchema, FinalityConflictError } from '../finality.js';
+import { blockHashSchema, blockHeaderSchema, FinalityConflictError } from '../finality.js';
 import { OperatorStore } from '../store.js';
 import type { SourceEvidence } from '../watch.js';
 import { assertCctpEscrowBindings, assertCctpPaymentBindings } from './cctpBindings.js';
-import { parseAuditManifest, type CctpManifest } from './cctpManifest.js';
+import { parseAuditManifest, type AuditManifest } from './cctpManifest.js';
+import { publicScreeningStatus, ZERO_WORD, type PublicScreeningStatus } from './screenedState.js';
+import { screeningProfileHash, type ScreeningScope } from '../../../src/chains/evm/screening.js';
 import { assertProtectionPolicy } from './protectionPolicy.js';
 import { releaseTuple } from './releaseState.js';
 import { readPaymentState, type PaymentStatus } from './paymentState.js';
@@ -25,6 +27,7 @@ export interface CctpAuditReader extends CctpRpc {
   readGuardian(name: 'owner' | 'oracle' | 'getRoute' | 'currentTier' | 'GUARDIAN_POLICY_VERSION' | 'isProtected',
     blockNumber: bigint, args?: readonly Hex[]): Promise<unknown>;
 }
+const bigintText = (_key: string, value: unknown) => typeof value === 'bigint' ? value.toString() : value;
 const stateNames = ['PENDING', 'VERIFIED', 'HELD', 'REJECTED', 'EXECUTED'] as const;
 const tierNames = ['NONE', 'THROTTLE', 'DELAY', 'FREEZE'] as const;
 const uint = z.bigint().nonnegative().max((1n << 256n) - 1n);
@@ -35,6 +38,8 @@ export interface AuditResult {
   release?: { recipient: Hex; amount: bigint; state: typeof stateNames[number] | 'RETURNED'; reviewedUntil: bigint; delayUntil?: bigint };
   recommendation?: 'HOLD' | 'REJECT' | 'NONE'; reason?: string;
   payment?: PaymentStatus;
+  /** Screened escrow (manifest 4): display only; the keyless report never authorizes a payout. */
+  screening?: PublicScreeningStatus;
   lifecycle?: PaymentLifecycle;
   proof?: { sourceTransactionHash: Hex; destinationTransactionHash: Hex; sourceBlock: bigint; destinationBlock: bigint;
     sourceBlockHash: Hex; destinationBlockHash: Hex; operationId: Hex; returnRecipient: Hex; intentPolicyHash: Hex };
@@ -52,9 +57,14 @@ export interface AuditReport {
 export async function createCctpAudit(input: unknown, stateFile: string, source: CctpRpc,
   destination: CctpAuditReader, observe = false) {
   const manifest = await auditBoundary('configuration', () => parseAuditManifest(input, observe));
-  const payment = manifest.version === 3 ? manifest.payment : undefined;
-  const policy = manifest.version === 3 ? 'customer-payment' : manifest.version === 2 ? 'authenticated-escrow' : 'legacy-post-mint';
+  const payment = manifest.version === 3 || manifest.version === 4 ? manifest.payment : undefined;
+  const profile = manifest.version === 4 ? manifest.screening : undefined;
+  const policy: CctpPolicy = manifest.version === 4 ? 'screened-payment' : manifest.version === 3 ? 'customer-payment'
+    : manifest.version === 2 ? 'authenticated-escrow' : 'legacy-post-mint';
   const routeId = keccak256(stringToHex(route.id));
+  const screeningScope: ScreeningScope = { destinationChainId: BigInt(route.destination.chainId), vault: manifest.vault, guardian: manifest.guardian,
+    routeId, token: route.destination.usdc.toLowerCase() as Hex };
+  const screenedRead = profile ? { scope: screeningScope, profile, readOracle: (block: bigint) => destination.readGuardian('oracle', block) } : undefined;
   const assertChains = async () => {
     if (await source.getChainId() !== route.source.chainId || await destination.getChainId() !== route.destination.chainId) {
       throw new CctpAuditFailure('deployment', new Error('RPC chain identity does not match the CCTP route.'));
@@ -65,8 +75,13 @@ export async function createCctpAudit(input: unknown, stateFile: string, source:
       const readCode = destination.readCode;
       if (!readCode) throw new Error('Customer deployment requires exact runtime bytecode acceptance.');
       await assertPaymentRuntime(manifest.vault, manifest.guardian, payment, block,
-        (address, number) => readCode(address, number));
-      await assertCctpPaymentBindings(manifest.vault, payment, (name) => destination.readVault(name, block));
+        (address, number) => readCode(address, number), profile ? 'screened' : 'payment');
+      await assertCctpPaymentBindings(manifest.vault, payment, (name) => destination.readVault(name, block), Boolean(profile));
+    }
+    if (profile) {
+      // Only the accepted profile or its revocation; another profile needs a new manifest.
+      const active = blockHashSchema.parse(await destination.readVault('screeningProfileHash', block));
+      if (active !== screeningProfileHash(screeningScope, profile) && active !== ZERO_WORD) throw new Error('Escrow screening profile differs from the manifest profile.');
     }
     if (manifest.version === 2) await assertCctpEscrowBindings(manifest.vault,
       (name) => destination.readVault(name, block));
@@ -80,7 +95,7 @@ export async function createCctpAudit(input: unknown, stateFile: string, source:
       releaseVersion: () => destination.readVault('RELEASE_POLICY_VERSION', block),
       reviewFormat: () => destination.readVault('REVIEW_FORMAT_VERSION', block),
       routePermission: () => destination.readGuardian('isProtected', block, [manifest.vault, routeId]),
-    }, payment ? 3 : 2);
+    }, profile ? 4 : payment ? 3 : 2);
   };
   const stable = async (head: z.infer<typeof blockHeaderSchema>, store?: OperatorStore) => {
     const checked = blockHeaderSchema.parse(await destination.getBlock({ blockNumber: head.number }));
@@ -98,7 +113,7 @@ export async function createCctpAudit(input: unknown, stateFile: string, source:
     chainId: route.destination.chainId, source: route.source.transmitter, vault: manifest.vault,
     guardian: manifest.guardian, token: route.destination.usdc, sender: manifest.operator,
     decimals: route.decimals, finalityMode: 'finalized', sourceVerifier: cctpVerifierScope(manifest.vault, policy, payment) }));
-  let active: CctpManifest = manifest;
+  let active: AuditManifest = manifest;
   let adapter: CctpSourceAdapter;
   const assertHealthy = () => {
     if (journalOperation(() => store.loadWatcher()?.quarantine || store.sourceQuarantine())) throw new CctpAuditFailure('quarantine', new Error('This operator is quarantined; reconcile it before auditing new proof claims.'));
@@ -113,7 +128,8 @@ export async function createCctpAudit(input: unknown, stateFile: string, source:
   const poll = async (updated: unknown): Promise<AuditReport> => {
     const next = await auditBoundary('configuration', () => parseAuditManifest(updated, observe));
     if (next.version !== manifest.version || next.vault !== manifest.vault || next.guardian !== manifest.guardian || next.operator !== manifest.operator ||
-      cctpVerifierScope(next.vault, policy, next.version === 3 ? next.payment : undefined).fingerprint !== adapter.scope.fingerprint) {
+      cctpVerifierScope(next.vault, policy, next.version === 3 || next.version === 4 ? next.payment : undefined).fingerprint !== adapter.scope.fingerprint ||
+      JSON.stringify(next.version === 4 ? next.screening : null, bigintText) !== JSON.stringify(profile ?? null, bigintText)) {
       throw new CctpAuditFailure('scope', new Error('Pilot manifest deployment scope changed; stop and reconcile before changing scope.'));
     }
     active = next; assertHealthy(); await auditBoundary('evidence', () => adapter.assertCanonical(), true);
@@ -137,6 +153,7 @@ export async function createCctpAudit(input: unknown, stateFile: string, source:
         report.deployment = { owner, oracle, rolesSeparated: owner !== oracle, operatorMatchesOracle: oracle === manifest.operator,
           tier: tierNames[tier], expiresAt: state.tierExpiresAt, capBaseUnits: state.cap, windowSeconds: state.windowSeconds };
         report.blockers.push('Behavioral risk policy is not configured: live baseline, pricing and recipient screening must be validated before enforcement.');
+        if (profile) report.blockers.push('Screening evidence is fetched and verified only by the signing operator; this report shows on-chain screening state and authorizes nothing.');
         if (owner === oracle) report.blockers.push('Guardian owner and oracle must use separate roles before enforcement.');
         if (oracle !== manifest.operator) report.blockers.push('Manifest operator does not match the guardian oracle.');
       }, true);
@@ -169,8 +186,9 @@ export async function createCctpAudit(input: unknown, stateFile: string, source:
         const state = await auditBoundary('evidence', () => readPaymentState({
           getBlock: async (args) => 'blockTag' in args ? block : destination.getBlock(args), minimumBlock: () => block.number,
           read: (name, number, args) => destination.readVault(name, number, args as readonly Hex[] | undefined),
-        }, request.messageId, stateProof, 'finalized'), true);
+        }, request.messageId, stateProof, 'finalized', screenedRead), true);
         result.payment = state.payment;
+        if (state.screening) result.screening = publicScreeningStatus(state.screening);
         if (state.payment?.returned && result.release) result.release.state = 'RETURNED';
         if (observe && proof?.payment && state.payment && result.release) {
           try {
@@ -191,6 +209,7 @@ export async function createCctpAudit(input: unknown, stateFile: string, source:
         if (result.payment?.returned) result.reason = 'Customer credit was returned; no further payout or return is proposed.';
         else if (result.payment && r[2] === 3) result.reason = 'Funded payment is rejected. The customer can still request its fixed-destination return.';
         else if (result.payment && result.payment.returnAt > 0n) result.reason = 'Customer requested return. Payout is blocked while recovery matures.';
+        else if (result.screening && result.payment?.blockers.includes('screening')) result.reason = 'Screening profile is revoked, replaced or not independent of the reviewer. No payout until the customer resolves it.';
       }
       report.results.push(result); report.counts[evidence.status]++;
     }

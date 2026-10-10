@@ -332,3 +332,46 @@ describe('screening gate: contradiction scope', () => {
     expect(await gate.check(messageId, stateAt(2n))).toEqual({ status: 'held', reason: 'Screening: contradictory.' });
   });
 });
+
+describe('screening gate: provider calls survive restarts without hammering', () => {
+  it('reuses a recent non-passing result for the same scope, across a restart, then asks again after the floor', async () => {
+    const f = await screenedOperatorFixture(); cleanups.push(f.cleanup);
+    let o = f.open({ minimumFetchSeconds: 30 });
+    const head = await f.answerWith([MATCHED]);
+    expect((await o.operator.tick())[0].reason).toBe('Screening: MATCHED.');
+    expect(f.provider.requests).toHaveLength(1);
+    o.close(); o = f.open({ minimumFetchSeconds: 30 }); cleanups.push(o.close);
+    // A crash loop restarts at once: no new provider call, the same hold.
+    await f.answerWith([NOT_LISTED], head);
+    expect((await o.operator.tick())[0].reason).toBe('Screening: MATCHED.');
+    expect(f.provider.requests).toHaveLength(1);
+    // After the floor, the provider is asked again; a differing outcome for this head is still a contradiction.
+    f.vm.warp(30n);
+    expect((await o.operator.tick())[0].reason).toBe('Screening: contradictory.');
+    expect(f.provider.requests).toHaveLength(2);
+  });
+  it('asks again at once after a pass, since a pass is only good while its receipt is fresh', async () => {
+    const f = await screenedOperatorFixture(); cleanups.push(f.cleanup);
+    const o = f.open({ minimumFetchSeconds: 30 }); cleanups.push(o.close);
+    const head = await f.signedHead(); await f.registerHead(); await f.answerWith([NOT_LISTED], head);
+    expect((await o.gate.check(f.id, await f.read(f.id))).status).toBe('passed');
+    expect((await o.gate.check(f.id, await f.read(f.id))).status).toBe('passed');
+    expect(f.provider.requests).toHaveLength(2);
+  });
+  it('a new active head starts a fresh scope at once', async () => {
+    const f = await screenedOperatorFixture(); cleanups.push(f.cleanup);
+    const o = f.open({ minimumFetchSeconds: 30 }); cleanups.push(o.close);
+    await f.answerWith([UNKNOWN]);
+    expect((await o.operator.tick())[0].reason).toBe('Screening: UNKNOWN.');
+    const next = await f.signedHead({ revision: 2n, snapshotDigest: keccak256(stringToHex('snapshot-2')) });
+    await f.answerWith([NOT_LISTED], next);
+    // Same chain time, but the escrow's active head is still revision 1: the floor holds until the relay happens elsewhere.
+    expect((await o.operator.tick())[0].reason).toBe('Screening: UNKNOWN.');
+    await f.registerHead({ revision: 2n, snapshotDigest: keccak256(stringToHex('snapshot-2')) });
+    expect((await o.operator.tick())[0].action).toBe('executed');
+  });
+  it('refuses a fetch floor outside whole seconds within an hour', async () => {
+    const f = await screenedOperatorFixture(); cleanups.push(f.cleanup);
+    expect(() => f.open({ minimumFetchSeconds: 3601 })).toThrow('within an hour');
+  });
+});

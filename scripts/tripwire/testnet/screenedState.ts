@@ -35,6 +35,26 @@ export const screeningStatusSchema = z.object({
 }).strict();
 export type ScreeningStatus = z.infer<typeof screeningStatusSchema>;
 
+/**
+ * What a keyless report may say about screening (H4c3c): display only, never
+ * evidence and never authorization. Whether the escrow could execute the
+ * current review is the chain's call; this mirrors its recheck at one block.
+ */
+export interface PublicScreeningStatus {
+  version: 1; mode: 'legacy' | 'advisory'; profile: 'accepted' | 'revoked' | 'other'; issuerIndependent: boolean;
+  head: { revision: bigint; listAsOf: bigint; validUntil: bigint; current: boolean } | null;
+  allowEvidence: { validUntil: bigint; current: boolean } | null;
+  authorization: 'none';
+}
+export function publicScreeningStatus(s: ScreeningStatus): PublicScreeningStatus {
+  const profile = s.accepted ? 'accepted' : s.profileHash === ZERO_WORD ? 'revoked' : 'other';
+  const issuerIndependent = s.issuer !== s.roles.oracle && s.issuer !== s.roles.authority;
+  const head = s.head.hash === ZERO_WORD ? null : { revision: s.head.revision, listAsOf: s.head.listAsOf, validUntil: s.head.validUntil, current: s.now <= s.head.validUntil };
+  const allowEvidence = s.stored.receiptHash === ZERO_WORD ? null : { validUntil: s.stored.validUntil,
+    current: profile === 'accepted' && issuerIndependent && head !== null && head.current && s.stored.headHash === s.head.hash && s.now <= s.stored.validUntil };
+  return { version: 1, mode: s.mode, profile, issuerIndependent, head, allowEvidence, authorization: 'none' };
+}
+
 /** The accepted deployment's screening profile and scope; the oracle read is on the guardian. */
 export interface ScreenedReadSpec {
   scope: ScreeningScope;

@@ -168,6 +168,8 @@ const OPERATOR_MUTANTS = [
  [GATE, 'operator gate: a retained contradiction clears on a later clean receipt', 'return retained || contradictory ?', 'return contradictory ?'],
  [GATE, 'operator gate: outcomes across evaluations are not compared', 'const contradictory = outcomes.length > 1 ||', 'const contradictory ='],
  [GATE, 'operator gate: an older head is relayed back', '(head.revision <= s.head.revision || head.listAsOf < s.head.listAsOf)', 'false'],
+ [GATE, 'operator gate: the fetch floor outlives a new head', 'last.headHash !== s.head.hash || ', ''],
+ [GATE, 'operator gate: the fetch floor reuses a pass', "if (!retained && last.status === 'verified' && last.outcome === 'NOT_LISTED') return null;", ''],
  [GATE, 'operator review: ALLOW outlives its receipt', 'validUntil: proof && proof.receipt.validUntil < ttl ? proof.receipt.validUntil : ttl', 'validUntil: ttl'],
  [GATE, 'operator review: advisory keeps a heuristic minimum tier', 'minimumTier: screening?.advisory ? ResponseTier.NONE : releaseMinimumTier(observation)', 'minimumTier: releaseMinimumTier(observation)'],
  [OPERATOR, 'operator: a screened ALLOW skips the gate', 'if (decision === ReleaseDecision.ALLOW && state.screening) {', 'if (false) {'],

@@ -212,7 +212,7 @@ describe('manifest 4 and the evidence inbox', () => {
     subject: 'payout-recipient', maxObservationAgeSeconds: '300', maxSnapshotAgeSeconds: '3600' };
   const manifest = { version: 4, vault, guardian: actors.oracle.address, operator: actors.relayer.address,
     payment: { ...paymentBindings, recoveryDelay: '3600' }, screening: profile, requests: [] };
-  it('only the operator loader accepts manifest 4, with an exact profile; audit, observer and verify keep refusing it', () => {
+  it('accepts manifest 4 only with an exact profile; the plain manifest 1–3 loaders keep refusing it', () => {
     expect(operatorManifestSchema.parse(manifest)).toMatchObject({ version: 4, screening: { maxObservationAgeSeconds: 300n, issuer: SCREENING_ISSUER.address.toLowerCase() } });
     expect(() => pilotManifestSchema.parse(manifest)).toThrow();
     expect(() => cctpManifestSchema.parse({ ...manifest, requests: [{ messageId: toHex(1, { size: 32 }), proof: { sourceTransactionHash: toHex(2, { size: 32 }), sourceLogIndex: 0 } }] })).toThrow();

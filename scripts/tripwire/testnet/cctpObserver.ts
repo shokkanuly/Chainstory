@@ -1,7 +1,7 @@
 // Sequential keyless observation. The CLI owns signals, clients and the journal lease.
 import { z } from 'zod';
 import type { createCctpAudit, AuditReport } from './cctpAudit.js';
-import { pilotManifestSchema } from './cctpManifest.js';
+import { parseObserverManifest } from './cctpManifest.js';
 import { discoverCctpRequests, DiscoveryStoppedError, type DiscoveryCoverage } from './cctpDiscovery.js';
 import { FinalityConflictError } from '../finality.js';
 import { auditBoundary, CctpAuditFailure, journalOperation, retryableAuditFailure, type AuditFailureReason } from '../auditFailure.js';
@@ -45,7 +45,7 @@ export async function runCctpObserver(input: {
   onFailure?(reason: AuditFailureReason): void;
   wait?: typeof waitForObservation; now?: () => Date;
 }): Promise<'complete' | 'stopped' | 'failed'> {
-  const options = optionsSchema.parse(input.options), initial = pilotManifestSchema.parse(input.initialManifest);
+  const options = optionsSchema.parse(input.options), initial = parseObserverManifest(input.initialManifest);
   if (options.discovery && (initial.version !== 3 || initial.requests.length)) throw new DiscoveryStoppedError('Discovery requires an empty customer-payment manifest.');
   const scope = (m: typeof initial) => JSON.stringify({ ...m, requests: [] }, (_k, v: unknown) => typeof v === 'bigint' ? v.toString() : v);
   const expectedScope = scope(initial), wait = input.wait ?? waitForObservation, now = input.now ?? (() => new Date());
@@ -57,7 +57,7 @@ export async function runCctpObserver(input: {
     try {
       if (quarantined()) throw new CctpAuditFailure('quarantine', new Error('Observation journal is quarantined.'));
       let manifest: typeof initial;
-      try { manifest = pilotManifestSchema.parse(input.readManifest()); }
+      try { manifest = parseObserverManifest(input.readManifest()); }
       catch (error) { throw new CctpAuditFailure('configuration', error); }
       if (scope(manifest) !== expectedScope) throw new CctpAuditFailure('scope', new Error('Observation manifest scope changed.'));
       const persistent = options.discoveryPersistent ? { resume: journal(() => input.audit.store.loadDiscovery()) } : undefined;

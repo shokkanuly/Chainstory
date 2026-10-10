@@ -6,9 +6,10 @@ import guardian from '../../../src/tripwire/guardian.artifact.js';
 import { cctpEscrowAbi } from '../../../src/chains/evm/registry/cctp.js';
 import type { CctpRpc } from '../cctp.js';
 import type { CctpAuditReader } from './cctpAudit.js';
-import type { CctpManifest } from './cctpManifest.js';
+import type { AuditManifest } from './cctpManifest.js';
 import demo from './contracts.artifact.js';
 import payment from './cctpPaymentEscrow.artifact.js';
+import screened from './cctpScreenedPaymentEscrow.artifact.js';
 import { PAYMENT_HISTORY_BLOCK_LIMIT, paymentLifecycleEvents } from './paymentLifecycle.js';
 import { rpcQuorum } from '../rpcQuorum.js';
 import { rpcTransport, rpcUrls } from './rpc.js';
@@ -35,7 +36,7 @@ export function independentCctpRpc(primary: CctpRpc, verifiers: CctpRpc[] = [], 
   return rpcQuorum(providers, { quorum: quorum ?? providers.length });
 }
 
-export function cctpPublicClients(manifest: CctpManifest, signal: AbortSignal) {
+export function cctpPublicClients(manifest: AuditManifest, signal: AbortSignal) {
   const rpcUrl = z.string().url().refine((url) => ['http:', 'https:'].includes(new URL(url).protocol));
   // Reject malformed local transport configuration before RPC/startup retry classification.
   const urls = (value: string | undefined, fallbackUrl: string) => rpcUrls(value, fallbackUrl).map((url) => rpcUrl.parse(url));
@@ -67,7 +68,8 @@ export function cctpPublicClients(manifest: CctpManifest, signal: AbortSignal) {
     },
     readCode: (address, blockNumber) => destination.getCode({ address, blockNumber }),
     readVault: (name, blockNumber, args) => destination.readContract({ address: manifest.vault,
-      abi: manifest.version === 3 ? payment.abi as Abi : [...demo.ProtectedVault.abi, ...cctpEscrowAbi] as Abi, functionName: name, blockNumber, args }),
+      abi: manifest.version === 4 ? screened.abi as Abi : manifest.version === 3 ? payment.abi as Abi : [...demo.ProtectedVault.abi, ...cctpEscrowAbi] as Abi,
+      functionName: name, blockNumber, args }),
     readGuardian: (name, blockNumber, args) => destination.readContract({ address: manifest.guardian,
       abi: guardian.abi as Abi, functionName: name, blockNumber, args }),
   };

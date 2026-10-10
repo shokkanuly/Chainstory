@@ -54,7 +54,16 @@ const readiness = z.object({ ...envelope, mode: z.literal('keyless-predeployment
 const evidence = z.discriminatedUnion('status', [z.object({ status: z.literal('verified'), amount: uint.refine((v) => v > 0n) }),
   ...(['pending', 'invalid', 'unavailable'] as const).map((status) => z.object({ status: z.literal(status), reason: text }))]);
 const payment = z.object({ version: uint.refine((v) => v > 0n), hash, reviewedVersion: uint, returnAt: time, returned: z.boolean(), now: time,
-  blockers: z.array(z.enum(['paused', 'recipient', 'amount', 'approval'])).max(4) });
+  blockers: z.array(z.enum(['paused', 'recipient', 'amount', 'approval', 'screening'])).max(5) });
+// Screened escrow (policy 'screened-payment', manifest 4): on-chain screening state at the
+// report's block, for display only. It is never evidence and never authorizes a payout.
+const screening = z.object({ version: z.literal(1), mode: z.enum(['legacy', 'advisory']), profile: z.enum(['accepted', 'revoked', 'other']),
+  issuerIndependent: z.boolean(),
+  head: z.object({ revision: uint.refine((v) => v > 0n), listAsOf: time, validUntil: time, current: z.boolean() }).strict().nullable(),
+  allowEvidence: z.object({ validUntil: time, current: z.boolean() }).strict().nullable(),
+  authorization: z.literal('none'),
+}).strict().refine((s) => (!s.head || s.head.validUntil >= s.head.listAsOf) &&
+  (!s.allowEvidence?.current || (s.profile === 'accepted' && s.issuerIndependent && s.head?.current === true)), 'Inconsistent screening state.');
 const proof = z.object({ sourceTransactionHash: hash, destinationTransactionHash: hash, sourceBlock: uint, destinationBlock: uint,
   sourceBlockHash: hash, destinationBlockHash: hash, operationId: hash.refine((v) => !/^0x0{64}$/.test(v)), returnRecipient: cctpAddressSchema, intentPolicyHash: hash });
 const lifecycleAnchor = z.object({ transactionHash: hash, blockNumber: uint, blockHash: hash, timestamp: time,
@@ -70,7 +79,15 @@ const result = z.object({ messageId: hash, evidence,
   recommendation: z.enum(['HOLD', 'REJECT', 'NONE']).optional(), reason: text.optional(),
   lifecycle: lifecycle.optional(),
   behavioral: behavioralAdvisorySchema.optional(),
+  screening: screening.optional(),
 }).superRefine((r, ctx) => {
+  if (r.screening && !r.payment) ctx.addIssue({ code: 'custom', message: 'Screening state without customer payment state.' });
+  if (r.screening && r.payment) {
+    const s = r.screening, blocked = s.profile !== 'accepted' || !s.issuerIndependent;
+    if (r.payment.blockers.includes('screening') !== blocked || (s.head && s.head.current !== (r.payment.now <= s.head.validUntil)) ||
+      (s.allowEvidence?.current && r.payment.now > s.allowEvidence.validUntil)) ctx.addIssue({ code: 'custom', message: 'Screening state differs from the payment row.' });
+  }
+  if (!r.screening && r.payment?.blockers.includes('screening')) ctx.addIssue({ code: 'custom', message: 'Screening blocker without screening state.' });
   if (r.evidence.status === 'verified' && (!r.release || !r.payment || !r.proof || r.evidence.amount !== r.release.amount)) ctx.addIssue({ code: 'custom', message: 'Incomplete reported customer proof.' });
   if (r.proof && r.evidence.status !== 'verified') ctx.addIssue({ code: 'custom', message: 'Proof attached to unverified observation.' });
   if (r.release && !r.payment) ctx.addIssue({ code: 'custom', message: 'Customer payment state missing.' });
@@ -95,16 +112,20 @@ const result = z.object({ messageId: hash, evidence,
     }
   }
 });
-const observation = z.object({ ...envelope, mode: z.literal('observe'), status: z.literal('ok'), route: routeField, policy: z.literal('customer-payment'),
+const observation = z.object({ ...envelope, mode: z.literal('observe'), status: z.literal('ok'), route: routeField, policy: z.enum(['customer-payment', 'screened-payment']),
   fixture: z.boolean().optional(),
   observedAt: z.string().datetime(), finalized: block,
-  scope: z.object({ manifestVersion: z.literal(3), vault: cctpAddressSchema, guardian: cctpAddressSchema, operator: cctpAddressSchema }),
+  scope: z.object({ manifestVersion: z.union([z.literal(3), z.literal(4)]), vault: cctpAddressSchema, guardian: cctpAddressSchema, operator: cctpAddressSchema }),
   counts: z.object({ verified: z.number().int().min(0).max(1000), pending: z.number().int().min(0).max(1000), unavailable: z.number().int().min(0).max(1000), invalid: z.number().int().min(0).max(1000) }),
   results: z.array(result).max(1000), blockers: texts,
   discovery: discovery.optional(),
   worker: worker.optional(),
 }).superRefine((r, ctx) => {
   if (r.worker && r.worker.state !== 'scheduled') ctx.addIssue({ code: 'custom', message: 'Successful observation has failed/stopped worker metadata.' });
+  // A screened report is its own version: manifest 4 only, and every payment row carries its screening state.
+  const screened = r.policy === 'screened-payment';
+  if (screened !== (r.scope.manifestVersion === 4) || (screened && r.discovery) ||
+    r.results.some((row) => (row.payment !== undefined && screened) !== (row.screening !== undefined))) ctx.addIssue({ code: 'custom', message: 'Screened report version or rows are inconsistent.' });
   for (const row of r.results) if (row.behavioral?.status === 'reported') {
     const a = row.behavioral.assessment;
     if (a.route !== r.route || a.transferId !== row.messageId || a.synthetic !== (r.fixture === true) ||
@@ -142,6 +163,12 @@ const displayWorker = (w: z.infer<typeof worker> | undefined): OperationsSnapsho
   state: w.state, attempt: w.attempt, failures: w.consecutiveFailures, nextCheckSeconds: w.nextPollSeconds,
 } : undefined;
 const routeLabel = 'Base Sepolia → Ethereum Sepolia · USDC';
+function screeningReasons(s: z.infer<typeof screening>): string[] {
+  return [s.mode === 'advisory' ? 'Advisory mode (customer consent on chain): behavioral signals are shown but do not hold this payment.' : undefined,
+    !s.head ? 'No active screening list head.' : !s.head.current ? 'The active screening list head has expired.' : undefined,
+    s.allowEvidence ? (s.allowEvidence.current ? 'An issuer screening receipt backs the current review.' : 'The last screening receipt no longer backs a payout; a fresh review is needed.') : undefined,
+    'Screening state is shown from the chain; this file does not authorize release.'].filter((v): v is string => Boolean(v));
+}
 export function parseOperationsReport(value: unknown): OperationsSnapshot {
   const common = { routeLabel, provenance: 'imported' as const, synthetic: false, accounts: [], blocks: [], contracts: [], payments: [], notes: [] };
   if (value && typeof value === 'object' && 'mode' in value && value.mode === 'keyless-predeployment') {
@@ -174,7 +201,9 @@ export function parseOperationsReport(value: unknown): OperationsSnapshot {
       lifecycle: displayedLifecycle,
       behavioral: row.behavioral,
       reasons: [row.reason, row.evidence.status === 'verified' ? 'Backing reported verified; this file does not authorize release.' : row.evidence.reason,
-        ...(row.payment?.blockers.map((b) => ({ paused: 'Customer paused payments.', recipient: 'Recipient is outside current policy.', amount: 'Amount exceeds customer policy.', approval: 'Current customer approval is required.' })[b]) ?? []),
+        ...(row.payment?.blockers.map((b) => ({ paused: 'Customer paused payments.', recipient: 'Recipient is outside current policy.', amount: 'Amount exceeds customer policy.', approval: 'Current customer approval is required.',
+          screening: 'Screening profile is revoked, replaced or not independent of the reviewer.' })[b]) ?? []),
+        ...(row.screening ? screeningReasons(row.screening) : []),
         state === 'Rejected' ? 'Rejection does not return funded USDC. Customer recovery is a separate action.' : undefined].filter((v): v is string => Boolean(v)),
       policyVersion: row.payment?.version, policyHash: row.payment?.hash, returnAt: row.payment?.returnAt,
       operationId: row.proof?.operationId, returnRecipient: row.proof?.returnRecipient, intentPolicyHash: row.proof?.intentPolicyHash,
@@ -189,7 +218,7 @@ export function parseOperationsReport(value: unknown): OperationsSnapshot {
         { label: 'Ethereum Sepolia', from: r.discovery.incremental.destinationFrom, through: r.discovery.destination.through.number, remaining: r.discovery.incremental.destinationHead.number - r.discovery.destination.through.number }] } : undefined,
       conflicts: r.discovery.conflicts, pendingSource: r.discovery.pendingSource.map((h) => ({ ...h, explorerUrl: `${baseSepolia.blockExplorers.default.url}/tx/${h.transactionHash}` })),
       unmatchedDestination: r.discovery.unmatchedDestination.map((h) => ({ ...h, explorerUrl: `${sepolia.blockExplorers.default.url}/tx/${h.transactionHash}` })) } : undefined,
-    contracts: [{ label: 'Guardian', address: r.scope.guardian, predicted: false }, { label: 'Payment escrow', address: r.scope.vault, predicted: false }],
+    contracts: [{ label: 'Guardian', address: r.scope.guardian, predicted: false }, { label: r.policy === 'screened-payment' ? 'Screened payment escrow' : 'Payment escrow', address: r.scope.vault, predicted: false }],
     blocks: [{ label: 'Finalized destination', number: r.finalized.number, hash: r.finalized.hash, time: r.finalized.timestamp }] };
 }
 export const OPERATIONS_FILE_LIMIT = 2_000_000;

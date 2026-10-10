@@ -108,7 +108,7 @@ export async function screenedOperatorFixture() {
 
   const scope = { route: 'local-screened', chainId: LOCAL_CHAIN_ID, sourceChainId: LOCAL_CHAIN_ID, source: actors.owner.address,
     vault: vault.address, guardian: vm.address, token: f.token.address, decimals: 6, sender: actors.relayer.address };
-  const open = (opts: { gate?: boolean } = {}) => {
+  const open = (opts: { gate?: boolean; minimumFetchSeconds?: number } = {}) => {
     const store = new OperatorStore(path, scope);
     const sender = new DurableSender(store, txPort);
     const watcher = new Watcher({ route: scope.route, chain: 'base', token: 'USDC', decimals: 6, bridge: vault.address, store, ingress, egress,
@@ -123,7 +123,8 @@ export async function screenedOperatorFixture() {
     const attestor = new Attestor(actors.oracle, guardianPort, { now: () => Number(vm.now), nextNonce: () => ++attestationNonce });
     const handle = attestor.handle.bind(attestor);
     attestor.handle = (routeId, assessment) => { attestations.push(assessment); return handle(routeId, assessment); };
-    const gate = new ScreeningGate({ store, sender, provider, scope: f.scope, profile: f.profileFor(LOCAL_PROFILE), read });
+    const gate = new ScreeningGate({ store, sender, provider, scope: f.scope, profile: f.profileFor(LOCAL_PROFILE), read,
+      minimumFetchSeconds: opts.minimumFetchSeconds });
     const port: ReleasePort = {
       read,
       review: async (observation, nonce, decision = ReleaseDecision.HOLD, screening) => screenedReviewRequest({ signer: actors.oracle,
@@ -135,7 +136,7 @@ export async function screenedOperatorFixture() {
       terminalFinalized: async () => true,
     };
     const operator = new ReleaseOperator(watcher, sender, attestor, port, SCREENED_ROUTE, opts.gate === false ? {} : { screening: gate });
-    return { store, operator, sender, close: () => store.close() };
+    return { store, operator, sender, gate, close: () => store.close() };
   };
 
   /** Customer consent to advisory mode through the one-day queue (S23/S27). */

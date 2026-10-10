@@ -238,7 +238,9 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
     const attestationSender = new DurableSender(attestationStore, relayerPort(c, cfg.attestationRelayer, cfg.maxFeePerGas, hooks));
     // Head relays share the release lane; the gate journals evidence before either lane signs.
     const screeningGate = opts.screening ? new ScreeningGate({ store, sender, provider: opts.screening.provider,
-      scope: screeningScope, profile: opts.screening.profile, read: (messageId) => paymentRead(messageId) }) : undefined;
+      scope: screeningScope, profile: opts.screening.profile, read: (messageId) => paymentRead(messageId),
+      // Matches the held backoff's first step, but survives restarts.
+      minimumFetchSeconds: 30 }) : undefined;
     const guardianPort: GuardianPort = {
       address: guardian.address, chainId: c.chainId,
       currentTier: async (routeId) => z.number().int().min(0).max(3).parse(

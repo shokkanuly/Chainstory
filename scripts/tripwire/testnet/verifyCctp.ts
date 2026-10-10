@@ -2,14 +2,14 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createCctpAudit } from './cctpAudit.js';
-import { cctpManifestSchema } from './cctpManifest.js';
+import { parseAuditManifest } from './cctpManifest.js';
 import { cctpPublicClients } from './cctpPublic.js';
 export { cctpManifestSchema } from './cctpManifest.js';
 
 async function main() {
   const manifestPath = process.argv[2];
   if (!manifestPath) { console.error('Usage: npm run tripwire:cctp:verify -- manifest.json [state.sqlite]'); process.exitCode = 1; return; }
-  const manifest = cctpManifestSchema.parse(JSON.parse(readFileSync(resolve(manifestPath), 'utf8')));
+  const manifest = parseAuditManifest(JSON.parse(readFileSync(resolve(manifestPath), 'utf8')), false);
   const abort = new AbortController(); const stop = () => abort.abort();
   process.once('SIGINT', stop); process.once('SIGTERM', stop);
   let audit: Awaited<ReturnType<typeof createCctpAudit>> | undefined;
