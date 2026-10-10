@@ -20,8 +20,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-1%2C701_passing-brightgreen" alt="1,701 tests passing" />
-  <img src="https://img.shields.io/badge/mutation_tests-97%2F97_caught-brightgreen" alt="97 of 97 mutants caught" />
+  <img src="https://img.shields.io/badge/tests-1%2C750_passing-brightgreen" alt="1,750 tests passing" />
+  <img src="https://img.shields.io/badge/mutation_tests-109%2F109_caught-brightgreen" alt="109 of 109 mutants caught" />
   <img src="https://img.shields.io/badge/Sepolia-policy_v4_live-6f42c1" alt="Policy v4 live on Sepolia" />
   <img src="https://img.shields.io/badge/owner-Safe_multisig-12ff80" alt="Owned by a Safe" />
   <img src="https://img.shields.io/badge/Solidity-0.8.37-363636?logo=solidity&logoColor=white" alt="Solidity 0.8.37" />
@@ -36,8 +36,8 @@
 | | |
 | :--- | :--- |
 | **$313.6M → $0** | Three real 2026 bridge exploits (Kelp DAO, Verus, Syscoin) replayed through Tripwire: every drain is stopped before execution |
-| **1,701 tests, 82 suites** | Contracts run in a real EVM, the operator is killed mid-write with SIGKILL, RPCs lie, blocks reorg, and the gas spikes |
-| **97 / 97 mutants caught** | Every safety rule in the contracts is deliberately broken by a script, and a test catches each break |
+| **1,750 tests, 84 suites** | Contracts run in a real EVM, the operator is killed mid-write with SIGKILL, RPCs lie, blocks reorg, and the gas spikes |
+| **109 / 109 mutants caught** | Every safety rule in the contracts and the operator's screening gate is deliberately broken by a script, and a test catches each break |
 | **11 findings fixed** | We audited our own code, then the merged work of all three contributors; every finding was proven with a failing test, fixed, and kept as a regression test |
 | **Live on Sepolia** | Policy v4, every contract verified on Etherscan, the guardian owned by a Safe; the live attack ran NONE → THROTTLE → DELAY → FREEZE |
 | **27 decision records** | Every security trade-off is written down in [docs/07-decisions-adr.md](docs/07-decisions-adr.md): context, decision, limits and tests |
@@ -265,10 +265,11 @@ if a rotation is ever pending ([runbook](docs/plans/tripwire-operator.md#redeplo
 | Customer payment escrow track and its integration on policy v4: contracts, operator, keyless observer, supervision, operations page | 890 tests |
 | Screening evidence verifier, vectors S01–S16 with hand-built digests | 29 tests |
 | On-chain screening gate: receipts, list heads, consent and execution recheck (S03–S27) | 33 tests |
+| Screening in the operator: evidence gate and journal, head relay, format-4 reviews, advisory consent, manifest 4, restarts (S02–S28) | 49 tests |
 | Every page in real Chromium at desktop and phone width; report-folder flow | 20 / 20 and 12 / 12 browser checks |
-| Guardian, release-review, quorum, CCTP, payment-escrow and screening rules broken on purpose (`npm run test:mutants`) | **97 / 97 mutants caught** |
+| Guardian, release-review, quorum, CCTP, payment-escrow, screening and operator-gate rules broken on purpose (`npm run test:mutants`) | **109 / 109 mutants caught** |
 | Gas: check an outflow · accept an attestation | 79.0k · 88.3k |
-| **Total** | **1,701 tests passing** |
+| **Total** | **1,750 tests passing** |
 
 ## Next: the customer payment escrow
 
@@ -287,7 +288,7 @@ delay, never anywhere else.
 | Operator that signs reviews, completes returns, survives crashes | Built and tested locally ([runbook](docs/plans/tripwire-payment-operator.md)) |
 | Keyless deployment plan, preflight, receipt acceptance, first-payment planner | Built; [readiness](docs/plans/tripwire-testnet-readiness.md) |
 | Continuous keyless observer, supervisor, operations page at `/tripwire/operations` | Built; [operations runbook](docs/plans/tripwire-operations.md) |
-| Sanctions screening: off-chain evidence verifier, and an escrow version that checks the issuer's receipt on chain | Built locally ([policy](docs/plans/tripwire-behavioral-policy.md), [ADR-047](docs/07-decisions-adr.md)); operator wiring next |
+| Sanctions screening: off-chain evidence verifier, an escrow version that checks the issuer's receipt on chain, and the operator that fetches and submits it | Built locally ([policy](docs/plans/tripwire-behavioral-policy.md), [ADR-047, ADR-048](docs/07-decisions-adr.md)); no provider connected, not deployed |
 | Testnet deployment, first real payment, external audit, design partner | **Not yet.** [Plan](docs/plans/tripwire-product.md) · [audit package](docs/plans/tripwire-audit-package.md) · [handoff](docs/plans/tripwire-handoff.md) |
 
 `npm run tripwire:payment:demo:local` runs the whole flow against the real
@@ -322,7 +323,7 @@ git clone https://github.com/shokkanuly/Chainstory.git
 cd Chainstory
 npm install
 npm run dev                    # Retold at /app and /check, Tripwire at /tripwire
-npm test                       # 1,701 tests
+npm test                       # 1,750 tests
 npm run test:mutants           # 97 broken contract variants, each must be caught
 npm run demo:attack            # the four-step attack against real bytecode in a local EVM, ~2 s
 ```
@@ -355,7 +356,7 @@ shared key and an owner that is not a contract. Step-by-step:
 
 | Document | Read it for |
 | :--- | :--- |
-| [Decision records](docs/07-decisions-adr.md) | 47 ADRs: every trade-off, its limits and its tests |
+| [Decision records](docs/07-decisions-adr.md) | 48 ADRs: every trade-off, its limits and its tests |
 | [Payment product plan](docs/plans/tripwire-product.md) · [handoff](docs/plans/tripwire-handoff.md) · [checkpoint](docs/plans/tripwire-progress.md) | The 12-week plan, what is done, and the next step |
 | [Audit package](docs/plans/tripwire-audit-package.md) | Scope, exact build, role powers and bypass paths for an external auditor |
 | [Settlement firewall build map](docs/plans/tripwire-settlement-firewall.md) | How each part of the brief maps to code, and what is still open |
@@ -371,7 +372,7 @@ shared key and an owner that is not a contract. Step-by-step:
 | Tripwire oracle | Five rules, graduated tiers, `indeterminate` when blind, rolling baseline from finalized burns, proof-first verdict | A trained model |
 | Guardian | THROTTLE / DELAY / FREEZE, escalate-only, 24 h expiry, 72 h oracle span, time-locked oracle rotation, kill switch; **policy v4 live on Sepolia, owned by a Safe** | External audit; mainnet; a Solana (Anchor) guardian |
 | Operations | Durable journal, finalized and safe-head feeds, reorg quarantine, multi-RPC proof agreement, separate key roles and nonce lanes, fee-bumped replacement, RPC failover, authenticated CCTP v2 escrow | Live CCTP pilot; quorum members on separate machines |
-| Payment escrow | Customer rules, approval, delay, pause, fixed return, exact accounting; payment operator, keyless observer, operations page; screening verifier and an on-chain screening gate | Testnet deployment and first real payment; screening in the operator (H4c3b); external audit; a design partner |
+| Payment escrow | Customer rules, approval, delay, pause, fixed return, exact accounting; payment operator, keyless observer, operations page; screening verifier, an on-chain screening gate and the operator gate | Testnet deployment and first real payment; a screening provider and manifest 4 in the audit tooling (H4c3c); external audit; a design partner |
 | Further ideas | | zkML proofs of the score (EZKL), a sentinel network, bounties for reporters |
 
 ## Sources

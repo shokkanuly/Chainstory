@@ -1,11 +1,12 @@
 # H4c1: mandatory screening and customer-authorized advisory policy
 
 **Status: design 2026-10-07 (ADR-045); H4c2 verifier implemented 2026-10-09;
-H4c3a on-chain gate implemented 2026-10-10 (ADR-047), with listed deviations.**
-`CctpScreenedPaymentEscrow` now enforces the receipt, head, profile and consent
-rules below on a local EVM. Nothing is deployed, and the operator still signs only
-formats 2 and 3 until H4c3b (manifest 4, receipt journaling, format-4 signing,
-attestor separation). This document specifies a project-owned protocol, not an
+H4c3a on-chain gate and H4c3b operator integration implemented 2026-10-10
+(ADR-047, ADR-048), with listed deviations.**
+`CctpScreenedPaymentEscrow` enforces the receipt, head, profile and consent rules
+below on a local EVM, and the operator fetches, journals, verifies and submits the
+evidence (manifest 4, format 4, advisory mode from on-chain consent only). Nothing
+is deployed and no real provider is connected. This document specifies a project-owned protocol, not an
 existing Circle feature or a screening vendor API.
 
 ## Product boundary and current behavior
@@ -455,8 +456,14 @@ legacy decisions/attestor fixtures must remain unchanged and pass.
 S05, S09–S13, S16–S22 and S24–S27 run as 32 local-EVM tests against
 `CctpScreenedPaymentEscrow`, with 17 mutants. The vault's EIP-712 domain stays
 version 2 (format-4's distinct type separates it); see ADR-047 for this and the
-other deviations. **H4c3b** remains: manifest 4, receipt fetching and journaling,
-format-4 signing, head relaying, attestor separation, and S23/S28 in the operator.
+other deviations.
+
+**H4c3b status:** the operator half is implemented 2026-10-10 (ADR-048): manifest
+4, exact runtime acceptance, a typed provider port with a file-inbox adapter,
+evidence journaling before signing, head relaying, format-4 signing, retained
+contradictions, attestor separation in advisory mode, and S02, S03, S07, S09, S12,
+S14, S16/S18, S20, S23, S25, S26 and S28 at the operator boundary. Audit/observer
+support for manifest 4 is the next step (H4c3c).
 
 **H4c3:** implement and review the coordinated contract/profile/review/operator/
 attestor/state/journal boundaries and S17–S28 on local EVM. Pin exact new ABI/hook,

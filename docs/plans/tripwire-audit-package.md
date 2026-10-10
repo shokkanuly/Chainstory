@@ -17,6 +17,7 @@ questions at the end need answers from the people who will run a pilot.
 | Screened payment escrow | `contracts/evm/src/CctpScreenedPaymentEscrow.sol` | 258 | Issuer-signed screening receipts and list heads, checked at review and execution; consent queue (ADR-047) |
 | k-of-n oracle | `contracts/evm/src/TripwireQuorum.sol` | 114 | ERC-1271 threshold signer that can replace the single oracle key |
 | Off-chain operator | `scripts/tripwire/operator.ts`, `watch.ts`, `settlement.ts`, `review.ts`, `sender.ts`, `store.ts`, `cctp.ts`, `sourceProof.ts`, `rpcQuorum.ts`, `testnet/operator.ts`, `testnet/cctpOperator.ts`, `testnet/paymentState.ts` | — | Decides and signs reviews; crash-safe journal; source/settlement proofs |
+| Operator screening | `scripts/tripwire/screeningGate.ts`, `testnet/screenedState.ts`, `testnet/screeningInbox.ts`, `src/chains/evm/screening.ts` | — | Fetches, journals and verifies issuer evidence before a format-4 ALLOW; advisory mode from on-chain consent (ADR-048) |
 
 Out of scope unless the client asks: the browser app, the Retold wallet reader,
 the demo token/bridge contracts (`DemoUSDC`, `MockSourceBridge`, `DrainReceiver`),
@@ -85,7 +86,9 @@ From the product plan's review brief, in order of money at risk:
 4. Owner and oracle powers: rotation timing, kill switch, protection span and
    cooldown, cap changes during protection, route isolation.
 5. Screening (if in scope): issuer receipt and head verification, the transient
-   review binding in `reviewScreenedRelease`, execution recheck, consent queue.
+   review binding in `reviewScreenedRelease`, execution recheck, consent queue;
+   off chain, the gate's coherent read, journal-before-sign, contradiction
+   retention and the advisory switch (it must follow only on-chain consent).
 6. Operator: crash between signing and broadcast, same-nonce replacement,
    finality conflicts and quarantine, RPC disagreement, policy read at one block.
 

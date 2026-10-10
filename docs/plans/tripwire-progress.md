@@ -8,6 +8,46 @@ together with its code and checks. Find this file's current commit with
 future hash into it. History before 9 October was translated from Russian;
 its facts and numbers are unchanged.
 
+## Completed step: H4c3b — the operator drives the screened escrow — 2026-10-10
+
+ADR-048. The signing operator now runs the screened escrow end to end:
+- `testnet/screenedState.ts` reads mode, profile, head, stored commitments, roles
+  and the exact payment context at the same hash-checked block as the payment
+  state, and requires the escrow's own `paymentContextHash` to match;
+- `screeningGate.ts` fetches issuer evidence through a typed provider port,
+  journals the original envelopes before relaying or signing, relays a newer
+  head, verifies with the H4c2 verifier, and retains contradictions per profile,
+  head and payment;
+- ALLOW goes through `reviewScreenedRelease` (never outliving the receipt);
+  HOLD/REJECT carry zero commitments;
+- advisory mode follows only the escrow's on-chain `executionMode`: proofs
+  decide, the aggregate attestor is not called, reviews ask for tier NONE;
+- manifest 4, a `screened-payment` source profile (v2 hook and credit IDs),
+  the screened runtime template, and startup refusals for mixed versions,
+  another profile and a non-independent issuer;
+- a first provider adapter: a private file inbox, one bounded file per payment.
+
+Tests: `scripts/tripwire/__tests__/screenedOperator.test.ts` (25, compiled escrow
+in the local EVM: S02, S03, S07, S09, S12, S14, S16/S18, S23, S25, S26, S28) and
+`cctpScreenedOperator.test.ts` (13, RPC boundary with real v2-hook CCTP proofs
+through the inbox, S20 refusals). 12 operator mutants in `npm run test:mutants`.
+Full suite: 1,750 tests / 84 files; lint, typecheck and build clean.
+
+Not done: audit, observer, discovery and verify still refuse manifest 4; no real
+provider; nothing deployed. Do not activate advisory mode on a funded escrow
+before an independent review.
+
+## Next independent engineering step: H4c3c — screened pilot tooling
+
+Before any screened pilot (H4c4 is human-owned):
+- teach the keyless audit/observer and `verifyCctp` manifest 4: screening
+  status per payment (head, receipt expiry, held reason), never execution
+  meaning for old report fields;
+- a deploy plan and deployment acceptance for `CctpScreenedPaymentEscrow`
+  (paused start, profile hash, no head) like the payment escrow's;
+- persist the held backoff, or rate-limit provider calls after a restart;
+- record whether a real provider can sign the H4c2 envelopes (discovery gate).
+
 ## Completed step: H4c3a — on-chain screening gate — 2026-10-10
 
 `contracts/evm/src/CctpScreenedPaymentEscrow.sol` (ADR-047) extends the payment
@@ -40,22 +80,6 @@ Deviations from the H4c1 proposal (ADR-047):
 - one receipt per on-chain review.
 
 The runtime is 23,430 of 24,576 bytes: split before adding more.
-
-## Next independent engineering step: H4c3b — operator integration of screening
-
-Wire the screened escrow into the signing operator, per
-[the H4c1 policy](tripwire-behavioral-policy.md) and ADR-047:
-- manifest 4 and exact runtime acceptance for `CctpScreenedPaymentEscrow`;
-- a typed provider adapter that returns signed heads/receipts or a typed outage;
-- relay heads, and verify receipts with the H4c2 verifier against state read at
-  one hash-checked block;
-- journal the original signed bytes before signing;
-- sign format 4 with `signScreenedPaymentReleaseReview` and submit
-  `reviewScreenedRelease`;
-- in advisory mode, stop the aggregate attestor;
-- S23 and S28 on the operator.
-
-Do not activate advisory mode before this lands and is reviewed.
 
 ## Completed step: integration onto policy v4, H4c2, H1 (automated), H5 package — 2026-10-09
 
@@ -410,7 +434,7 @@ synthetic.
 | H2b1 | Implemented: runtime failure classification; journal failures are never retried |
 | H2b2 | Repo supervisor, crash drills and local incidents implemented; host/service/process-tree/live acceptance open |
 | H3 | Open: a designated person with test accounts, funding, and real finalized deployment/burn/mint/payout/return receipts. The guardian must be policy v4 (ADR-046) |
-| H4 | H4a model, H4b report/viewer, H4c1 design, H4c2 pure verifier and H4c3a on-chain gate done; next H4c3b operator integration; execution separation open |
+| H4 | H4a model, H4b report/viewer, H4c1 design, H4c2 pure verifier, H4c3a on-chain gate and H4c3b operator integration done; next H4c3c screened pilot tooling; H4c4 review/deployment/consent is human-owned |
 | H5 | Audit package prepared ([tripwire-audit-package.md](tripwire-audit-package.md)); vendor, pinned commit and independent audit open |
 | H6 | Open: discovery owner, interviews and a real design-partner commitment |
 

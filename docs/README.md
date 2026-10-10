@@ -124,8 +124,10 @@ independent issuer evidence, explicit customer consent and coordinated new-versi
 migration. This is a design only; execution still uses legacy enforcement.
 The H4c2 pure read-only evidence verifier is now implemented (`src/chains/evm/screening.ts`);
 it never returns ALLOW. H4c3a adds the on-chain half: `CctpScreenedPaymentEscrow`
-verifies the issuer's receipt at review and again at execution (ADR-047). Next is
-H4c3b, the operator integration.
+verifies the issuer's receipt at review and again at execution (ADR-047). H4c3b
+wires it into the operator: evidence is fetched, journaled, verified and submitted
+with a format-4 review, and advisory mode follows only on-chain consent (ADR-048).
+Next is H4c3c, manifest 4 in the audit/observer tooling.
 
 On 2026-10-09 the payment track was merged into `main` on top of guardian policy v4
 (ADR-046); its ADRs are now numbered 028–045. The handoff and checkpoint are in
