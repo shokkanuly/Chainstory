@@ -84,15 +84,15 @@ const FAQ = [
   },
   {
     q: 'What is Tripwire?',
-    a: 'A circuit breaker for bridges. Before a bridge pays out, it checks that the payout is backed by a burn it can verify, and if not, pauses just that route for 24 hours while a human reviews.',
+    a: 'A circuit breaker for bridges. Before a bridge pays out, it checks that the payout is backed by a burn it can verify, and if not, pauses just that route for 24 hours while a human reviews. Next: the same checks for USDC payment escrows, with customer rules and a fixed return address.',
   },
   {
     q: 'Is Tripwire live on a chain?',
-    a: 'Not yet. The replay runs the real guardian contract in an EVM inside your browser, against reconstructions of three 2026 exploits. Sources and assumptions are listed on the page.',
+    a: 'On the Ethereum Sepolia testnet, yes: the policy v4 guardian and a demo vault, owned by a Safe multisig. Not on mainnet, and not externally audited. The replay on this site runs the same guardian contract in your browser against reconstructions of three 2026 exploits; sources and assumptions are listed on the page.',
   },
   {
     q: 'Which networks are supported?',
-    a: 'Retold reads Ethereum, Arbitrum, Base, Optimism and Polygon. Tripwire’s guardian is one EVM contract that deploys unchanged to any of them.',
+    a: 'Retold reads Ethereum, Arbitrum, Base, Optimism and Polygon. Tripwire’s guardian is one EVM contract that deploys unchanged to any of them; the first payment pilot targets CCTP v2 USDC from Base Sepolia to Ethereum Sepolia.',
   },
 ];
 
@@ -533,9 +533,9 @@ function Tripwire() {
   const cardRef = useRef<HTMLDivElement>(null);
   const inView = useInView(cardRef, { once: true, amount: 0.45 });
   const rows = [
-    { label: 'What actually happened', value: kelp.reportedLossUsd, color: 'var(--b-text)' },
-    { label: 'Tripwire, before execution', value: 0, color: 'var(--b-cyan)', stamp: true },
-    { label: 'Tripwire, one block later', value: kelp.reportedLossUsd, color: 'var(--b-text-muted)' },
+    { label: 'Reported incident loss', value: kelp.reportedLossUsd, color: 'var(--b-text)' },
+    { label: 'Model: before execution', value: 0, color: 'var(--b-cyan)', stamp: true },
+    { label: 'Model: one block later', value: kelp.reportedLossUsd, color: 'var(--b-text-muted)' },
   ];
   return (
     <Section id="tripwire" n="03" label="Tripwire · a circuit breaker for bridges" className="border-t border-border">
@@ -546,7 +546,8 @@ function Tripwire() {
             Every major bridge drain of 2026 was a single transaction — Kelp DAO, Verus, Syscoin. Anything that reacts
             after a transaction lands is too late. Tripwire checks one thing first:{' '}
             <span className="text-foreground">is this payout backed by a burn we can verify?</span> If not, it pauses
-            that one route for 24 hours while a human looks.
+            that one route for 24 hours while a human looks. The replay is a reconstruction of each attack, not its
+            original transactions.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Magnetic>
@@ -559,10 +560,10 @@ function Tripwire() {
             </a>
           </div>
         </div>
-        <RiseCard as="div" className="l-card fx-spot p-0" style={glowStyle('var(--b-red)')}>
+        <RiseCard as="div" className="l-card fx-spot min-w-0 p-0" style={glowStyle('var(--b-red)')}>
           <div ref={cardRef}>
             <p className="l-label border-b border-border px-6 py-4">
-              {kelp.name} · replayed through the guardian contract
+              {kelp.name} · reconstruction through the guardian contract
             </p>
             {/* The wire: the payout runs toward release and is cut at the guardian. */}
             <svg viewBox="0 0 400 28" className="block h-7 w-full px-6" aria-hidden preserveAspectRatio="none">
@@ -649,7 +650,7 @@ function PutToWork() {
             Try <button type="button" onClick={() => setAddress('vitalik.eth')} className="underline underline-offset-4 hover:text-foreground">vitalik.eth</button>
           </p>
         </div>
-        <RiseCard as="div" className="l-card fx-spot p-0" style={glowStyle('var(--b-cyan)')}>
+        <RiseCard as="div" className="l-card fx-spot min-w-0 p-0" style={glowStyle('var(--b-cyan)')}>
           <p className="l-label flex justify-between border-b border-border px-6 py-4">
             <span>Story feed / read-only</span>
             <span style={{ color: 'var(--b-amber)' }}>Illustrative</span>

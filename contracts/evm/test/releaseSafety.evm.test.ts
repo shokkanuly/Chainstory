@@ -131,6 +131,17 @@ describe('release execution gate', () => {
     expect((await submit(f, reviewFor(f, { nonce: 2n }))).error).toBe('InvalidReviewer');
   });
 
+  it('never executes an allowance from the old oracle once a rotation lands', async () => {
+    const f = await deployReleaseFixture();
+    expect((await submit(f)).ok).toBe(true);
+    await f.vm.send(actors.owner, 'proposeOracle', [actors.relayer.address]);
+    f.vm.warp(2 * 86_400);
+    expect((await f.vm.send(actors.attacker, 'acceptOracle')).ok).toBe(true);
+    // The 10-minute review lifetime already ended it; the reviewer check would refuse it as well.
+    expect((await f.vm.sendContract(f.vault, actors.attacker, 'executeRelease', [MESSAGE])).ok).toBe(false);
+    expect(await f.vm.readContract(f.token, 'balanceOf', [actors.bridge.address])).toBe(0n);
+  });
+
   it('refuses the old key once a rotated oracle has been accepted', async () => {
     const f = await deployReleaseFixture();
     await f.vm.send(actors.owner, 'proposeOracle', [actors.relayer.address]);

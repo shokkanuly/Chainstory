@@ -25,10 +25,10 @@
 
 All submission assets are generated and available in the codebase:
 
-- **[HACKATHON_SUBMISSION.md](file:///Users/aibek/Desktop/projects/clear_projects/Block-chain-project/docs/submission_pack/HACKATHON_SUBMISSION.md)** — Complete hackathon entry form, technical stack, scorecard, and demo video script.
-- **[ACCELERATOR_APPLICATION.md](file:///Users/aibek/Desktop/projects/clear_projects/Block-chain-project/docs/submission_pack/ACCELERATOR_APPLICATION.md)** — Accelerator program application, TAM/SAM/SOM market opportunity, business model, B2B API monetization (`@chainstory/core`), competitive moat, and 12-month financial projections.
-- **[PITCH_DECK_SLIDES.md](file:///Users/aibek/Desktop/projects/clear_projects/Block-chain-project/docs/submission_pack/PITCH_DECK_SLIDES.md)** — 10-slide pitch deck presentation for judging panels and demo days.
-- **[README.md](file:///Users/aibek/Desktop/projects/clear_projects/Block-chain-project/README.md)** — Technical single source of truth documentation.
+- **[HACKATHON_SUBMISSION.md](HACKATHON_SUBMISSION.md)** — Complete hackathon entry form, technical stack, scorecard, and demo video script.
+- **[ACCELERATOR_APPLICATION.md](ACCELERATOR_APPLICATION.md)** — Accelerator program application, TAM/SAM/SOM market opportunity, business model, B2B API monetization (`@chainstory/core`), competitive moat, and 12-month financial projections.
+- **[PITCH_DECK_SLIDES.md](PITCH_DECK_SLIDES.md)** — 10-slide pitch deck presentation for judging panels and demo days.
+- **[README.md](../../README.md)** — Technical single source of truth documentation.
 
 ---
 

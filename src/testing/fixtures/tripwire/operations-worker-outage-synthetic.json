@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "mode": "observe",
+  "enforcement": false,
+  "fixture": true,
+  "status": "unavailable",
+  "observedAt": "2026-10-06T07:00:00.000Z",
+  "reason": "Synthetic RPC outage example. No current payment evidence or authorization is reported.",
+  "worker": {
+    "version": 1,
+    "state": "retrying",
+    "attempt": 7,
+    "consecutiveFailures": 3,
+    "intervalSeconds": 10,
+    "nextPollSeconds": 40
+  }
+}

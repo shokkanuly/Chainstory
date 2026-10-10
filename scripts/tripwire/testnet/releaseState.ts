@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import type { Hex } from 'viem';
 import { blockHeaderSchema } from '../finality.js';
-import { ReleaseState, type ReleaseStatus } from '../operator.js';
+import type { ReleaseStatus } from '../operator.js';
+
+/** ReleaseState.REJECTED, inlined: a runtime import of operator.ts would be circular via paymentState.ts. */
+const REJECTED = 3;
 
 const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((value) => value.toLowerCase() as Hex);
 export const releaseTuple = z.tuple([address, z.bigint().positive(), z.number().int().min(0).max(4),
@@ -30,5 +33,5 @@ export async function readReleasePolicyState(reader: {
     throw new Error('Release state block changed while reading delay.');
   }
   return { recipient: r[0], amount: r[1], state: r[2], nonce: r[5], delay: { until, now: head.timestamp },
-    ...(r[2] === ReleaseState.REJECTED ? { rejection: { until: rejectedAt + uint256.parse(reader.rejectionCooldown), now: head.timestamp } } : {}) };
+    ...(r[2] === REJECTED ? { rejection: { until: rejectedAt + uint256.parse(reader.rejectionCooldown), now: head.timestamp } } : {}) };
 }

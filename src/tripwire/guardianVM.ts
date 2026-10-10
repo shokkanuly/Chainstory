@@ -141,6 +141,11 @@ export class GuardianVM {
     );
   }
 
+  /** Read deployed bytes for artifact acceptance fixtures; no transaction/signing. */
+  readBytecode(address: Hex = this.address): Promise<Hex> {
+    return this.exclusive(async () => bytesToHex(await this.vm.stateManager.getCode(new Address(hexToBytes(address)))) as Hex);
+  }
+
   private raw(from: PrivateKeyAccount, data: Hex, to: Hex | undefined) {
     const nonce = this.nonces.get(from.address) ?? 0n;
     this.nonces.set(from.address, nonce + 1n);
@@ -186,6 +191,26 @@ export class GuardianVM {
     const failed = res.execResult.exceptionError !== undefined;
     const decoded = failed ? this.decode(res.execResult.returnValue, [...contract.abi, ...this.abi]) : undefined;
     return { ok: !failed, error: decoded?.name, errorArgs: decoded?.args, gas: res.totalGasSpent };
+  }
+
+  /** eth_call-style dry run from `from`: whether the call would succeed, keeping none of its effects. */
+  simulateContract(contract: VMContract, from: PrivateKeyAccount, functionName: string, args: readonly unknown[] = []): Promise<CallResult> {
+    return this.exclusive(async () => {
+      await this.vm.stateManager.checkpoint();
+      try {
+        const r = await this.vm.evm.runCall({
+          to: new Address(hexToBytes(contract.address)),
+          caller: new Address(hexToBytes(from.address)),
+          data: hexToBytes(encodeFunctionData({ abi: contract.abi, functionName, args })),
+          block: this.block(),
+        });
+        const failed = r.execResult.exceptionError !== undefined;
+        const decoded = failed ? this.decode(r.execResult.returnValue, [...contract.abi, ...this.abi]) : undefined;
+        return { ok: !failed, error: decoded?.name, errorArgs: decoded?.args, gas: r.execResult.executionGasUsed };
+      } finally {
+        await this.vm.stateManager.revert();
+      }
+    });
   }
 
   read<T = unknown>(functionName: string, args: readonly unknown[] = []): Promise<T> {

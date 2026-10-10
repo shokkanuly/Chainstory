@@ -91,9 +91,12 @@ export default function TripwireDashboard() {
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
           Every major bridge drain of 2026 was a single transaction, so a breaker has to act before it executes.
           Tripwire checks that each payout is backed by a burn it can verify — and if not, pauses that route. Replay
-          three real exploits through its oracle and guardian contract, and see where that works, and where it can’t.
+          reconstructions of three real exploits through its oracle and guardian contract, and see where that works,
+          and where it can’t.
         </p>
       </header>
+
+      <a href="/tripwire/operations" className="b-card flex flex-wrap items-center justify-between gap-3 p-4 text-sm hover:bg-muted"><span>Inspect your testnet funding and customer payment reports</span><span className="font-semibold">Open operations →</span></a>
 
       <IncidentPicker selected={state.incidentId} onSelect={select} />
 
@@ -174,7 +177,7 @@ function Outcomes({ incident, snap }: { incident: Incident; snap: ReplaySnapshot
     const status: Status = lost > 0 ? 'drained' : tripped ? 'protected' : 'watching';
     return (
       <Tile
-        label={`Tripwire · ${STRATEGY_LABEL[strategy].toLowerCase()}`}
+        label={`Model · ${STRATEGY_LABEL[strategy].toLowerCase()}`}
         value={usd(lost)}
         status={status}
         note={
@@ -191,7 +194,7 @@ function Outcomes({ incident, snap }: { incident: Incident; snap: ReplaySnapshot
   return (
     <div className="grid gap-3 sm:grid-cols-3">
       <Tile
-        label="What actually happened"
+        label="Reconstruction without protection"
         value={usd(realityLost)}
         status={realityLost > 0 ? 'drained' : 'watching'}
         note={`Reported loss ${usd(incident.reportedLossUsd)}${incident.reportedLossDetail ? ` · ${incident.reportedLossDetail}` : ''}.`}
@@ -205,7 +208,7 @@ function Outcomes({ incident, snap }: { incident: Incident; snap: ReplaySnapshot
 type Status = 'watching' | 'protected' | 'drained';
 const STATUS: Record<Status, { label: string; color: string; icon: Icon }> = {
   watching: { label: 'Watching', color: 'var(--b-text-faint)', icon: GaugeIcon },
-  protected: { label: 'Nothing lost', color: 'var(--tw-clear)', icon: CheckCircleIcon },
+  protected: { label: 'No modeled loss', color: 'var(--tw-clear)', icon: CheckCircleIcon },
   drained: { label: 'Drained', color: 'var(--tw-trip)', icon: ProhibitIcon },
 };
 

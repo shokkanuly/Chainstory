@@ -114,6 +114,12 @@ contract ProtectedVault is Ownable, EIP712 {
         routeId = routeId_;
     }
 
+    /// Signing startup must distinguish extensions with a different review type.
+    function REVIEW_FORMAT_VERSION() public pure virtual returns (uint256) { return 2; }
+
+    function _beforeReview(bytes32 messageId, ReviewDecision decision) internal virtual {}
+    function _beforeExecute(bytes32 messageId) internal virtual {}
+
     /// @notice The relayer delivers a cross-chain message. In an exploit, this
     ///         is where a forged message arrives.
     function requestRelease(bytes32 messageId, address to, uint256 amount) external onlyOwner {
@@ -142,6 +148,7 @@ contract ProtectedVault is Ownable, EIP712 {
         // signature arriving after a newer HOLD. Random single-use nonces do not.
         if (nonce <= r.reviewNonce) revert ReviewNonceAlreadyUsed(nonce);
         address reviewer = _requireReviewer(hashReleaseReview(messageId, decision, minimumTier, validUntil, nonce), signature);
+        _beforeReview(messageId, decision);
         r.reviewNonce = nonce;
         r.state = decision == ReviewDecision.ALLOW
             ? ReleaseState.VERIFIED : decision == ReviewDecision.HOLD ? ReleaseState.HELD : ReleaseState.REJECTED;
@@ -170,7 +177,7 @@ contract ProtectedVault is Ownable, EIP712 {
     }
 
     function hashReleaseReview(bytes32 messageId, ReviewDecision decision, ITripwireGuardian.Tier minimumTier, uint256 validUntil, uint256 nonce)
-        public view returns (bytes32)
+        public view virtual returns (bytes32)
     {
         Release storage r = releases[messageId];
         return _hashTypedDataV4(keccak256(abi.encode(
@@ -178,7 +185,9 @@ contract ProtectedVault is Ownable, EIP712 {
         )));
     }
 
-    function executeRelease(bytes32 messageId) external {
+    function executeRelease(bytes32 messageId) external virtual { _executeRelease(messageId); }
+
+    function _executeRelease(bytes32 messageId) internal {
         Release storage r = releases[messageId];
         if (r.to == address(0)) revert UnknownRelease(messageId);
         if (r.state == ReleaseState.EXECUTED) revert AlreadyExecuted(messageId);
@@ -191,6 +200,7 @@ contract ProtectedVault is Ownable, EIP712 {
         uint256 releaseAt = releaseDelayUntil[messageId];
         if (releaseAt == 0 && guardian.outflowDelay(routeId, r.amount) > 0) revert RequestDelayNotStarted(messageId);
         if (block.timestamp < releaseAt) revert ReleaseDelayed(messageId, releaseAt);
+        _beforeExecute(messageId);
         r.state = ReleaseState.EXECUTED;
         guardian.onTokenOutflow(routeId, r.amount);
         token.safeTransfer(r.to, r.amount);

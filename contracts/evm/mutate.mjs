@@ -1,6 +1,9 @@
 // Mutation tests for the guardian's tier logic, the vault's release review gate,
-// the k-of-n attestor quorum, and the audit remediation (policy v4: time-locked
-// oracle rotation, bounded oracle protection, cumulative DELAY, REJECT cooldown).
+// the k-of-n attestor quorum, the audit remediation (policy v4: time-locked
+// oracle rotation, bounded oracle protection, cumulative DELAY, REJECT cooldown)
+// the customer payment escrow (policy, approval, delay and funded return) and
+// its screened version (issuer receipt, list head, consent), and the operator's
+// screening gate and advisory mode (TypeScript; no recompile needed).
 //
 //   npm run test:mutants
 //
@@ -18,6 +21,14 @@ const VAULT = 'contracts/evm/src/TripwireDemo.sol', DEMO_ART = 'scripts/tripwire
 const vault = readFileSync(VAULT, 'utf8'), demoArt = readFileSync(DEMO_ART, 'utf8');
 const ESCROW = 'contracts/evm/src/CctpEscrow.sol', CCTP_ART = 'scripts/tripwire/testnet/cctpEscrow.artifact.ts';
 const escrow = readFileSync(ESCROW, 'utf8'), cctpArt = readFileSync(CCTP_ART, 'utf8');
+const PAYMENT = 'contracts/evm/src/CctpPaymentEscrow.sol', PAYMENT_ART = 'scripts/tripwire/testnet/cctpPaymentEscrow.artifact.ts';
+const payment = readFileSync(PAYMENT, 'utf8'), paymentArt = readFileSync(PAYMENT_ART, 'utf8');
+const ACCEPTANCE_ART = 'scripts/tripwire/testnet/cctpAcceptance.artifact.ts', acceptanceArt = readFileSync(ACCEPTANCE_ART, 'utf8');
+const SCREENED = 'contracts/evm/src/CctpScreenedPaymentEscrow.sol', SCREENED_ART = 'scripts/tripwire/testnet/cctpScreenedPaymentEscrow.artifact.ts';
+const screenedSol = readFileSync(SCREENED, 'utf8'), screenedArt = readFileSync(SCREENED_ART, 'utf8');
+const GATE = 'scripts/tripwire/screeningGate.ts', OPERATOR = 'scripts/tripwire/operator.ts', SETTLEMENT = 'scripts/tripwire/settlement.ts';
+const SCREENED_STATE = 'scripts/tripwire/testnet/screenedState.ts';
+const OPERATOR_SOURCES = Object.fromEntries([GATE, OPERATOR, SETTLEMENT, SCREENED_STATE].map((file) => [file, readFileSync(file, 'utf8')]));
 const M = [
  ['DELAY cap: DELAY gets the full cap', 'tier == Tier.THROTTLE || tier == Tier.DELAY ? uint256(cap) / 2', 'tier == Tier.THROTTLE ? uint256(cap) / 2'],
  ['DELAY hold: never holds', 'if (held > r.cap / 10) revert OutflowDelayed', 'if (false) revert OutflowDelayed'],
@@ -44,6 +55,7 @@ const M = [
  ['rotation: notice period skipped', 'if (block.timestamp < pendingOracleAt) revert RotationNotReady(pendingOracleAt);', ''],
  ['rotation: anyone proposes an oracle', 'function proposeOracle(address next) external onlyOwner', 'function proposeOracle(address next) external'],
  ['kill switch: disable leaves the oracle in place', 'oracle = address(0);', ''],
+ ['kill switch: a pending rotation survives it', 'emit OracleRotationCancelled(pendingOracle);\n            pendingOracle = address(0);', 'emit OracleRotationCancelled(pendingOracle);'],
  ['protection: cap raised during a tier', 'if (r.windowSeconds != 0 && cap > r.cap && currentTier(routeId) != Tier.NONE) revert RaiseDuringProtection(routeId);', ''],
  ['span: refreshes extend past 72 hours', 'if (until > limit) until = limit;', ''],
  ['span: no cooldown between spans', '+ MAX_ORACLE_PROTECTION + PROTECTION_COOLDOWN', '+ MAX_ORACLE_PROTECTION'],
@@ -72,7 +84,7 @@ const CCTP_MUTANTS = [
  ['CCTP ownership: owner may invent credits', 'ProtectedVault(address(this), token_, guardian_, routeId_)', 'ProtectedVault(msg.sender, token_, guardian_, routeId_)'],
  ['CCTP source: wrong messenger accepted', '_address(message, 44) != sourceMessenger ||', ''],
  ['CCTP caller: unrestricted receives accepted', '_address(message, 108) != address(this) ||', ''],
- ['CCTP finality: fast receive accepted', 'uint32(bytes4(message[144:148])) != 2000 ||', ''],
+ ['CCTP finality: fast receive accepted', 'uint32(bytes4(message[144:148])) != 2000', 'false'],
  ['CCTP hook: unknown beneficiary format accepted', 'bytes32(message[376:408]) != BENEFICIARY_HOOK', 'false'],
  ['CCTP fee: max fee ignored', 'fee > maxFee ||', ''],
  ['CCTP receive: false success accepted', 'if (!transmitter.receiveMessage(message, attestation)) revert CctpReceiveFailed();', 'transmitter.receiveMessage(message, attestation);'],
@@ -99,13 +111,77 @@ const restore = () => {
   writeFileSync(SOL, sol); writeFileSync(ART, art);
   writeFileSync(VAULT, vault); writeFileSync(DEMO_ART, demoArt);
   writeFileSync(ESCROW, escrow); writeFileSync(CCTP_ART, cctpArt);
+  writeFileSync(PAYMENT, payment); writeFileSync(PAYMENT_ART, paymentArt);
+  writeFileSync(ACCEPTANCE_ART, acceptanceArt);
+  writeFileSync(SCREENED, screenedSol); writeFileSync(SCREENED_ART, screenedArt);
   writeFileSync(QUORUM, quorum);
+  for (const [file, source] of Object.entries(OPERATOR_SOURCES)) writeFileSync(file, source);
 };
 // `finally` does not run when the process is killed. Restore on the way out.
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.once(signal, () => { restore(); process.exit(130); });
 const results = [];
+// Optional name substring reruns a failed mutation without repeating unrelated checks.
+const selected = process.argv[2];
+const matches = (name) => !selected || name.includes(selected);
+const PAYMENT_MUTANTS = [
+ ['payment source: unrelated depositor reserves a business ID', 'if (_address(message, 248) != authorizedSourceSender) revert InvalidCctpBinding();', ''],
+ ['payment recipient: any recipient accepted', 'if (!permittedRecipients[r.to]) revert RecipientNotPermitted();', ''],
+ ['payment amount: hard maximum ignored', 'if (r.amount > paymentPolicy.maxPayment) revert PaymentLimitExceeded();', ''],
+ ['payment approval: reviewer bypasses customer consent', 'approvedPolicyVersion[id] != policyVersion)', 'false)'],
+ ['payment pause: paused payments execute', 'if (paymentsPaused) revert PaymentsPaused();', ''],
+ ['payment policy: stale ALLOW executes', 'if (reviewedPolicyVersion[id] != policyVersion) revert StalePaymentReview();', ''],
+ ['payment delay: unelapsed clock accepted', 'if (block.timestamp < paymentDelayUntil[id]) revert PaymentDelayActive(paymentDelayUntil[id]);', ''],
+ ['payment changes: queue delay ignored', 'queuedChangeAt == 0 || block.timestamp < queuedChangeAt ||', 'queuedChangeAt == 0 ||'],
+ ['payment operation: duplicate business payment funded', 'if (usedOperations[operationId]) revert OperationAlreadyFunded();', ''],
+ ['return authority: reviewer can initiate refund', 'if (msg.sender != c.returnRecipient) revert OnlyReturnRecipient();', ''],
+ ['return binding: source sender picks an arbitrary refund destination', 'returnRecipient != recoveryRecipient ||', ''],
+ ['return delay: early refund allowed', 'c.returnAt == 0 || block.timestamp < c.returnAt', 'c.returnAt == 0'],
+ ['return destination: payout recipient gets refund', 'token.safeTransfer(c.returnRecipient, r.amount);', 'token.safeTransfer(r.to, r.amount);'],
+ ['return amount: underpays authenticated credit', 'token.safeTransfer(c.returnRecipient, r.amount);', 'token.safeTransfer(c.returnRecipient, r.amount - 1);'],
+ ['return accounting: returned credit not consumed', 'totalReturned += r.amount;', ''],
+ ['payment rejection: a REJECT reopens after the vault cooldown', 'if (releases[id].state == ReleaseState.REJECTED) revert ReleaseRejected(id);', ''],
+ ['return reentrancy: token callback bypasses shared guard', 'function executeReturn(bytes32 id) external nonReentrant', 'function executeReturn(bytes32 id) external'],
+];
+// Screened payment escrow (H4c3a, ADR-047): the issuer's receipt and list head.
+const SCREENED_MUTANTS = [
+ ['screening: reviewer ALLOW without a receipt', 'if (pendingReceipt == 0) revert ScreeningProofRequired();', ''],
+ ['screening: any signer stands in for the issuer', 'if (ECDSA.recover(hash, signature) != p.issuer) revert InvalidIssuerSignature();\n        emit ScreeningReceiptAccepted', 'emit ScreeningReceiptAccepted'],
+ ['screening: MATCHED or UNKNOWN clears a payout', 'if (receipt.outcome != NOT_LISTED) revert ScreeningNotCleared();', ''],
+ ['screening: a receipt moves to another payment', 'if (receipt.paymentContextHash != paymentContextHash(id)) revert ScreeningWrongPayment();', ''],
+ ['screening: receipt outlives its observation age', 'receipt.validUntil > uint256(receipt.checkedAt) + p.maxObservationAgeSeconds ||', ''],
+ ['screening: expired or future receipt accepted', 'block.timestamp < receipt.checkedAt || block.timestamp > receipt.validUntil) revert ScreeningOutOfTime();', 'false) revert ScreeningOutOfTime();'],
+ ['screening: review outlives its receipt', 'if (validUntil > receipt.validUntil) revert ReviewOutlivesScreening();', ''],
+ ['screening: a newer head leaves the old ALLOW executable', 's.headHash != head.hash ||', ''],
+ ['screening: revoked profile still verifies', 'if (profileHash == 0) revert ScreeningRevoked();', ''],
+ ['screening: the oracle may be the issuer', 'if (issuer == ITripwireOracle(address(guardian)).oracle() || issuer == policyAuthority) revert ScreeningIssuerConflict();', ''],
+ ['head: any signer publishes a head', 'if (ECDSA.recover(hash, signature) != p.issuer) revert InvalidIssuerSignature();\n        Head memory current', 'Head memory current'],
+ ['head: same revision overwrites', 'if (revision == current.revision) revert ScreeningHeadConflict();', ''],
+ ['head: rollback accepted', 'if (revision < current.revision || listAsOf < current.listAsOf) revert ScreeningHeadRollback();', ''],
+ ['head: future or expired head registered', 'if (block.timestamp < listAsOf || block.timestamp > validUntil) revert ScreeningHeadOutOfTime();', ''],
+ ['consent: advisory mode without the queue', '_consume(action);\n        executionMode = mode;', 'executionMode = mode;'],
+ ['deployment: starts unpaused', 'paymentsPaused = true;', ''],
+ ['hook: a v1 payment hook is accepted', 'returns (bytes32) { return PAYMENT_HOOK_V2; }', 'returns (bytes32) { return PAYMENT_HOOK; }'],
+];
+const OPERATOR_MUTANTS = [
+ [GATE, 'operator gate: any verified outcome passes', "result.status === 'verified' && result.outcome === 'NOT_LISTED'", "result.status === 'verified'"],
+ [GATE, 'operator gate: evidence is not journaled before relaying or signing', "this.save({ kind: 'evidence'", "void ({ kind: 'evidence'"],
+ [GATE, 'operator gate: a retained contradiction clears on a later clean receipt', 'return retained || contradictory ?', 'return contradictory ?'],
+ [GATE, 'operator gate: outcomes across evaluations are not compared', 'const contradictory = outcomes.length > 1 ||', 'const contradictory ='],
+ [GATE, 'operator gate: an older head is relayed back', '(head.revision <= s.head.revision || head.listAsOf < s.head.listAsOf)', 'false'],
+ [GATE, 'operator gate: the fetch floor outlives a new head', 'last.headHash !== s.head.hash || ', ''],
+ [GATE, 'operator gate: the fetch floor reuses a pass', "if (!retained && last.status === 'verified' && last.outcome === 'NOT_LISTED') return null;", ''],
+ [GATE, 'operator review: ALLOW outlives its receipt', 'validUntil: proof && proof.receipt.validUntil < ttl ? proof.receipt.validUntil : ttl', 'validUntil: ttl'],
+ [GATE, 'operator review: advisory keeps a heuristic minimum tier', 'minimumTier: screening?.advisory ? ResponseTier.NONE : releaseMinimumTier(observation)', 'minimumTier: releaseMinimumTier(observation)'],
+ [OPERATOR, 'operator: a screened ALLOW skips the gate', 'if (decision === ReleaseDecision.ALLOW && state.screening) {', 'if (false) {'],
+ [OPERATOR, 'operator: advisory mode still calls the aggregate attestor', 'if (!advisory) {', 'if (true) {'],
+ [SETTLEMENT, 'advisory verdict: heuristic checks still hold', "if (mode === 'advisory') {", 'if (false) {'],
+ [SCREENED_STATE, 'screened state: a revoked or replaced profile is not a blocker', 'const blocked = !accepted ||', 'const blocked ='],
+ [SCREENED_STATE, 'screened state: the oracle may be the issuer', 'issuer === oracle || issuer === authority', 'issuer === authority'],
+];
+
 try {
   for (const [name, from, to] of M) {
+    if (!matches(name)) continue;
     if (!sol.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
     writeFileSync(SOL, sol.replace(from, to));
     execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
@@ -116,6 +192,7 @@ try {
   }
   writeFileSync(SOL, sol);
   for (const [name, from, to] of REVIEW_MUTANTS) {
+    if (!matches(name)) continue;
     if (!vault.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
     writeFileSync(VAULT, vault.replace(from, to));
     execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
@@ -126,6 +203,7 @@ try {
   }
   writeFileSync(VAULT, vault);
   for (const [file, name, from, to] of ORACLE_MUTANTS) {
+    if (!matches(name)) continue;
     const source = ORIGINAL[file];
     if (!source.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
     writeFileSync(file, source.replace(from, to));
@@ -137,6 +215,7 @@ try {
     console.log(results.at(-1)[1].padEnd(18), name);
   }
   for (const [name, from, to] of CCTP_MUTANTS) {
+    if (!matches(name)) continue;
     if (!escrow.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
     writeFileSync(ESCROW, escrow.replace(from, to));
     execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
@@ -145,10 +224,44 @@ try {
     results.push([name, caught ? 'caught' : 'SURVIVED']);
     console.log(results.at(-1)[1].padEnd(18), name);
   }
+  writeFileSync(ESCROW, escrow);
+  for (const [name, from, to] of PAYMENT_MUTANTS) {
+    if (!matches(name)) continue;
+    if (!payment.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
+    writeFileSync(PAYMENT, payment.replace(from, to));
+    execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
+    let caught;
+    try { execSync('npx vitest run contracts/evm/test/cctpPaymentEscrow.evm.test.ts', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
+    results.push([name, caught ? 'caught' : 'SURVIVED']);
+    console.log(results.at(-1)[1].padEnd(18), name);
+  }
+  writeFileSync(PAYMENT, payment);
+  for (const [name, from, to] of SCREENED_MUTANTS) {
+    if (!matches(name)) continue;
+    if (!screenedSol.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
+    writeFileSync(SCREENED, screenedSol.replace(from, to));
+    execSync('node contracts/evm/compile.mjs', { stdio: 'ignore' });
+    let caught;
+    try { execSync('npx vitest run contracts/evm/test/cctpScreenedPaymentEscrow.evm.test.ts', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
+    results.push([name, caught ? 'caught' : 'SURVIVED']);
+    console.log(results.at(-1)[1].padEnd(18), name);
+  }
+  for (const [file, name, from, to] of OPERATOR_MUTANTS) {
+    if (!matches(name)) continue;
+    const source = OPERATOR_SOURCES[file];
+    if (!source.includes(from)) { results.push([name, 'PATTERN NOT FOUND']); continue; }
+    writeFileSync(file, source.replace(from, to));
+    let caught;
+    try { execSync('npx vitest run scripts/tripwire/__tests__/screenedOperator.test.ts scripts/tripwire/__tests__/settlement.test.ts', { stdio: 'ignore' }); caught = false; } catch { caught = true; }
+    writeFileSync(file, source);
+    results.push([name, caught ? 'caught' : 'SURVIVED']);
+    console.log(results.at(-1)[1].padEnd(18), name);
+  }
 } finally {
   restore();
 }
 for (const [name, status] of results.filter((r) => r[1] === 'PATTERN NOT FOUND')) console.log(status.padEnd(18), name);
+if (results.length === 0) { console.error('No mutation matches the requested name.'); process.exit(2); }
 const bad = results.filter((r) => r[1] !== 'caught').length;
 console.log(bad ? `${bad} of ${results.length} mutants not caught` : `all ${results.length} mutants caught`);
 process.exit(bad ? 1 : 0);
