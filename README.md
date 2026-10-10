@@ -21,7 +21,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/tests-1%2C701_passing-brightgreen" alt="1,701 tests passing" />
-  <img src="https://img.shields.io/badge/mutation_tests-80%2F80_caught-brightgreen" alt="80 of 80 mutants caught" />
+  <img src="https://img.shields.io/badge/mutation_tests-97%2F97_caught-brightgreen" alt="97 of 97 mutants caught" />
   <img src="https://img.shields.io/badge/Sepolia-policy_v4_live-6f42c1" alt="Policy v4 live on Sepolia" />
   <img src="https://img.shields.io/badge/owner-Safe_multisig-12ff80" alt="Owned by a Safe" />
   <img src="https://img.shields.io/badge/Solidity-0.8.37-363636?logo=solidity&logoColor=white" alt="Solidity 0.8.37" />
@@ -37,7 +37,7 @@
 | :--- | :--- |
 | **$313.6M → $0** | Three real 2026 bridge exploits (Kelp DAO, Verus, Syscoin) replayed through Tripwire: every drain is stopped before execution |
 | **1,701 tests, 82 suites** | Contracts run in a real EVM, the operator is killed mid-write with SIGKILL, RPCs lie, blocks reorg, and the gas spikes |
-| **80 / 80 mutants caught** | Every safety rule in the contracts is deliberately broken by a script, and a test catches each break |
+| **97 / 97 mutants caught** | Every safety rule in the contracts is deliberately broken by a script, and a test catches each break |
 | **11 findings fixed** | We audited our own code, then the merged work of all three contributors; every finding was proven with a failing test, fixed, and kept as a regression test |
 | **Live on Sepolia** | Policy v4, every contract verified on Etherscan, the guardian owned by a Safe; the live attack ran NONE → THROTTLE → DELAY → FREEZE |
 | **27 decision records** | Every security trade-off is written down in [docs/07-decisions-adr.md](docs/07-decisions-adr.md): context, decision, limits and tests |
@@ -266,7 +266,7 @@ if a rotation is ever pending ([runbook](docs/plans/tripwire-operator.md#redeplo
 | Screening evidence verifier, vectors S01–S16 with hand-built digests | 29 tests |
 | On-chain screening gate: receipts, list heads, consent and execution recheck (S03–S27) | 33 tests |
 | Every page in real Chromium at desktop and phone width; report-folder flow | 20 / 20 and 12 / 12 browser checks |
-| Guardian, release-review, quorum, CCTP and payment-escrow rules broken on purpose (`npm run test:mutants`) | **80 / 80 mutants caught** |
+| Guardian, release-review, quorum, CCTP, payment-escrow and screening rules broken on purpose (`npm run test:mutants`) | **97 / 97 mutants caught** |
 | Gas: check an outflow · accept an attestation | 79.0k · 88.3k |
 | **Total** | **1,701 tests passing** |
 
@@ -323,7 +323,7 @@ cd Chainstory
 npm install
 npm run dev                    # Retold at /app and /check, Tripwire at /tripwire
 npm test                       # 1,701 tests
-npm run test:mutants           # 80 broken contract variants, each must be caught
+npm run test:mutants           # 97 broken contract variants, each must be caught
 npm run demo:attack            # the four-step attack against real bytecode in a local EVM, ~2 s
 ```
 

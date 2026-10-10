@@ -393,4 +393,4 @@ Keys are server environment variables (`ETHERSCAN_API_KEY`, `GEMINI_API_KEY`), n
 5. The base constructor's version-1 `PolicyCommitted` event is followed by the v2 one; the last is authoritative.
 
 **Limits:** The issuer's honesty, the provider's list and its timestamps remain trusted. The chain cannot see an update the issuer never publishes. The runtime is 23,430 of 24,576 bytes, so the next contract feature must move screening into a library or a separate registry.
-**Validation:** 32 local-EVM tests (the S03–S27 vectors a contract can decide) and an artifact drift test. Every accepted signature was made over digests computed by the H4c2 TypeScript codec, so the codec and the contract agree. 17 new mutants in `contracts/evm/mutate.mjs`. Full suite: 1,701 tests.
+**Validation:** 32 local-EVM tests (the S03–S27 vectors a contract can decide) and an artifact drift test. Every accepted signature was made over digests computed by the H4c2 TypeScript codec, so the codec and the contract agree. 17 new mutants; the full mutation run caught 97 of 97. Full suite: 1,701 tests; GitHub CI green.

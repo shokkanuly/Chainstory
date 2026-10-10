@@ -30,7 +30,8 @@ cases for the vectors a contract can decide (S03, S05, S09–S13, S16–S22,
 S24–S27), plus an artifact drift test. Fixture: `scripts/tripwire/screenedLocal.ts`.
 Every signature the contract accepts was made over digests from the H4c2
 TypeScript codec, so the off-chain verifier and the contract agree. 17 new
-mutants. Full suite: 1,701 tests / 82 files; lint and typecheck clean.
+mutants; the full mutation run caught 97 of 97. Full suite: 1,701 tests / 82
+files; lint and typecheck clean; GitHub CI green.
 
 Deviations from the H4c1 proposal (ADR-047):
 - the vault's EIP-712 domain stays version 2;
