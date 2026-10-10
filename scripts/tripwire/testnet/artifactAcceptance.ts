@@ -7,6 +7,7 @@ import { assertRuntime, reconstructRuntime } from '../../../src/chains/evm/runti
 import { cctpPaymentBindingsSchema, type CctpPaymentBindings } from '../cctp.js';
 import guardian from '../../../src/tripwire/guardian.artifact.js';
 import payment from './cctpPaymentEscrow.artifact.js';
+import screened from './cctpScreenedPaymentEscrow.artifact.js';
 import acceptance from './cctpAcceptance.artifact.js';
 
 function shortString(value: string): Hex {
@@ -26,12 +27,16 @@ export function expectedGuardianRuntime(address: Hex, chainId: number = route.de
   if (acceptance.guardian.creationHash !== keccak256(guardian.bytecode)) throw new Error('Guardian acceptance artifact is stale. Recompile.');
   return reconstructRuntime(acceptance.guardian, domainWords('TripwireGuardian', '1', chainId, cctpAddressSchema.parse(address)));
 }
+/** Which customer escrow: the payment escrow (format 3) or its screened version (format 4, ADR-047). */
+export type PaymentEscrowKind = 'payment' | 'screened';
 export function expectedPaymentRuntime(vault: Hex, guardianAddress: Hex, input: CctpPaymentBindings, chainId: number = route.destination.chainId,
   bindings = { token: route.destination.usdc as Hex, routeId: keccak256(stringToHex(route.id)),
-    transmitter: route.destination.transmitter as Hex, destinationMessenger: route.destination.messenger as Hex }) {
+    transmitter: route.destination.transmitter as Hex, destinationMessenger: route.destination.messenger as Hex }, kind: PaymentEscrowKind = 'payment') {
   const customer = cctpPaymentBindingsSchema.parse(input);
-  if (acceptance.payment.creationHash !== keccak256(payment.bytecode)) throw new Error('Payment acceptance artifact is stale. Recompile.');
-  return reconstructRuntime(acceptance.payment, { ...domainWords('TripwireProtectedVault', '2', chainId, vault),
+  const [template, artifact] = kind === 'screened' ? [acceptance.screened, screened] : [acceptance.payment, payment];
+  if (template.creationHash !== keccak256(artifact.bytecode)) throw new Error('Payment acceptance artifact is stale. Recompile.');
+  // The screened escrow adds storage, not immutables: both share the payment escrow's constructor-patched words.
+  return reconstructRuntime(template, { ...domainWords('TripwireProtectedVault', '2', chainId, vault),
     token: cctpAddressWord(bindings.token), guardian: cctpAddressWord(guardianAddress), routeId: bindings.routeId,
     transmitter: cctpAddressWord(bindings.transmitter), destinationMessenger: cctpAddressWord(bindings.destinationMessenger),
     destinationDomain: toHex(route.destination.domain, { size: 32 }), sourceDomain: toHex(route.source.domain, { size: 32 }),
@@ -41,8 +46,8 @@ export function expectedPaymentRuntime(vault: Hex, guardianAddress: Hex, input: 
   });
 }
 export async function assertPaymentRuntime(vault: Hex, guardianAddress: Hex, customer: CctpPaymentBindings, blockNumber: bigint,
-  readCode: (address: Hex, blockNumber: bigint) => Promise<unknown>) {
+  readCode: (address: Hex, blockNumber: bigint) => Promise<unknown>, kind: PaymentEscrowKind = 'payment') {
   const guardianCode = await readCode(guardianAddress, blockNumber), paymentCode = await readCode(vault, blockNumber);
   return { guardian: assertRuntime(guardianCode, expectedGuardianRuntime(guardianAddress)),
-    payment: assertRuntime(paymentCode, expectedPaymentRuntime(vault, guardianAddress, customer)) };
+    payment: assertRuntime(paymentCode, expectedPaymentRuntime(vault, guardianAddress, customer, undefined, undefined, kind)) };
 }

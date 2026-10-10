@@ -6,9 +6,10 @@
 // active head and this exact payment passes. Everything else holds:
 // MATCHED, UNKNOWN, missing, outage, invalid, expired or contradictory.
 //
-// A contradiction is retained for its profile/head/payment scope: a later
-// clean receipt for the same head never clears it ("newest wins" is refused).
-// Only a new issuer head (or a changed payment context) starts a fresh scope.
+// A contradiction is retained for its profile, head and payment: a later
+// clean receipt for the same head never clears it ("newest wins" is refused),
+// and neither does a customer policy change (the recipient and the list
+// snapshot are the same). Only a new issuer head starts a fresh scope.
 import { encodeFunctionData, type Hex, type LocalAccount } from 'viem';
 import { z } from 'zod';
 import { screeningUnavailable, type ScreeningEvidence } from '../../src/domain/screening.js';
@@ -98,18 +99,18 @@ export class ScreeningGate implements ScreeningCheck {
   /**
    * Verify, journal the verifier's own result, then apply the journal's memory
    * of this scope: two different authenticated outcomes ever seen for the same
-   * profile, head and payment are a retained contradiction.
+   * profile, head and payment (under any policy version) are a retained contradiction.
    */
   private async verify(fetched: ScreeningFetch, s: ScreeningStatus, scope: ReturnType<ScreeningGate['scopeOf']>): Promise<ScreeningEvidence> {
     const now = s.now.toString();
-    const result: ScreeningEvidence = s.head.hash === ZERO_WORD ? screeningUnavailable('head-mismatch') : await verifyScreeningEvidence({
+    // No active head: evidence cannot be checked against one, but a missing or unavailable provider is still reported as such.
+    const result: ScreeningEvidence = s.head.hash === ZERO_WORD && fetched.status === 'available' ? screeningUnavailable('head-mismatch') : await verifyScreeningEvidence({
       scope: wire(this.deps.scope), profile: wire(this.deps.profile), roles: s.roles, activeHeadHash: s.head.hash,
       paymentContext: wire(s.context), now, evidence: fetched as Parameters<typeof verifyScreeningEvidence>[0]['evidence'] });
     this.save(result.status === 'verified'
       ? { kind: 'result', ...scope, now, status: 'verified', outcome: result.outcome, receiptHash: result.receiptHash }
       : { kind: 'result', ...scope, now, status: 'unavailable', reason: result.reason });
-    const records = this.deps.store.screeningRecords(scope.messageId).filter((r) => r.profileHash === scope.profileHash &&
-      r.headHash === scope.headHash && r.contextHash === scope.contextHash);
+    const records = this.deps.store.screeningRecords(scope.messageId).filter((r) => r.profileHash === scope.profileHash && r.headHash === scope.headHash);
     const outcomes = [...new Set(records.flatMap((r) => r.kind === 'result' && r.outcome ? [r.outcome] : []))];
     const retained = records.some((r) => r.kind === 'incident');
     const contradictory = outcomes.length > 1 || (result.status === 'unavailable' && result.reason === 'contradictory');

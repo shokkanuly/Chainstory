@@ -8,6 +8,9 @@ import { createRpcOperator, type RpcDestination } from './operator.js';
 import { ContractEventFeed, type Clients, type TestnetConfig } from './sepolia.js';
 import { assertCctpEscrowBindings, assertCctpPaymentBindings } from './cctpBindings.js';
 import paymentArtifact from './cctpPaymentEscrow.artifact.js';
+import screenedArtifact from './cctpScreenedPaymentEscrow.artifact.js';
+import type { ScreeningProfile } from '../../../src/chains/evm/screening.js';
+import type { ScreeningProvider } from '../screeningGate.js';
 import { blockHeaderSchema } from '../finality.js';
 import { independentCctpRpc } from './cctpPublic.js';
 export { cctpRpc, independentCctpRpc, verifierUrls } from './cctpPublic.js';
@@ -22,6 +25,8 @@ export async function createCctpRpcOperator(cfg: TestnetConfig, destination: Cli
     /** Independent verifier RPCs for source proofs; without them one provider is trusted. */
     verifiers?: { source?: CctpRpc[]; destination?: CctpRpc[]; quorum?: number };
     payment?: CctpPaymentBindings;
+    /** Screened escrow (manifest 4, ADR-048): the accepted profile and the evidence provider. Requires `payment`. */
+    screening?: { profile: ScreeningProfile; provider: ScreeningProvider };
   }) {
   if (opts.payment) opts = { ...opts, payment: cctpPaymentBindingsSchema.parse(opts.payment) };
   if (deployment.route !== route.id || deployment.routeId !== keccak256(stringToHex(route.id)) ||
@@ -29,15 +34,16 @@ export async function createCctpRpcOperator(cfg: TestnetConfig, destination: Cli
     await source.getChainId() !== route.source.chainId) throw new Error('Unsupported CCTP route or USDC destination deployment.');
   if (sourceStartBlock < 0n) throw new Error('Invalid CCTP source start block.');
   const head = blockHeaderSchema.parse(await destination.pub.getBlock({ blockTag: 'finalized' }));
+  if (opts.screening && !opts.payment) throw new Error('Screening requires the customer payment escrow bindings.');
   if (opts.payment) await assertCctpPaymentBindings(deployment.vault, opts.payment, (name) => destination.pub.readContract({
-    address: deployment.vault, abi: paymentArtifact.abi, functionName: name, blockNumber: head.number,
-  }));
+    address: deployment.vault, abi: opts.screening ? screenedArtifact.abi : paymentArtifact.abi, functionName: name, blockNumber: head.number,
+  }), Boolean(opts.screening));
   else await assertCctpEscrowBindings(deployment.vault, (name) => destination.pub.readContract({
     address: deployment.vault, abi: cctpEscrowAbi, functionName: name, blockNumber: head.number,
   }));
   const checked = blockHeaderSchema.parse(await destination.pub.getBlock({ blockNumber: head.number }));
   if (checked.hash !== head.hash || checked.number !== head.number) throw new Error('Finalized CCTP deployment block changed.');
-  const policy = opts.payment ? 'customer-payment' : 'authenticated-escrow';
+  const policy = opts.screening ? 'screened-payment' : opts.payment ? 'customer-payment' : 'authenticated-escrow';
   const scope = cctpVerifierScope(deployment.vault, policy, opts.payment);
   const { verifiers, ...operatorOpts } = opts;
   const sourceProofs = independentCctpRpc(source, verifiers?.source, verifiers?.quorum);
@@ -56,7 +62,7 @@ export async function createCctpRpcOperator(cfg: TestnetConfig, destination: Cli
               message.body.burnToken !== route.source.usdc || message.body.mintRecipient !== deployment.vault.toLowerCase() ||
               message.minFinalityThreshold !== CCTP_STANDARD_FINALITY || message.destinationCaller !== deployment.vault.toLowerCase()) return null;
             if (opts.payment) {
-              const intent = decodeCctpPaymentHook(message.body.hookData);
+              const intent = decodeCctpPaymentHook(message.body.hookData, opts.screening ? 2 : 1);
               if (intent.returnRecipient !== opts.payment.returnRecipient || message.body.messageSender !== opts.payment.sourceSender) return null;
             } else cctpHookBeneficiary(message.body.hookData);
             return burnEventSchema.parse({ messageId: cctpReleaseId(origin.chainId, origin.address, origin.transactionHash, origin.logIndex),

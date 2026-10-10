@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { toHex } from 'viem';
 import { assertRuntime, reconstructRuntime } from '../../../src/chains/evm/runtime.js';
 import { actors, LOCAL_CHAIN_ID } from '../../../src/tripwire/guardianVM.js';
-import { paymentLocalFixture, PAYMENT_ROUTE, LOCAL_PAYMENT_POLICY } from '../paymentLocal.js';
+import { paymentLocalFixture, PAYMENT_NONCE, PAYMENT_OPERATION, PAYMENT_ROUTE, LOCAL_PAYMENT_POLICY } from '../paymentLocal.js';
 import { initialPaymentPolicyHash } from '../../../src/chains/evm/paymentPolicy.js';
 import { expectedGuardianRuntime, expectedPaymentRuntime } from '../testnet/artifactAcceptance.js';
+import { screenedLocalFixture, SCREENED_ROUTE } from '../screenedLocal.js';
+import { cctpPaymentHook, cctpPaymentReleaseId, decodeCctpPaymentHook } from '../../../src/chains/evm/cctp.js';
 
 describe('exact compiled runtime acceptance', () => {
   it('reconstructs actual constructor-patched guardian and payment code, including EIP-712 caches', async () => {
@@ -24,6 +26,33 @@ describe('exact compiled runtime acceptance', () => {
     expect(() => assertRuntime(paymentCode, expectedPaymentRuntime(f.vault.address, f.vm.address, customer, LOCAL_CHAIN_ID, { ...bindings, token: actors.bridge.address }))).toThrow('bytecode');
     expect(() => assertRuntime('0x', guardianCode)).toThrow('bytecode');
     expect(() => assertRuntime(`${paymentCode.slice(0, -2)}ff`, paymentCode)).toThrow('bytecode');
+  });
+  it('reconstructs the screened escrow from its own template and never accepts one version for the other (S20)', async () => {
+    const f = await screenedLocalFixture({ register: false });
+    const customer = { authority: actors.owner.address, returnRecipient: actors.bridge.address, sourceSender: actors.owner.address, recoveryDelay: 3600n };
+    const bindings = { token: f.token.address, routeId: SCREENED_ROUTE, transmitter: f.transmitter.address, destinationMessenger: actors.bridge.address };
+    const code = await f.vm.readBytecode(f.vault.address);
+    expect(assertRuntime(code, expectedPaymentRuntime(f.vault.address, f.vm.address, customer, LOCAL_CHAIN_ID, bindings, 'screened')).runtimeBytes).toBe(23_430);
+    expect(() => assertRuntime(code, expectedPaymentRuntime(f.vault.address, f.vm.address, customer, LOCAL_CHAIN_ID, bindings))).toThrow('bytecode');
+    expect(() => assertRuntime(code, expectedPaymentRuntime(f.vault.address, f.vm.address, { ...customer, recoveryDelay: 7200n }, LOCAL_CHAIN_ID, bindings, 'screened'))).toThrow('bytecode');
+    const payment = await paymentLocalFixture();
+    const paymentCode = await payment.vm.readBytecode(payment.vault.address);
+    expect(() => assertRuntime(paymentCode, expectedPaymentRuntime(payment.vault.address, payment.vm.address, customer, LOCAL_CHAIN_ID,
+      { ...bindings, token: payment.token.address, routeId: PAYMENT_ROUTE, transmitter: payment.transmitter.address }, 'screened'))).toThrow('bytecode');
+  });
+  it('encodes the v2 payment hook and credit ID exactly as the screened escrow does, and never mixes versions', async () => {
+    const f = await screenedLocalFixture({ register: false });
+    expect(cctpPaymentReleaseId(LOCAL_CHAIN_ID, f.vault.address, 6, PAYMENT_NONCE, 2)).toBe(f.id);
+    expect(await f.vm.readContract(f.vault, 'releaseId', [PAYMENT_NONCE])).toBe(f.id);
+    expect(cctpPaymentReleaseId(LOCAL_CHAIN_ID, f.vault.address, 6, PAYMENT_NONCE)).not.toBe(f.id);
+    const intent = { recipient: actors.attacker.address, returnRecipient: actors.bridge.address, operationId: PAYMENT_OPERATION,
+      policyHash: await f.vm.readContract(f.vault, 'policyHash') };
+    const hook = cctpPaymentHook(intent, 2);
+    // The fixture's message ends with the hook (built independently in screenedLocal.ts).
+    expect(f.message().endsWith(hook.slice(2))).toBe(true);
+    expect(decodeCctpPaymentHook(hook, 2)).toEqual(decodeCctpPaymentHook(cctpPaymentHook(intent), 1));
+    expect(() => decodeCctpPaymentHook(hook)).toThrow('Unsupported');
+    expect(() => decodeCctpPaymentHook(cctpPaymentHook(intent), 2)).toThrow('Unsupported');
   });
   const word = toHex(1, { size: 32 });
   const artifact = { creationHash: word, template: `0x${'00'.repeat(64)}`, references: [{ name: 'token', positions: [{ start: 0, length: 32 }] }] };

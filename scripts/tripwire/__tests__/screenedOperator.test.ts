@@ -2,10 +2,16 @@
 // Screening vectors at the operator boundary: format-4 reviews, head relay,
 // outages, contradictions retained in the journal, advisory consent (S23),
 // returns (S26) and restart/crash reconciliation (S28).
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { decodeFunctionData, keccak256, parseTransaction, stringToHex, type Hex } from 'viem';
+import { decodeFunctionData, keccak256, parseTransaction, stringToHex, toHex, type Hex } from 'viem';
 import { actors } from '../../../src/tripwire/guardianVM.js';
 import { ReleaseState } from '../operator.js';
+import { OperatorStore } from '../store.js';
+import { ScreeningGate } from '../screeningGate.js';
+import { screeningHeadHash, screeningPaymentContextHash, screeningProfileHash, screeningReceiptHash } from '../../../src/chains/evm/screening.js';
 import { MATCHED, NOT_LISTED, SCREENED_ROUTE, SCREENING_ISSUER, UNKNOWN } from '../screenedLocal.js';
 import { ResponseTier } from '../../../src/tripwire/onChain.js';
 import { screenedOperatorFixture } from './fixtures/screenedOperator.js';
@@ -17,6 +23,7 @@ async function setup() {
   const o = f.open(); cleanups.push(o.close);
   return { f, o };
 }
+const wire = (v: Record<string, unknown>) => Object.fromEntries(Object.entries(v).map(([k, x]) => [k, typeof x === 'bigint' ? x.toString() : x]));
 const names = (f: { calls: { functionName: string; ok: boolean }[] }) => f.calls.map((c) => `${c.functionName}:${c.ok ? 'ok' : 'reverted'}`);
 const args = (f: { vault: { abi: readonly unknown[] } }, raw: Hex) =>
   decodeFunctionData({ abi: f.vault.abi as never, data: parseTransaction(raw).data as Hex }).args as readonly unknown[];
@@ -285,5 +292,43 @@ describe('screened operator: restart and crash reconciliation (S28)', () => {
     await f.answerWith([NOT_LISTED], head);
     expect((await o.operator.tick())[0].reason).toBe('Screening: contradictory.');
     expect(await f.state()).toBe(ReleaseState.PENDING);
+  });
+});
+
+describe('screening gate: contradiction scope', () => {
+  it('keeps a contradiction across a customer policy change for the same head and payment', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tripwire-gate-')); cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const vault = actors.bridge.address.toLowerCase() as Hex, token = actors.relayer.address.toLowerCase() as Hex;
+    const store = new OperatorStore(join(dir, 'gate.sqlite'), { route: 'gate', chainId: 1, sourceChainId: 1, source: actors.owner.address,
+      vault, guardian: actors.oracle.address, token, decimals: 6, sender: actors.relayer.address });
+    cleanups.push(() => store.close());
+    const scope = { destinationChainId: 1n, vault, guardian: actors.oracle.address.toLowerCase() as Hex, routeId: SCREENED_ROUTE, token };
+    const profile = { version: 1 as const, providerIdHash: keccak256(stringToHex('p')), listIdHash: keccak256(stringToHex('l')),
+      issuer: SCREENING_ISSUER.address.toLowerCase() as Hex, subject: 'payout-recipient' as const, maxObservationAgeSeconds: 300n, maxSnapshotAgeSeconds: 3600n };
+    const now = 1_780_000_000n, profileHash = screeningProfileHash(scope, profile);
+    const head = { profileHash, revision: 1n, snapshotDigest: keccak256(stringToHex('s')), listAsOf: now, validUntil: now + 3600n };
+    const headHash = screeningHeadHash(scope, head);
+    const messageId = keccak256(stringToHex('payment'));
+    const contextAt = (policyVersion: bigint) => ({ ...scope, sourceSender: actors.owner.address.toLowerCase() as Hex, policyVersion,
+      policyHash: keccak256(toHex(policyVersion)), messageId, operationId: keccak256(stringToHex('op')), recipient: actors.attacker.address.toLowerCase() as Hex,
+      amount: 5n, returnRecipient: actors.owner.address.toLowerCase() as Hex, intentPolicyHash: keccak256(stringToHex('intent')) });
+    const stateAt = (policyVersion: bigint) => {
+      const context = contextAt(policyVersion);
+      return { recipient: context.recipient, amount: 5n, state: 0, nonce: 0n, screening: { mode: 'legacy' as const, profileHash, accepted: true,
+        issuer: profile.issuer, head: { hash: headHash, revision: 1n, listAsOf: now, validUntil: now + 3600n },
+        stored: { receiptHash: `0x${'0'.repeat(64)}` as Hex, headHash: `0x${'0'.repeat(64)}` as Hex, validUntil: 0n }, context,
+        contextHash: screeningPaymentContextHash(context), roles: { oracle: actors.oracle.address.toLowerCase() as Hex, authority: actors.owner.address.toLowerCase() as Hex },
+        block: { number: 7n, hash: keccak256(toHex(7)) }, now } };
+    };
+    const envelopeFor = async (policyVersion: bigint, outcome: 0 | 1 | 2) => {
+      const receipt = { profileHash, headHash, paymentContextHash: screeningPaymentContextHash(contextAt(policyVersion)), outcome, checkedAt: now, validUntil: now + 300n };
+      return { status: 'available' as const, head: { version: 1, head: wire(head), signature: await SCREENING_ISSUER.sign({ hash: headHash }) },
+        receipts: [{ version: 1, receipt: wire(receipt), signature: await SCREENING_ISSUER.sign({ hash: screeningReceiptHash(scope, receipt) }) }] };
+    };
+    let answer = await envelopeFor(1n, UNKNOWN);
+    const gate = new ScreeningGate({ store, sender: {} as never, provider: { fetch: async () => answer }, scope, profile, read: async () => { throw new Error('no relay'); } });
+    expect(await gate.check(messageId, stateAt(1n))).toEqual({ status: 'held', reason: 'Screening: UNKNOWN.' });
+    answer = await envelopeFor(2n, NOT_LISTED);
+    expect(await gate.check(messageId, stateAt(2n))).toEqual({ status: 'held', reason: 'Screening: contradictory.' });
   });
 });

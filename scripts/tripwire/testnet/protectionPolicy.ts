@@ -9,14 +9,16 @@ import { z } from 'zod';
  * in place of terminal rejection. A v3 deployment is refused: its REJECT can
  * strand funds and its owner can swap the oracle instantly.
  * Review format 2 is the plain vault/escrow; format 3 is the customer payment
- * escrow (ADR-028), whose reviews also commit to the customer policy.
+ * escrow (ADR-028), whose reviews also commit to the customer policy;
+ * format 4 is the screened escrow (ADR-047), whose ALLOW also commits to the
+ * issuer's screening receipt.
  */
 export async function assertProtectionPolicy(reader: {
   guardianVersion(): Promise<unknown>;
   releaseVersion(): Promise<unknown>;
   reviewFormat(): Promise<unknown>;
   routePermission(): Promise<unknown>;
-}, reviewFormat: 2 | 3 = 2): Promise<void> {
+}, reviewFormat: 2 | 3 | 4 = 2): Promise<void> {
   z.literal(4n).parse(await reader.guardianVersion());
   z.literal(4n).parse(await reader.releaseVersion());
   // Policy v4 vaults deployed before REVIEW_FORMAT_VERSION existed (Sepolia,

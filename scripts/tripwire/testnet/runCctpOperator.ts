@@ -6,18 +6,22 @@ import { baseSepolia } from 'viem/chains';
 import { z } from 'zod';
 import { CCTP_BASE_SEPOLIA_TO_SEPOLIA as route } from '../../../src/chains/evm/registry/cctp.js';
 import { keccak256, stringToHex } from 'viem';
-import { pilotManifestSchema } from './cctpManifest.js';
+import { operatorManifestSchema } from './cctpManifest.js';
+import { screeningInbox } from './screeningInbox.js';
 import { createCctpRpcOperator } from './cctpOperator.js';
 import { connect, loadConfig } from './sepolia.js';
 
-export const cctpOperatorUsage = 'Usage: npm run tripwire:cctp:operator -- manifest.json state.sqlite sourceStartBlock destinationStartBlock [--watch] [--baseline=file.json]';
+export const cctpOperatorUsage = 'Usage: npm run tripwire:cctp:operator -- manifest.json state.sqlite sourceStartBlock destinationStartBlock [--watch] [--baseline=file.json] [--screening-inbox=dir (manifest 4 only)]';
 export function parseCctpOperatorArgs(args: string[]) {
   const positional = args.filter((a) => !a.startsWith('--'));
   const baseline = args.filter((a) => a.startsWith('--baseline='));
-  if (positional.length !== 4 || baseline.length > 1 || args.some((a) => a.startsWith('--') && a !== '--watch' && !/^--baseline=.+$/.test(a))) throw new Error(cctpOperatorUsage);
+  const inbox = args.filter((a) => a.startsWith('--screening-inbox='));
+  if (positional.length !== 4 || baseline.length > 1 || inbox.length > 1 ||
+    args.some((a) => a.startsWith('--') && a !== '--watch' && !/^--baseline=.+$/.test(a) && !/^--screening-inbox=.+$/.test(a))) throw new Error(cctpOperatorUsage);
   const block = z.string().regex(/^(0|[1-9][0-9]*)$/).transform(BigInt);
   return { manifestPath: resolve(positional[0]), stateFile: resolve(positional[1]), sourceStartBlock: block.parse(positional[2]),
-    destinationStartBlock: block.parse(positional[3]), watch: args.includes('--watch'), baselineFile: baseline[0]?.slice('--baseline='.length) };
+    destinationStartBlock: block.parse(positional[3]), watch: args.includes('--watch'), baselineFile: baseline[0]?.slice('--baseline='.length),
+    screeningInbox: inbox[0] ? resolve(inbox[0].slice('--screening-inbox='.length)) : undefined };
 }
 const baselineSchema = z.object({ route: z.literal(route.id), computedAt: z.number().int().nonnegative(), windowHours: z.number().positive().finite(),
   sampleSize: z.number().int().positive(), medianTransferUsd: z.number().nonnegative().finite(), p95TransferUsd: z.number().nonnegative().finite(),
@@ -28,8 +32,10 @@ async function main() {
   if (process.argv.includes('--help')) { console.log(cctpOperatorUsage); return; }
   const args = parseCctpOperatorArgs(process.argv.slice(2));
   if (!process.env.TRIPWIRE_ENV_FILE) throw new Error('Set an explicit operator key file.');
-  const readManifest = () => pilotManifestSchema.parse(JSON.parse(readFileSync(args.manifestPath, 'utf8')));
+  const readManifest = () => operatorManifestSchema.parse(JSON.parse(readFileSync(args.manifestPath, 'utf8')));
   const initial = readManifest(); let active = initial;
+  // Manifest 4 is the only way to select the screened escrow; its evidence inbox is required, and refused elsewhere.
+  if ((initial.version === 4) !== Boolean(args.screeningInbox)) throw new Error('A screening inbox is required for manifest 4 and refused for any other manifest.');
   const identity = ({ requests: _requests, ...fields }: typeof initial) => encode(fields);
   const cfg = loadConfig();
   if (cfg.account.address.toLowerCase() !== initial.operator) throw new Error('Configured signing account differs from manifest operator.');
@@ -44,7 +50,8 @@ async function main() {
       vault: initial.vault, guardian: initial.guardian, token: route.destination.usdc,
     }, source, args.sourceStartBlock, args.stateFile, async (id) => active.requests.find((r) => r.messageId === id)?.proof ?? null,
     { baseline: args.baselineFile ? parseCctpBaseline(JSON.parse(readFileSync(resolve(args.baselineFile), 'utf8'))) : null,
-      ...(initial.version === 3 ? { payment: initial.payment } : {}) });
+      ...(initial.version === 3 || initial.version === 4 ? { payment: initial.payment } : {}),
+      ...(initial.version === 4 && args.screeningInbox ? { screening: { profile: initial.screening, provider: screeningInbox(args.screeningInbox) } } : {}) });
     do {
       active = readManifest();
       if (identity(active) !== identity(initial)) throw new Error('Operator manifest scope changed.');

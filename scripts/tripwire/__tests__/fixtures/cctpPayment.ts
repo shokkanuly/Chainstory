@@ -6,13 +6,14 @@ import { authenticatedFixture } from './cctpEscrow.js';
 import { addressWord, beneficiary, bytesReplace, nonce, sender, vault } from './cctp.js';
 
 export const paymentBindings = { authority: sender, sourceSender: sender, returnRecipient: sender, recoveryDelay: 3600n };
-export function paymentFixture() {
+/** `version` 2: the screened escrow's own hook and credit namespace (ADR-047). */
+export function paymentFixture(version: 1 | 2 = 1) {
   const f = authenticatedFixture();
   const intent = { recipient: beneficiary, returnRecipient: sender, operationId: toHex(1, { size: 32 }), policyHash: toHex(2, { size: 32 }) };
-  const hook = cctpPaymentHook(intent);
+  const hook = cctpPaymentHook(intent, version);
   const message = bytesReplace(f.message, 376, hook), receivedBody = bytesReplace(f.receivedBody, 228, hook);
   f.replaceMessage(message); f.replaceDeposit({ hookData: hook, destinationCaller: addressWord(vault) }); f.replaceReceive({ caller: vault, messageBody: receivedBody });
-  f.release.messageId = cctpPaymentReleaseId(route.destination.chainId, vault, route.source.domain, nonce);
+  f.release.messageId = cctpPaymentReleaseId(route.destination.chainId, vault, route.source.domain, nonce, version);
   const bound = { messageId: f.release.messageId, operationId: intent.operationId, returnRecipient: intent.returnRecipient, intentPolicyHash: intent.policyHash };
   const requested = { messageId: f.release.messageId, to: beneficiary, amount: f.release.amount };
   const funded = { messageId: f.release.messageId, nonce, amount: f.release.amount,

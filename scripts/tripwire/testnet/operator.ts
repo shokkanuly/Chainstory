@@ -29,7 +29,11 @@ import { cctpPaymentBindingsSchema, cctpVerifierScope, type CctpPaymentBindings 
 import { cctpAddressSchema } from '../../../src/chains/evm/cctp.js';
 import { assertCctpPaymentBindings } from './cctpBindings.js';
 import paymentArtifact from './cctpPaymentEscrow.artifact.js';
+import screenedArtifact from './cctpScreenedPaymentEscrow.artifact.js';
 import { assertPaymentRuntime } from './artifactAcceptance.js';
+import { screeningProfileHash, type ScreeningProfile, type ScreeningScope } from '../../../src/chains/evm/screening.js';
+import { ScreeningGate, screenedReviewRequest, type ScreeningProvider } from '../screeningGate.js';
+import { ZERO_WORD } from './screenedState.js';
 
 export interface RpcDestination {
   chainId: number; route: string; routeId: Hex; startBlock: string;
@@ -121,6 +125,12 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
   baselineHours?: number;
   /** Customer payment escrow (ADR-028): its review format 3 and policy reads. */
   payment?: CctpPaymentBindings;
+  /**
+   * Screened customer escrow (ADR-047/048, manifest 4): review format 4, the
+   * accepted screening profile and the provider adapter that supplies
+   * issuer-signed evidence. Requires `payment`.
+   */
+  screening?: { profile: ScreeningProfile; provider: ScreeningProvider };
   contractFacts?: (address: Hex) => Promise<ContractRiskSummary | null>;
   /** Required for ALLOW. Absent by default: logs from MockSourceBridge are not source proofs. */
   verifySource?: (release: z.infer<typeof releaseEventSchema>, observed: bigint | null) => Promise<SourceEvidence>;
@@ -130,13 +140,17 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
   };
 }) {
   if (opts.payment) opts = { ...opts, payment: cctpPaymentBindingsSchema.parse(opts.payment) };
+  if (opts.screening && !opts.payment) throw new Error('Screening requires the customer payment escrow bindings.');
+  const screened = Boolean(opts.screening);
+  const reviewFormat = opts.payment ? (screened ? 4 : 3) : 2;
+  const escrowAbi = screened ? screenedArtifact.abi : paymentArtifact.abi;
   const { vault, guardian, token } = 'contracts' in d ? { vault: d.contracts.ProtectedVault, guardian: d.contracts.TripwireGuardian, token: d.contracts.DemoUSDC }
     : { vault: { address: d.vault }, guardian: { address: d.guardian }, token: { address: d.token } };
   const bridge = 'contracts' in d ? d.contracts.MockSourceBridge : null;
   if (!opts.source && !bridge) throw new Error('A real deployment requires its source adapter.');
   if (opts.source && opts.verifySource) throw new Error('Configure one source verifier.');
   if (opts.payment && !opts.source) throw new Error('Customer payment operator requires its authenticated source adapter.');
-  if (opts.payment && JSON.stringify(opts.source?.scope) !== JSON.stringify(cctpVerifierScope(vault.address, 'customer-payment', opts.payment))) {
+  if (opts.payment && JSON.stringify(opts.source?.scope) !== JSON.stringify(cctpVerifierScope(vault.address, screened ? 'screened-payment' : 'customer-payment', opts.payment))) {
     throw new Error('Customer payment source profile does not match this escrow.');
   }
   const sourceAddress = opts.source?.address ?? bridge?.address;
@@ -150,20 +164,23 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
     releaseVersion: () => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'RELEASE_POLICY_VERSION' }),
     reviewFormat: () => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'REVIEW_FORMAT_VERSION' }),
     routePermission: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'isProtected', args: [vault.address, d.routeId] }),
-  }, opts.payment ? 3 : 2);
+  }, reviewFormat);
+  // The screening scope binds chain, escrow, guardian, route and token (H4c2 codec).
+  const screeningScope: ScreeningScope = { destinationChainId: BigInt(c.chainId), vault: vault.address.toLowerCase() as Hex,
+    guardian: guardian.address.toLowerCase() as Hex, routeId: d.routeId.toLowerCase() as Hex, token: token.address.toLowerCase() as Hex };
   if (opts.payment) {
     const head = blockHeaderSchema.parse(await c.pub.getBlock({ blockTag: 'finalized' }));
     await assertPaymentRuntime(vault.address, guardian.address, opts.payment, head.number,
-      (address, blockNumber) => c.pub.getCode({ address, blockNumber }));
+      (address, blockNumber) => c.pub.getCode({ address, blockNumber }), screened ? 'screened' : 'payment');
     await assertCctpPaymentBindings(vault.address, opts.payment, (name) => c.pub.readContract({
-      address: vault.address, abi: paymentArtifact.abi, functionName: name, blockNumber: head.number,
-    }));
+      address: vault.address, abi: escrowAbi, functionName: name, blockNumber: head.number,
+    }), screened);
     await assertProtectionPolicy({
       guardianVersion: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'GUARDIAN_POLICY_VERSION', blockNumber: head.number }),
       releaseVersion: () => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'RELEASE_POLICY_VERSION', blockNumber: head.number }),
       reviewFormat: () => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'REVIEW_FORMAT_VERSION', blockNumber: head.number }),
       routePermission: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'isProtected', args: [vault.address, d.routeId], blockNumber: head.number }),
-    }, 3);
+    }, reviewFormat);
     z.literal(600n).parse(await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'MAX_REVIEW_TTL', blockNumber: head.number }));
     for (const [name, expected] of [['token', token.address], ['guardian', guardian.address], ['routeId', d.routeId]] as const) {
       const actual = await c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: name, blockNumber: head.number });
@@ -173,6 +190,19 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
     const owner = cctpAddressSchema.parse(await c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'owner', blockNumber: head.number }));
     if (oracle !== cfg.oracle.address.toLowerCase() || oracle === opts.payment.authority || oracle === owner) {
       throw new Error('Payment reviewer must be the configured oracle and separate from customer authority/guardian owner.');
+    }
+    if (opts.screening) {
+      // Only the accepted profile (or its revocation) may be active: another profile needs a new manifest and acceptance.
+      const active = z.string().regex(/^0x[0-9a-fA-F]{64}$/).transform((v) => v.toLowerCase()).parse(await c.pub.readContract({ address: vault.address,
+        abi: screenedArtifact.abi, functionName: 'screeningProfileHash', blockNumber: head.number }));
+      if (active !== screeningProfileHash(screeningScope, opts.screening.profile) && active !== ZERO_WORD) {
+        throw new Error('Escrow screening profile differs from the accepted manifest profile.');
+      }
+      const issuer = opts.screening.profile.issuer;
+      if ([oracle, owner, opts.payment.authority, opts.payment.returnRecipient, vault.address.toLowerCase(),
+        cfg.relayer.address.toLowerCase(), cfg.attestationRelayer.address.toLowerCase()].includes(issuer)) {
+        throw new Error('Screening issuer must be independent of the oracle, guardian owner, customer roles, escrow and relayers.');
+      }
     }
     const checked = blockHeaderSchema.parse(await c.pub.getBlock({ blockNumber: head.number }));
     if (checked.hash !== head.hash || checked.number !== head.number) throw new Error('Customer deployment block changed.');
@@ -196,14 +226,19 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
     const paymentRead = (messageId: Hex, tag: 'latest' | 'finalized' = 'latest') => readPaymentState({
       getBlock: (args) => c.pub.getBlock(args), minimumBlock,
       read: (name, blockNumber, args) => c.pub.readContract({ address: vault.address,
-        abi: paymentArtifact.abi, functionName: name, blockNumber, args }),
-    }, messageId, store.sourceProofs().find((p) => p.messageId === messageId), tag);
+        abi: escrowAbi, functionName: name, blockNumber, args }),
+    }, messageId, store.sourceProofs().find((p) => p.messageId === messageId), tag, opts.screening ? { scope: screeningScope,
+      profile: opts.screening.profile, readOracle: (blockNumber) => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi,
+        functionName: 'oracle', blockNumber }) } : undefined);
     const source = opts.source?.create(store);
     let clock = Number((await c.pub.getBlock()).timestamp);
     const hooks = { beforeSign: () => watcher.assertCanonical(), assertSafe: () => watcher.assertCanonical(),
       onFinalityConflict: (error: FinalityConflictError) => watcher.quarantineFinality(error) };
     const sender = new DurableSender(store, relayerPort(c, cfg.relayer, cfg.maxFeePerGas, hooks));
     const attestationSender = new DurableSender(attestationStore, relayerPort(c, cfg.attestationRelayer, cfg.maxFeePerGas, hooks));
+    // Head relays share the release lane; the gate journals evidence before either lane signs.
+    const screeningGate = opts.screening ? new ScreeningGate({ store, sender, provider: opts.screening.provider,
+      scope: screeningScope, profile: opts.screening.profile, read: (messageId) => paymentRead(messageId) }) : undefined;
     const guardianPort: GuardianPort = {
       address: guardian.address, chainId: c.chainId,
       currentTier: async (routeId) => z.number().int().min(0).max(3).parse(
@@ -257,7 +292,18 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
         readRejectedAt: (blockNumber) => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi,
           functionName: 'rejectedAt', args: [messageId], blockNumber }),
       }),
-      review: async (observation, nonce, decision = releaseDecision(observation)) => {
+      review: async (observation, nonce, decision = releaseDecision(observation), screening) => {
+        if (opts.screening) {
+          await watcher.assertCanonical();
+          const state = await paymentRead(observation.release.messageId);
+          if (decision === ReleaseDecision.ALLOW && !store.sourceProofs().find((p) => p.messageId === observation.release.messageId)?.payment) {
+            throw new Error('Customer payment is not eligible for ALLOW.');
+          }
+          const request = await screenedReviewRequest({ signer: cfg.oracle, chainId: c.chainId, routeId: d.routeId, token: token.address,
+            state, observation, nonce, decision, screening });
+          await watcher.assertCanonical();
+          return request;
+        }
         const now = Number((await c.pub.getBlock()).timestamp);
         const review = { messageId: observation.release.messageId, routeId: d.routeId, token: token.address,
           recipient: observation.release.recipient, amount: observation.release.amount, decision,
@@ -302,7 +348,7 @@ export async function createRpcOperator(cfg: TestnetConfig, c: Clients, d: Deplo
         if (checked.number !== head.number || checked.hash !== head.hash) throw new Error('Finalized terminal-state block changed while reading.');
         return r[0].toLowerCase() === expected.recipient.toLowerCase() && r[1] === expected.amount && r[2] === expected.state;
       },
-    }, d.routeId, { heldBackoff: { initial: 30, max: 600 } });
+    }, d.routeId, { heldBackoff: { initial: 30, max: 600 }, ...(screeningGate ? { screening: screeningGate } : {}) });
     const lanes = attestationStore;
     return { store, attestationStore: lanes, sender, attestationSender, watcher, tick: async () => {
       clock = Number((await c.pub.getBlock()).timestamp); return operator.tick();

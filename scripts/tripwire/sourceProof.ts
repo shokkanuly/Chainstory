@@ -8,7 +8,8 @@ const origin = eventOriginSchema.extend({ blockNumber: z.union([z.bigint(), deci
 export const sourceVerifierScopeSchema = z.object({
   kind: z.literal('cctp-v2-usdc'), fingerprint: blockHashSchema,
   settlement: z.string().regex(/^0x[0-9a-fA-F]{40}$/).transform((v) => v.toLowerCase()),
-  profile: z.literal('customer-payment-v1').optional(),
+  /** Customer payment profiles carry an authenticated intent; the screened one uses the v2 hook (ADR-048). */
+  profile: z.enum(['customer-payment-v1', 'customer-payment-screened-v1']).optional(),
 }).strict();
 export const sourceProofSchema = z.object({
   messageId: blockHashSchema,

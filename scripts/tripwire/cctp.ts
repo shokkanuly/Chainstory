@@ -46,13 +46,17 @@ export const cctpPaymentBindingsSchema = z.object({
     .pipe(z.bigint().min(3600n).max(30n * 86400n)),
 }).strict();
 export type CctpPaymentBindings = z.output<typeof cctpPaymentBindingsSchema>;
-export type CctpPolicy = 'legacy-post-mint' | 'authenticated-escrow' | 'customer-payment';
+/** 'screened-payment': the screened customer escrow (ADR-047/048), its own v2 hook and credit namespace. */
+export type CctpPolicy = 'legacy-post-mint' | 'authenticated-escrow' | 'customer-payment' | 'screened-payment';
+const paymentVersion = (policy: CctpPolicy) => policy === 'screened-payment' ? 2 : policy === 'customer-payment' ? 1 : undefined;
 export function cctpVerifierScope(vault: string, policy: CctpPolicy = 'authenticated-escrow', payment?: CctpPaymentBindings) {
-  const bindings = policy === 'customer-payment' ? cctpPaymentBindingsSchema.parse(payment) : undefined;
+  const version = paymentVersion(policy);
+  const bindings = version ? cctpPaymentBindingsSchema.parse(payment) : undefined;
   return sourceVerifierScopeSchema.parse({ kind: 'cctp-v2-usdc', settlement: route.destination.transmitter,
-    ...(bindings ? { profile: 'customer-payment-v1' } : {}),
-    fingerprint: keccak256(stringToHex(JSON.stringify({ policy: policy === 'legacy-post-mint' ? 'cctp-v2-usdc-post-mint-v1' : policy === 'customer-payment' ? 'cctp-v2-usdc-customer-payment-v1' : 'cctp-v2-usdc-authenticated-escrow-v1', route, vault: cctpAddressSchema.parse(vault),
-      finality: 'both-rpc-finalized-and-circle-standard', hook: policy === 'customer-payment' ? 'Tripwire/CCTP/v2/USDC/payment/v1' : 'Tripwire/CCTP/v2/USDC/beneficiary/v1',
+    ...(bindings ? { profile: version === 2 ? 'customer-payment-screened-v1' : 'customer-payment-v1' } : {}),
+    fingerprint: keccak256(stringToHex(JSON.stringify({ policy: policy === 'legacy-post-mint' ? 'cctp-v2-usdc-post-mint-v1' : policy === 'customer-payment' ? 'cctp-v2-usdc-customer-payment-v1'
+      : policy === 'screened-payment' ? 'cctp-v2-usdc-screened-payment-v1' : 'cctp-v2-usdc-authenticated-escrow-v1', route, vault: cctpAddressSchema.parse(vault),
+      finality: 'both-rpc-finalized-and-circle-standard', hook: version ? `Tripwire/CCTP/v2/USDC/payment/v${version}` : 'Tripwire/CCTP/v2/USDC/beneficiary/v1',
       ...(bindings ? { payment: { ...bindings, recoveryDelay: bindings.recoveryDelay.toString() } } : {}) }))) });
 }
 const origin = (chainId: number, log: Log): EventOrigin => eventOriginSchema.parse({ chainId, ...log });
@@ -75,10 +79,12 @@ export class CctpSourceAdapter implements SourceAdapter {
   readonly scope;
   private readonly vault: Hex;
   private readonly payment?: CctpPaymentBindings;
+  private readonly paymentVersion?: 1 | 2;
   private lock: Promise<unknown> = Promise.resolve();
   constructor(private store: OperatorStore, vault: string, private sourceRpc: CctpRpc, private destinationRpc: CctpRpc,
     private locate: (messageId: Hex) => Promise<unknown | null>, private readonly policy: CctpPolicy = 'authenticated-escrow', payment?: CctpPaymentBindings) {
-    this.payment = policy === 'customer-payment' ? cctpPaymentBindingsSchema.parse(payment) : undefined;
+    this.paymentVersion = paymentVersion(policy);
+    this.payment = this.paymentVersion ? cctpPaymentBindingsSchema.parse(payment) : undefined;
     this.vault = cctpAddressSchema.parse(vault); this.scope = cctpVerifierScope(this.vault, policy, this.payment);
     if (store.scope.sourceChainId !== route.source.chainId || store.scope.chainId !== route.destination.chainId ||
       store.scope.source !== route.source.transmitter || store.scope.vault !== this.vault || store.scope.token !== route.destination.usdc ||
@@ -130,7 +136,7 @@ export class CctpSourceAdapter implements SourceAdapter {
         return invalid('Release originated on the wrong chain or vault.');
       }
       const cached = journalOperation(() => this.store.sourceProofs()).find((p) => p.messageId === release.messageId);
-      if (cached && this.policy !== 'customer-payment' && (this.policy === 'legacy-post-mint' || !release.origin)) return cached.recipient === release.recipient && cached.amount === release.amount
+      if (cached && !this.payment && (this.policy === 'legacy-post-mint' || !release.origin)) return cached.recipient === release.recipient && cached.amount === release.amount
         ? { status: 'verified', amount: cached.amount } : invalid('Release fields differ from its authenticated source proof.');
       const rawLocator = await this.locate(release.messageId);
       if (rawLocator === null) return pending('Source transaction locator is not available.');
@@ -156,7 +162,7 @@ export class CctpSourceAdapter implements SourceAdapter {
       if (!/^0x0{64}$/.test(message.nonce) || message.finalityThresholdExecuted !== 0 || body.feeExecuted !== 0n || body.expirationBlock !== 0n || body.amount <= 0n || body.maxFee >= body.amount) {
         return invalid('Source MessageSent contains invalid burn or relay fields.');
       }
-      const paymentIntent = this.payment ? decodeCctpPaymentHook(body.hookData) : undefined;
+      const paymentIntent = this.payment ? decodeCctpPaymentHook(body.hookData, this.paymentVersion) : undefined;
       if ((paymentIntent?.recipient ?? cctpHookBeneficiary(body.hookData)) !== release.recipient) return invalid('Release recipient differs from the authenticated beneficiary hook.');
       if (paymentIntent && (paymentIntent.returnRecipient !== this.payment?.returnRecipient || body.messageSender !== this.payment?.sourceSender)) {
         return invalid('Payment source sender or fixed return recipient differs from customer bindings.');
@@ -191,8 +197,9 @@ export class CctpSourceAdapter implements SourceAdapter {
         mints[0].log.logIndex >= receives[0].log.logIndex) return invalid('USDC mint does not match this burn, fee and vault.');
       if (release.amount !== net) return invalid('Release amount differs from the exact net USDC minted into escrow.');
       if (this.policy !== 'legacy-post-mint') {
-        const releaseId = paymentIntent ? cctpPaymentReleaseId : cctpEscrowReleaseId;
-        if (releaseId(route.destination.chainId, this.vault, message.sourceDomain, receive.nonce) !== release.messageId) {
+        const releaseId = paymentIntent ? cctpPaymentReleaseId(route.destination.chainId, this.vault, message.sourceDomain, receive.nonce, this.paymentVersion)
+          : cctpEscrowReleaseId(route.destination.chainId, this.vault, message.sourceDomain, receive.nonce);
+        if (releaseId !== release.messageId) {
           return invalid('Release ID is not bound to this escrow and authenticated CCTP nonce.');
         }
         const requested = decoded(mintedReceipt, this.vault, cctpEscrowAbi, 'ReleaseRequested');

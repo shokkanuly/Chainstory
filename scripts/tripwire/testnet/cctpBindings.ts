@@ -21,11 +21,13 @@ export async function assertCctpEscrowBindings(vault: Hex, read: (name: CctpBind
   }
 }
 
+/** `screened`: the screened escrow (ADR-047) — review format 4 and its own version marker. */
 export async function assertCctpPaymentBindings(vault: Hex, input: CctpPaymentBindings,
-  read: (name: string) => Promise<unknown>): Promise<void> {
+  read: (name: string) => Promise<unknown>, screened = false): Promise<void> {
   const payment = cctpPaymentBindingsSchema.parse(input);
   if (payment.authority === vault || payment.returnRecipient === vault) throw new Error('Customer roles cannot be the escrow.');
-  const expected = { ...cctpBindings(vault), REVIEW_FORMAT_VERSION: 3, PAYMENT_ESCROW_VERSION: 1,
+  const expected = { ...cctpBindings(vault), REVIEW_FORMAT_VERSION: screened ? 4 : 3, PAYMENT_ESCROW_VERSION: 1,
+    ...(screened ? { SCREENING_ESCROW_VERSION: 2 } : {}),
     policyAuthority: payment.authority, authorizedSourceSender: payment.sourceSender,
     recoveryRecipient: payment.returnRecipient, recoveryDelay: payment.recoveryDelay };
   for (const [name, value] of Object.entries(expected)) {

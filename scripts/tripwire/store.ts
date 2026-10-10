@@ -224,7 +224,7 @@ export class OperatorStore {
       proof.destination.chainId !== this.scope.chainId || proof.destination.address !== this.scope.sourceVerifier.settlement) {
       throw new Error('Source proof deployment scope does not match.');
     }
-    if ((this.scope.sourceVerifier.profile === 'customer-payment-v1') !== Boolean(proof.payment)) throw new Error('Source proof customer intent profile does not match.');
+    if ((this.scope.sourceVerifier.profile !== undefined) !== Boolean(proof.payment)) throw new Error('Source proof customer intent profile does not match.');
   }
 
   outcomes(): ReleaseOutcome[] {
