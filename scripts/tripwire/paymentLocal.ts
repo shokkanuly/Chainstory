@@ -21,7 +21,8 @@ input.sources['PaymentTokenHarness.sol'] = { content: readFileSync(new URL('../.
 const compiled = JSON.parse(solc.compile(JSON.stringify(input)));
 if (compiled.errors?.some((e: { severity: string }) => e.severity === 'error')) throw new Error('Local CCTP harness compilation failed.');
 const contract = compiled.contracts['CctpHarness.sol'].CctpHarness;
-const harness: GuardianArtifact = { abi: contract.abi, bytecode: `0x${contract.evm.bytecode.object}` };
+/** Test-only Circle transmitter stand-in: verifies the relayer's signature and mints the attested amount. */
+export const harness: GuardianArtifact = { abi: contract.abi, bytecode: `0x${contract.evm.bytecode.object}` };
 const testToken = compiled.contracts['PaymentTokenHarness.sol'].PaymentTokenHarness;
 const faultToken: GuardianArtifact = { abi: testToken.abi, bytecode: `0x${testToken.evm.bytecode.object}` };
 export const PAYMENT_ROUTE = keccak256(toHex('local-cctp-payment-policy'));

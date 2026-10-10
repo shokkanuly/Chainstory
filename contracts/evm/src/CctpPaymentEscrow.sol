@@ -114,15 +114,18 @@ contract CctpPaymentEscrow is CctpEscrow {
         emit PolicyCommitted(1, policyHash, bytes32(0));
     }
 
-    function REVIEW_FORMAT_VERSION() public pure override returns (uint256) { return 3; }
+    function REVIEW_FORMAT_VERSION() public pure virtual override returns (uint256) { return 3; }
 
-    function releaseId(bytes32 nonce) public view override returns (bytes32) {
+    /// The application hook tag a credit's CCTP message must carry; a new escrow version uses its own.
+    function _paymentHook() internal pure virtual returns (bytes32) { return PAYMENT_HOOK; }
+
+    function releaseId(bytes32 nonce) public view virtual override returns (bytes32) {
         return keccak256(abi.encode(PAYMENT_ID_DOMAIN, block.chainid, address(this), sourceDomain, nonce));
     }
 
     function _beneficiary(bytes calldata message) internal override returns (address) {
         // Header/body 376 + 5 application words: tag, payout, return, operation, policy hash.
-        if (message.length != 536 || bytes32(message[376:408]) != PAYMENT_HOOK) revert UnsupportedCctpMessage();
+        if (message.length != 536 || bytes32(message[376:408]) != _paymentHook()) revert UnsupportedCctpMessage();
         if (_address(message, 248) != authorizedSourceSender) revert InvalidCctpBinding();
         address recipient = _address(message, 408);
         address returnRecipient = _address(message, 440);
@@ -142,7 +145,7 @@ contract CctpPaymentEscrow is CctpEscrow {
     }
 
     function hashReleaseReview(bytes32 messageId, ReviewDecision decision, ITripwireGuardian.Tier minimumTier, uint256 validUntil, uint256 nonce)
-        public view override returns (bytes32)
+        public view virtual override returns (bytes32)
     {
         Release storage r = releases[messageId];
         bytes32 releaseHash = keccak256(abi.encode(REVIEW_TYPEHASH, messageId, routeId, address(token),
@@ -150,7 +153,7 @@ contract CctpPaymentEscrow is CctpEscrow {
         return _hashTypedDataV4(keccak256(abi.encode(PAYMENT_REVIEW_TYPEHASH, releaseHash, policyVersion, policyHash)));
     }
 
-    function _beforeReview(bytes32 id, ReviewDecision decision) internal override {
+    function _beforeReview(bytes32 id, ReviewDecision decision) internal virtual override {
         // Policy v4 lets a plain vault re-review a REJECT after its cooldown so a
         // backed credit is never stranded. Here the customer's fixed return is
         // that path, so a rejected payout stays rejected (ADR-028).
@@ -168,7 +171,7 @@ contract CctpPaymentEscrow is CctpEscrow {
 
     function executeRelease(bytes32 id) external override nonReentrant { _executeRelease(id); }
 
-    function _beforeExecute(bytes32 id) internal override {
+    function _beforeExecute(bytes32 id) internal virtual override {
         if (credits[id].returnAt != 0) revert ReturnInProgress();
         if (reviewedPolicyVersion[id] != policyVersion) revert StalePaymentReview();
         if (paymentsPaused) revert PaymentsPaused();
@@ -230,19 +233,19 @@ contract CctpPaymentEscrow is CctpEscrow {
         _commit(action);
     }
 
-    function _queue(bytes32 action) private {
+    function _queue(bytes32 action) internal {
         if (queuedChange != bytes32(0)) emit PolicyChangeCancelled(queuedChange);
         queuedChange = keccak256(abi.encode(policyVersion, action));
         queuedChangeAt = block.timestamp + POLICY_CHANGE_DELAY;
         emit PolicyChangeQueued(queuedChange, queuedChangeAt);
     }
-    function _consume(bytes32 action) private {
+    function _consume(bytes32 action) internal {
         if (queuedChangeAt == 0 || block.timestamp < queuedChangeAt ||
             queuedChange != keccak256(abi.encode(policyVersion, action))) revert PolicyChangeNotReady();
         delete queuedChange;
         delete queuedChangeAt;
     }
-    function _commit(bytes32 action) private {
+    function _commit(bytes32 action) internal {
         ++policyVersion;
         policyHash = keccak256(abi.encode(policyHash, policyVersion, action));
         if (queuedChange != bytes32(0)) emit PolicyChangeCancelled(queuedChange);
