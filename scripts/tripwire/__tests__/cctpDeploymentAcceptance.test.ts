@@ -9,7 +9,12 @@ import { cctpPaymentDeploymentSchema } from '../testnet/cctpDeployPlan.js';
 import { acceptCctpDeployment, deploymentReceiptBundleSchema } from '../testnet/cctpDeploymentAcceptance.js';
 import { parseAcceptanceArgs } from '../testnet/acceptCctpDeployment.js';
 
-import { input, hash, fixture } from './fixtures/cctpDeployment.js';
+import { input, hash, fixture, screenedInput } from './fixtures/cctpDeployment.js';
+import { operatorManifestSchema } from '../testnet/cctpManifest.js';
+import { expectedGuardianRuntime, expectedPaymentRuntime } from '../testnet/artifactAcceptance.js';
+
+/** The manifest as it is written to disk (bigints become decimal strings). */
+const stringifyable = (value: unknown) => JSON.parse(JSON.stringify(value, (_k, v: unknown) => typeof v === 'bigint' ? v.toString() : v));
 
 describe('receipt-backed initial payment deployment acceptance', () => {
   it('accepts exact finalized initcode/configuration provenance, runtime, policy and the sole grant', async () => {
@@ -124,5 +129,37 @@ describe('receipt-backed initial payment deployment acceptance', () => {
     expect(parseAcceptanceArgs(['config.json', 'receipts.json', 'new.json']).mode).toBe('check');
     expect(() => parseAcceptanceArgs(['config.json', 'receipts.json'])).toThrow();
     expect(() => deploymentReceiptBundleSchema.parse({ ...f.bundle, approved: true })).toThrow();
+  });
+});
+
+describe('receipt-backed initial screened deployment acceptance (ADR-047/048)', () => {
+  it('accepts a paused, legacy-mode screened escrow with the exact profile and no head, and emits manifest 4', async () => {
+    const f = fixture(screenedInput), report = await f.run();
+    expect(report.status).toBe('accepted');
+    if (report.status !== 'accepted') throw new Error('Unexpected pending fixture');
+    expect(report.manifest.version).toBe(4); expect(operatorManifestSchema.parse(stringifyable(report.manifest))).toMatchObject({ version: 4 });
+    expect(report.screening).toMatchObject({ profileHash: f.facts.screeningProfileHash, startsPaused: true, executionMode: 'legacy', activeHead: null });
+    expect(report.runtime.payment.runtimeBytes).toBe(23_430);
+    expect(report.remainingGates.at(-1)).toContain('paused in legacy mode');
+  });
+  it.each([
+    ['unpaused', (f: ReturnType<typeof fixture>) => { f.facts.paymentsPaused = false; }, 'not paused'],
+    ['already advisory', (f: ReturnType<typeof fixture>) => { f.facts.executionMode = 1; }, 'legacy mode'],
+    ['carrying a list head', (f: ReturnType<typeof fixture>) => { f.facts.activeHead = [hash(5), 1n, 1n, 2n]; }, 'list head'],
+    ['another profile hash', (f: ReturnType<typeof fixture>) => { f.facts.screeningProfileHash = hash(5); }, 'profile hash differs'],
+    ['other profile fields', (f: ReturnType<typeof fixture>) => { (f.facts.screeningProfile as unknown[])[4] = 7200; }, 'profile fields'],
+    ['the plain payment runtime', (f: ReturnType<typeof fixture>) => { f.reader.readCode.mockImplementation(async (address: Hex) => address === f.plan.contracts.guardian
+      ? expectedGuardianRuntime(address) : expectedPaymentRuntime(f.plan.contracts.vault, f.plan.contracts.guardian,
+        { authority: actors.owner.address, sourceSender: actors.owner.address, returnRecipient: actors.owner.address, recoveryDelay: 3600n })); }, 'bytecode'],
+    ['review format 3', (f: ReturnType<typeof fixture>) => { f.facts.REVIEW_FORMAT_VERSION = 3n; }, 'REVIEW_FORMAT_VERSION'],
+    ['the v1 initial policy hash', (f: ReturnType<typeof fixture>) => { f.facts.policyHash = hash(77); }, 'policy hash'],
+  ] as const)('refuses a fresh screened escrow %s', async (_label, change, reason) => {
+    const f = fixture(screenedInput); change(f);
+    await expect(f.run()).rejects.toThrow(reason);
+  });
+  it('a screened config never yields a version-3 package, and a version-3 config never a screened one', () => {
+    expect(fixture(screenedInput).plan.manifest.version).toBe(4);
+    expect(fixture().plan.manifest.version).toBe(3);
+    expect(fixture().plan.screening).toBeUndefined();
   });
 });

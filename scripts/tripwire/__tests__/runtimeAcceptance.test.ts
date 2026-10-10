@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { toHex } from 'viem';
+import { toHex, type Hex } from 'viem';
 import { assertRuntime, reconstructRuntime } from '../../../src/chains/evm/runtime.js';
-import { actors, LOCAL_CHAIN_ID } from '../../../src/tripwire/guardianVM.js';
-import { paymentLocalFixture, PAYMENT_NONCE, PAYMENT_OPERATION, PAYMENT_ROUTE, LOCAL_PAYMENT_POLICY } from '../paymentLocal.js';
-import { initialPaymentPolicyHash } from '../../../src/chains/evm/paymentPolicy.js';
+import { actors, GuardianVM, LOCAL_CHAIN_ID } from '../../../src/tripwire/guardianVM.js';
+import { harness, paymentLocalFixture, PAYMENT_NONCE, PAYMENT_OPERATION, PAYMENT_ROUTE, LOCAL_PAYMENT_POLICY } from '../paymentLocal.js';
+import { initialPaymentPolicyHash, initialScreenedPolicyHash } from '../../../src/chains/evm/paymentPolicy.js';
+import { screeningProfileHash } from '../../../src/chains/evm/screening.js';
+import guardian from '../../../src/tripwire/guardian.artifact.js';
+import demo from '../testnet/contracts.artifact.js';
 import { expectedGuardianRuntime, expectedPaymentRuntime } from '../testnet/artifactAcceptance.js';
-import { screenedLocalFixture, SCREENED_ROUTE } from '../screenedLocal.js';
+import { deployScreenedEscrow, LOCAL_PROFILE, screenedLocalFixture, SCREENED_ROUTE } from '../screenedLocal.js';
 import { cctpPaymentHook, cctpPaymentReleaseId, decodeCctpPaymentHook } from '../../../src/chains/evm/cctp.js';
 
 describe('exact compiled runtime acceptance', () => {
@@ -39,6 +42,22 @@ describe('exact compiled runtime acceptance', () => {
     const paymentCode = await payment.vm.readBytecode(payment.vault.address);
     expect(() => assertRuntime(paymentCode, expectedPaymentRuntime(payment.vault.address, payment.vm.address, customer, LOCAL_CHAIN_ID,
       { ...bindings, token: payment.token.address, routeId: PAYMENT_ROUTE, transmitter: payment.transmitter.address }, 'screened'))).toThrow('bytecode');
+  });
+  it('computes the screened escrow\'s initial policy hash exactly as its constructor does', async () => {
+    const vm = await GuardianVM.deploy(guardian);
+    const token = await vm.deployContract(demo.DemoUSDC, [actors.owner.address]);
+    const transmitter = await vm.deployContract(harness, [actors.relayer.address, token.address]);
+    const vault = await deployScreenedEscrow(vm, token.address, transmitter.address);
+    const scope = { destinationChainId: BigInt(LOCAL_CHAIN_ID), vault: vault.address.toLowerCase() as Hex, guardian: vm.address.toLowerCase() as Hex,
+      routeId: SCREENED_ROUTE, token: token.address.toLowerCase() as Hex };
+    const profileHash = screeningProfileHash(scope, { version: 1, providerIdHash: LOCAL_PROFILE.providerIdHash, listIdHash: LOCAL_PROFILE.listIdHash,
+      issuer: LOCAL_PROFILE.issuer.toLowerCase() as Hex, subject: 'payout-recipient', maxObservationAgeSeconds: 300n, maxSnapshotAgeSeconds: 3600n });
+    expect(await vm.readContract(vault, 'screeningProfileHash')).toBe(profileHash);
+    const config = { authority: actors.owner.address, returnRecipient: actors.bridge.address, sourceSender: actors.owner.address, recoveryDelay: 3600n,
+      policy: LOCAL_PAYMENT_POLICY, recipients: [actors.attacker.address] };
+    expect(initialScreenedPolicyHash(LOCAL_CHAIN_ID, vault.address, SCREENED_ROUTE, token.address, vm.address, config, profileHash))
+      .toBe(await vm.readContract(vault, 'policyHash'));
+    expect(initialPaymentPolicyHash(LOCAL_CHAIN_ID, vault.address, SCREENED_ROUTE, token.address, vm.address, config)).not.toBe(await vm.readContract(vault, 'policyHash'));
   });
   it('encodes the v2 payment hook and credit ID exactly as the screened escrow does, and never mixes versions', async () => {
     const f = await screenedLocalFixture({ register: false });

@@ -3,9 +3,9 @@ import { keccak256, stringToHex, type Hex } from 'viem';
 import { z } from 'zod';
 import { cctpAddressSchema } from '../../../src/chains/evm/cctp.js';
 import { CCTP_BASE_SEPOLIA_TO_SEPOLIA as route } from '../../../src/chains/evm/registry/cctp.js';
-import { initialPaymentPolicyHash } from '../../../src/chains/evm/paymentPolicy.js';
+import { initialPaymentPolicyHash, initialScreenedPolicyHash } from '../../../src/chains/evm/paymentPolicy.js';
 import { blockHashSchema, blockHeaderSchema, FinalityConflictError, receiptFinality } from '../finality.js';
-import { cctpDeploymentPlan, cctpPaymentDeploymentSchema } from './cctpDeployPlan.js';
+import { cctpCustomerDeploymentSchema, cctpDeploymentPlan } from './cctpDeployPlan.js';
 import { stringifyPublic } from './cctpPreflight.js';
 import { assertPaymentRuntime } from './artifactAcceptance.js';
 import { assertCctpPaymentBindings } from './cctpBindings.js';
@@ -36,13 +36,13 @@ export interface DeploymentAcceptanceReader {
   readGuardianGrants(fromBlock: bigint, toBlock: bigint): Promise<unknown>;
 }
 export function deploymentReceiptTemplate(input: unknown) {
-  cctpPaymentDeploymentSchema.parse(input);
+  cctpCustomerDeploymentSchema.parse(input);
   const plan = cctpDeploymentPlan(input);
   return deploymentReceiptBundleSchema.parse({ version: 1, packageHash: keccak256(stringToHex(stringifyPublic(plan))), transactions: [null, null, null, null] });
 }
 
 export async function acceptCctpDeployment(input: unknown, receiptInput: unknown, reader: DeploymentAcceptanceReader) {
-  const config = cctpPaymentDeploymentSchema.parse(input), plan = cctpDeploymentPlan(input);
+  const config = cctpCustomerDeploymentSchema.parse(input), plan = cctpDeploymentPlan(input);
   const bundle = deploymentReceiptBundleSchema.parse(receiptInput);
   const packageHash = deploymentReceiptTemplate(input).packageHash;
   if (bundle.packageHash !== packageHash) throw new Error('Deployment receipt bundle does not match the current unsigned package.');
@@ -100,8 +100,10 @@ export async function acceptCctpDeployment(input: unknown, receiptInput: unknown
   await stable();
   return { ...base, status: 'accepted' as const, initialDeploymentAccepted: true as const, evidence, blockers: [], runtime,
     destinationStartBlock: evidence[0].blockNumber, policy: { version: 1n, hash: expectedPolicyHash, ...config.payment }, routeBudget: routeState, grants,
+    ...(plan.screening ? { screening: plan.screening } : {}),
     remainingGates: ['Acceptance covers this finalized initial deployment snapshot only; recheck live policy, roles, grants and guardian state before a burn.',
-      'No source permission/control audit, Circle attestation, burn/mint/payment, operator input baseline or external security review is established by this report.'],
+      'No source permission/control audit, Circle attestation, burn/mint/payment, operator input baseline or external security review is established by this report.',
+      ...(plan.screening ? ['The screened escrow is paused in legacy mode with no list head. Unpausing needs the customer\'s queued action; a real screening provider and an independent review of advisory mode remain open.'] : [])],
   };
 }
 
@@ -109,18 +111,19 @@ export async function acceptCctpDeployment(input: unknown, receiptInput: unknown
 // before preparing the first source action. This does not authenticate receipts.
 export async function readInitialDeploymentState(input: unknown, reader: DeploymentAcceptanceReader, blockNumber: bigint,
   evidence: readonly { blockNumber: bigint; blockHash: Hex; transactionHash: Hex }[]) {
-  const config = cctpPaymentDeploymentSchema.parse(input), plan = cctpDeploymentPlan(input);
+  const config = cctpCustomerDeploymentSchema.parse(input), plan = cctpDeploymentPlan(input);
+  const screened = config.version === 4 && plan.screening ? plan.screening : null;
   if (evidence.length !== 4 || evidence.some((e) => e.blockNumber > blockNumber)) throw new Error('Initial state read is behind deployment provenance.');
   const head = { number: blockNumber };
   const { authority, sourceSender, returnRecipient, recoveryDelay } = config.payment;
   const bindings = { authority, sourceSender, returnRecipient, recoveryDelay };
   const runtime = await assertPaymentRuntime(plan.contracts.vault, plan.contracts.guardian, bindings, head.number,
-    (address, number) => reader.readCode(address, number));
-  await assertCctpPaymentBindings(plan.contracts.vault, bindings, (name) => reader.readVault(name, head.number));
+    (address, number) => reader.readCode(address, number), screened ? 'screened' : 'payment');
+  await assertCctpPaymentBindings(plan.contracts.vault, bindings, (name) => reader.readVault(name, head.number), Boolean(screened));
   await assertProtectionPolicy({ guardianVersion: () => reader.readGuardian('GUARDIAN_POLICY_VERSION', head.number),
     releaseVersion: () => reader.readVault('RELEASE_POLICY_VERSION', head.number), reviewFormat: () => reader.readVault('REVIEW_FORMAT_VERSION', head.number),
     routePermission: () => reader.readGuardian('isProtected', head.number, [plan.contracts.vault, plan.routeId]),
-  }, 3);
+  }, screened ? 4 : 3);
   for (const [name, expected] of [['owner', config.owner], ['oracle', config.oracle]] as const) {
     if (cctpAddressSchema.parse(await reader.readGuardian(name, head.number)) !== expected) throw new Error(`Guardian ${name} changed from the deployment package.`);
   }
@@ -135,8 +138,9 @@ export async function readInitialDeploymentState(input: unknown, reader: Deploym
     routeState.tier !== 0 || routeState.pausedUntil !== 0n || routeState.tierExpiresAt !== 0n || routeState.delayUntil !== 0n) {
     throw new Error('Guardian budget/protection is not the fresh configured package state.');
   }
-  const expectedPolicyHash = initialPaymentPolicyHash(route.destination.chainId, plan.contracts.vault, plan.routeId,
-    route.destination.usdc, plan.contracts.guardian, config.payment);
+  const expectedPolicyHash = screened ? initialScreenedPolicyHash(route.destination.chainId, plan.contracts.vault, plan.routeId,
+    route.destination.usdc, plan.contracts.guardian, config.payment, screened.profileHash)
+    : initialPaymentPolicyHash(route.destination.chainId, plan.contracts.vault, plan.routeId, route.destination.usdc, plan.contracts.guardian, config.payment);
   if (blockHashSchema.parse(await reader.readVault('policyHash', head.number)) !== expectedPolicyHash) throw new Error('Initial customer policy hash differs from the complete constructor package.');
   const { maxPayment, manualApprovalAbove, delayAbove, delaySeconds } = config.payment.policy;
   const expectedPolicy = [maxPayment, manualApprovalAbove, delayAbove, delaySeconds];
@@ -146,7 +150,22 @@ export async function readInitialDeploymentState(input: unknown, reader: Deploym
     ['totalReturned', 0n], ['MAX_REVIEW_TTL', 600n], ['POLICY_CHANGE_DELAY', 86400n]] as const) {
     if (uint.parse(await reader.readVault(name, head.number)) !== expected) throw new Error(`Fresh deployment ${name} changed or is incompatible.`);
   }
-  if (z.boolean().parse(await reader.readVault('paymentsPaused', head.number))) throw new Error('Fresh customer payments are paused.');
+  // The screened escrow must start paused (ADR-047); the payment escrow must not.
+  if (z.boolean().parse(await reader.readVault('paymentsPaused', head.number)) !== Boolean(screened)) {
+    throw new Error(screened ? 'Fresh screened escrow is not paused.' : 'Fresh customer payments are paused.');
+  }
+  if (screened && config.version === 4) {
+    if (z.union([z.number(), z.bigint()]).transform(Number).parse(await reader.readVault('executionMode', head.number)) !== 0) throw new Error('Fresh screened escrow is not in legacy mode.');
+    if (blockHashSchema.parse(await reader.readVault('screeningProfileHash', head.number)) !== screened.profileHash) throw new Error('Screening profile hash differs from the deployment package.');
+    const [providerIdHash, listIdHash, issuer, observation, snapshot] = z.tuple([blockHashSchema, blockHashSchema, cctpAddressSchema,
+      z.union([z.number(), z.bigint()]).transform(BigInt), z.union([z.number(), z.bigint()]).transform(BigInt)]).parse(await reader.readVault('screeningProfile', head.number));
+    const p = config.screening;
+    if (providerIdHash !== p.providerIdHash || listIdHash !== p.listIdHash || issuer !== p.issuer || observation !== p.maxObservationAgeSeconds || snapshot !== p.maxSnapshotAgeSeconds) {
+      throw new Error('Screening profile fields differ from the deployment package.');
+    }
+    const activeHead = z.tuple([blockHashSchema, uint, uint, uint]).parse(await reader.readVault('activeHead', head.number));
+    if (activeHead[0] !== `0x${'00'.repeat(32)}` || activeHead.slice(1).some((v) => v !== 0n)) throw new Error('Fresh screened escrow already has a list head.');
+  }
   if (blockHashSchema.parse(await reader.readVault('queuedChange', head.number)) !== `0x${'00'.repeat(32)}`) throw new Error('Fresh customer policy has a queued change.');
   for (const address of config.payment.recipients) {
     if (!z.boolean().parse(await reader.readVault('permittedRecipients', head.number, [address]))) throw new Error('A configured initial recipient is not permitted.');

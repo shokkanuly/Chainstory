@@ -5,6 +5,7 @@ import { createPublicClient, http, TransactionNotFoundError, TransactionReceiptN
 import { sepolia } from 'viem/chains';
 import guardian from '../../../src/tripwire/guardian.artifact.js';
 import payment from './cctpPaymentEscrow.artifact.js';
+import screened from './cctpScreenedPaymentEscrow.artifact.js';
 import { cctpDeploymentPlan } from './cctpDeployPlan.js';
 import { acceptCctpDeployment, deploymentReceiptTemplate, type DeploymentAcceptanceReader } from './cctpDeploymentAcceptance.js';
 import { stringifyPublic } from './cctpPreflight.js';
@@ -52,7 +53,7 @@ export function deploymentAcceptanceReader(client: PublicClient<Transport, typeo
         catch (error) { if (error instanceof TransactionReceiptNotFoundError) return null; throw error; } },
       readCode: (address, blockNumber) => client.getCode({ address, blockNumber }),
       readVault: (functionName, blockNumber, functionArgs) => client.readContract({ address: plan.contracts.vault,
-        abi: payment.abi as Abi, functionName, blockNumber, args: functionArgs }),
+        abi: (plan.screening ? screened.abi : payment.abi) as Abi, functionName, blockNumber, args: functionArgs }),
       readGuardian: (functionName, blockNumber, functionArgs) => client.readContract({ address: plan.contracts.guardian,
         abi: guardian.abi as Abi, functionName, blockNumber, args: functionArgs }),
       readGuardianGrants: (fromBlock, toBlock) => client.getContractEvents({ address: plan.contracts.guardian, abi: guardian.abi,
