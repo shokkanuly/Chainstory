@@ -1,6 +1,6 @@
 // src/tripwire/contractSummary.ts
 //
-// Retold's contract facts (services/contractIntel.ts) in the shape the risk
+// Tripwire's contract facts (services/contractIntel.ts) in the shape the risk
 // scorer takes. Pure: the caller fetches the facts with fetchContractIntel —
 // in the browser over /api, in Node through server/explorerTransport.ts — and
 // the scorer never touches the network.

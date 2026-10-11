@@ -11,7 +11,7 @@ const { chromium } = createRequire(import.meta.url)('playwright');
 const BASE = process.argv[2] ?? 'http://127.0.0.1:4173';
 const ROUTES = ['/', '/app', '/tripwire', '/tripwire?incident=kelp', '/tripwire?incident=verus', '/tripwire?incident=syscoin',
   '/tripwire/operations', '/check', '/v2', '/no-such-page'];
-const SIZES = [{ width: 1280, height: 900 }, { width: 390, height: 844 }];
+const SIZES = [{ width: 1280, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 760 }];
 const origin = new URL(BASE).origin;
 let failed = 0;
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
@@ -35,6 +35,10 @@ try {
       if (!response?.ok()) problems.push(`HTTP ${response?.status()}`);
       if (!heading.trim()) problems.push('no heading rendered');
       if (overflow > 1) problems.push(`horizontal overflow ${overflow}px`);
+      if (/retold/i.test(await page.locator('body').innerText())) problems.push('retired brand rendered');
+      if (!(await page.title()).includes('Tripwire')) problems.push('missing Tripwire page title');
+      if (route === '/app' && !page.url().endsWith('/tripwire/operations')) problems.push('legacy app was not redirected');
+      if (route === '/no-such-page' && heading !== '404') problems.push('missing not-found page');
       const ok = problems.length === 0;
       if (!ok) failed++;
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${String(viewport.width).padStart(4)}px  ${route.padEnd(26)} ${ok ? heading.split('\n')[0].slice(0, 60) : problems.join(' | ')}`);

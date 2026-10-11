@@ -14,7 +14,7 @@ export default function TripwirePage() {
     <div className="relative isolate min-h-[100dvh] text-foreground">
       <PageAurora />
       <Navbar />
-      <main className="pt-20">
+      <main id="main-content" className="pt-20">
         <TripwireDashboard />
       </main>
       <Footer />

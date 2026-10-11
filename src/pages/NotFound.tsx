@@ -1,18 +1,20 @@
 import { Link } from 'react-router-dom'
+import Navbar from '../components/Navbar'
+import Footer from '../components/Footer'
 
 export default function NotFound() {
   return (
-    <main className="flex min-h-screen items-center justify-center px-6 text-foreground">
+    <div><Navbar /><main id="main-content" className="flex min-h-[75dvh] items-center justify-center px-6 pt-20 text-foreground">
       <div className="space-y-4 text-center">
         <h1 className="text-4xl font-semibold">404</h1>
-        <p className="text-muted-foreground">Страница не найдена</p>
+        <p className="text-muted-foreground">This page could not be found.</p>
         <Link
           to="/"
           className="inline-flex rounded-md border border-border px-4 py-2 text-sm font-medium transition hover:bg-accent"
         >
-          На главную
+          Back to Tripwire
         </Link>
       </div>
-    </main>
+    </main><Footer /></div>
   )
 }

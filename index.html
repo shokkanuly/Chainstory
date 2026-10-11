@@ -4,51 +4,33 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Retold · Tripwire — read any wallet, protect every bridge</title>
-    <meta name="description" content="Retold turns any EVM wallet into plain English, a draft tax report and a risk check. Tripwire checks each bridge payout against a verifiable burn before it executes, and pauses just that route if not." />
-    <meta property="og:title" content="Retold · Tripwire — read any wallet, protect every bridge" />
-    <meta property="og:description" content="Every major 2026 bridge drain was one transaction. Replay Kelp DAO: acting before execution, Tripwire loses $0. One block later, it loses everything." />
-    <meta name="theme-color" content="#0b0f19" />
-
-    <!-- Google Fonts — Premium Stack -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <title>Tripwire — verify before release</title>
+    <meta name="description" content="Evidence before release. Tripwire verifies source backing, screening and customer rules for cross-chain USDC escrow payouts. Explore operations and the local incident replay." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Tripwire" />
+    <meta property="og:title" content="Tripwire — verify before release" />
+    <meta property="og:description" content="A control layer for cross-chain USDC. Verify the source, check the policy, and hold the payment when the evidence doesn’t add up." />
+    <meta property="og:image" content="https://chainstory-iota.vercel.app/brand/tripwire-social.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Tripwire — Every payout. Prove it first." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Tripwire — verify before release" />
+    <meta name="twitter:description" content="Evidence before release. Controls for cross-chain USDC payouts." />
+    <meta name="twitter:image" content="https://chainstory-iota.vercel.app/brand/tripwire-social.png" />
+    <meta name="theme-color" content="#0d0d12" />
 
     <!-- Theme before first paint: dark by default; a stored choice (ThemeToggle) wins, with no flash. -->
     <script>
       (function() {
         try {
-          var t = localStorage.getItem('chainstory-theme');
+          var t = localStorage.getItem('tripwire-theme') || localStorage.getItem('chainstory-theme');
           if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
           else if (t === 'system') document.documentElement.removeAttribute('data-theme');
         } catch (e) {}
       })();
     </script>
 
-    <!-- Font Gating Script for Zero FOUT -->
-    <script>
-      (function() {
-        document.documentElement.classList.add('fonts-pending');
-        if ('fonts' in document) {
-          Promise.all([
-            document.fonts.load('600 1em "Plus Jakarta Sans"'),
-            document.fonts.load('400 1em "JetBrains Mono"')
-          ]).then(function() {
-            document.documentElement.classList.remove('fonts-pending');
-            document.documentElement.classList.add('fonts-ready');
-          }).catch(function() {
-            document.documentElement.classList.remove('fonts-pending');
-          });
-        } else {
-          document.documentElement.classList.remove('fonts-pending');
-        }
-        setTimeout(function() {
-          document.documentElement.classList.remove('fonts-pending');
-        }, 2000);
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

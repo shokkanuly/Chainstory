@@ -126,7 +126,7 @@ export default function CheckBeforeSign() {
   return (
     <div className="mx-auto max-w-6xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
       <header>
-        <p className="b-eyebrow">Retold · check before you sign</p>
+        <p className="b-eyebrow">Tripwire · check before you sign</p>
         <DecodeText
           as="h1"
           text="Know what you are about to sign."
@@ -135,7 +135,7 @@ export default function CheckBeforeSign() {
           className="mt-2 block font-display text-[clamp(2rem,4.4vw,3.2rem)] font-semibold leading-[1.02] tracking-[-0.04em]"
         />
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Paste a pending transaction’s target and data, the way your wallet shows them. Retold reads the calldata,
+          Paste a pending transaction’s target and data, the way your wallet shows them. Tripwire reads the calldata,
           looks up the contracts involved on the block explorer, and tells you what signing does, with a green, yellow
           or red badge and the reasons for it. Nothing to connect, nothing to sign.
         </p>

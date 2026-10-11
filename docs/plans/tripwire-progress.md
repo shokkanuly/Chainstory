@@ -1,12 +1,41 @@
 # Tripwire: current continuation point
 
-Updated **10 October 2026**. Branch: `main` (via the integration PR from
-`claude/platform-motion-site-animations-65pkoi`). Main plan and limits:
+Updated **11 October 2026, Almaty**. Website branch: `codex/tripwire-site`, based
+on current `main` at `b3d88e3`. Main plan and limits:
 [handoff](tripwire-handoff.md). This file is updated with every completed step,
 together with its code and checks. Find this file's current commit with
 `git log -1 -- docs/plans/tripwire-progress.md`; do not paste a commit's own
 future hash into it. History before 9 October was translated from Russian;
 its facts and numbers are unchanged.
+
+## Completed step: Tripwire-only public website — 2026-10-11
+
+The public website now presents one product: Tripwire. Product overview,
+interactive illustrative payment gates, operations and local guardian replay
+share Tripwire navigation, wordmark, metadata and social assets. The old
+wallet/prototype pages are outside the route graph; old links redirect to
+operations or the overview. Unknown URLs show a branded visual 404.
+Old public PNG wordmarks and external font gating are removed. Existing
+analysis helpers remain for contract facts and regressions; historical docs
+and social material remain outside the deployed `public` tree.
+
+Operations can load the existing synthetic worker fixture through its normal
+public-report importer. It keeps the original capture age, clears prior state
+and cannot grant execution permission. Synthetic receipt references are text,
+while imported non-synthetic reports retain exact explorer links.
+
+Checks: **1,792 tests / 88 files**, build/typechecks and lint pass. Browser
+route/identity/overflow checks pass at 1280, 390 and 320 px; example gates,
+operations example/filter/search/clear, receipt provenance and replay step/play
+were exercised in the in-app browser. Full acceptance and delivery details are
+in the [site runbook](tripwire-site.md). No contract/artifact/operator changes,
+wallet keys, chain transactions, new provider or hosting project.
+
+Delivery: own working branch and PR into `main`, per current `AGENTS.md`.
+Production remains on the existing Vercel deployment until this PR is merged
+and its deployment succeeds; do not claim the local preview changed production.
+The next product task is still **H4c4**: independent review, issuer integration,
+fresh screened deployment/consent and real payment/hold/return evidence below.
 
 ## Completed step: H4c3b — the operator drives the screened escrow — 2026-10-10
 
