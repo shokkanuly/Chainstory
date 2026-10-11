@@ -170,7 +170,7 @@ describe('the counterparty check', () => {
     );
     expect(r.badge).toBe('red');
     const flag = r.reasons.find((x) => x.id === 'flagged_address');
-    expect(flag?.evidence).toContain('list: Retold curated phishing list');
+    expect(flag?.evidence).toContain('list: Tripwire curated phishing list');
     expect(flag?.title).toBe('The recipient appears on a phishing list');
   });
 

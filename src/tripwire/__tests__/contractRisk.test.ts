@@ -1,4 +1,4 @@
-// Stage 2: the scorer reuses Retold's contract checks. The "done when" is the
+// Stage 2: the scorer reuses Tripwire's contract checks. The "done when" is the
 // first test: an unverified, day-old, upgradeable target reaches THROTTLE with
 // no other anomaly. The rest pin what makes that safe to ship — contract facts
 // alone never go past THROTTLE, unknown facts never read as clean, and the
@@ -234,12 +234,12 @@ describe('the explorer transport', () => {
 
   it('in the browser, the default still calls /api/explorer on our own origin', async () => {
     const fetchSpy = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ status: '1', result: [] }) }));
-    vi.stubGlobal('window', { location: { origin: 'https://retold.example' } });
+    vi.stubGlobal('window', { location: { origin: 'https://tripwire.example' } });
     vi.stubGlobal('fetch', fetchSpy);
 
     await explorerRequest('base', { module: 'contract', action: 'getsourcecode', address: TARGET, page: undefined });
     expect(fetchSpy).toHaveBeenCalledWith(
-      `https://retold.example/api/explorer?chain=base&module=contract&action=getsourcecode&address=${TARGET}`
+      `https://tripwire.example/api/explorer?chain=base&module=contract&action=getsourcecode&address=${TARGET}`
     );
   });
 });

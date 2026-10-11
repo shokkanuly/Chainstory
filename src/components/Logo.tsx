@@ -1,12 +1,11 @@
 // src/components/Logo.tsx — the three-bar mark and a product wordmark.
 //
-// One mark for both products; the wordmark says which one you are in
-// (Retold by default, Tripwire on /tripwire). Live text, so it inherits colour.
+// Tripwire wordmark in live text, so it inherits the current theme.
 
 const MARK_GRADIENT_ID = 'brand-mark-gradient';
 
 /**
- * Bar geometry, traced from public/brand/chainstory-mark.png. Authored in the
+ * Bar geometry, traced from public/brand/tripwire-mark.svg. Authored in the
  * artwork's own 667x534 space and mapped into a 100x100 box below, so the
  * numbers can be checked against the source directly.
  */
@@ -72,13 +71,13 @@ export default function Logo({
   size = 28,
   flat = false,
   showWordmark = true,
-  name = 'Retold',
+  name = 'Tripwire',
   className,
 }: {
   size?: number;
   flat?: boolean;
   showWordmark?: boolean;
-  name?: 'Retold' | 'Tripwire';
+  name?: 'Tripwire';
   className?: string;
 }) {
   return (

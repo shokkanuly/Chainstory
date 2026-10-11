@@ -6,7 +6,7 @@ Update the status table in `docs/README.md` and the checkboxes here as work land
 
 ## Hackathon build (September 2026) — status
 
-### Active Tripwire work — 2026-10-10
+### Active Tripwire work — 2026-10-11
 
 The current project focus is Tripwire. [Hardening plan](plans/tripwire-hardening.md)
 supersedes the hackathon scope for new work; the legacy wallet/Solana phases below
@@ -14,6 +14,7 @@ remain historical context.
 
 | Milestone | Status |
 | :--- | :--- |
+| Tripwire-only public website | Product overview, operations/example report, replay, shared brand/navigation/metadata, restored silk/decode/reveal/pointer motion and legacy redirects; [site runbook](plans/tripwire-site.md). Payment pilot gates remain separate from website delivery. |
 | Signed per-release execution gate, retryable source/recipient observations and event cursor recovery | Implemented locally; see hardening plan for validation and trust boundaries |
 | Durable operator state, signed transaction journal and HOLD/delay recovery | Implemented locally; [operator runbook](plans/tripwire-operator.md); no live deployment |
 | Ethereum/Sepolia finalized observations, receipt reorg recovery and durable quarantine | Implemented locally; ADR-016; no live deployment |

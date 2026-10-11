@@ -57,7 +57,7 @@ export default function ExportButton({ transactions, walletAddress }: Props) {
     });
 
     const csvContent = [
-      `# Retold Tax Report`,
+      `# Tripwire Tax Report`,
       `# Wallet: ${walletAddress}`,
       `# Generated: ${new Date().toISOString()}`,
       `# Transactions: ${transactions.length}`,
@@ -70,7 +70,7 @@ export default function ExportButton({ transactions, walletAddress }: Props) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `retold-${formatAddress(walletAddress)}-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `tripwire-${formatAddress(walletAddress)}-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

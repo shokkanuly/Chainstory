@@ -41,7 +41,7 @@ const KNOWN_MALICIOUS: Record<string, { symbol: string; name: string; summary: s
 };
 
 /** The name the flag list is shown under, per the I9 wording policy. */
-export const FLAG_LIST_NAME = 'Retold curated phishing list';
+export const FLAG_LIST_NAME = 'Tripwire curated phishing list';
 
 export interface FlaggedAddress {
   address: string;

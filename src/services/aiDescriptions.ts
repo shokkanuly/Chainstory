@@ -9,7 +9,7 @@ import type { RawTransaction, TaxCategory } from '../types';
 import type { DescribePayload } from './apiClient';
 import { getMethodLabel } from './methodRegistry';
 
-const STORAGE_KEY = 'retold-ai-descriptions';
+const STORAGE_KEY = 'tripwire-ai-descriptions';
 
 /** Off unless this browser switched it on. Blocked storage (private windows) reads as off. */
 export function isAiDescriptionsEnabled(): boolean {

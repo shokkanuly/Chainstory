@@ -71,7 +71,7 @@ export type SignalId =
   | 'contract_risk';
 
 /**
- * What Retold's contract checks know about the contract an outflow goes to:
+ * What Tripwire's contract checks know about the contract an outflow goes to:
  * explorer facts, fetched by the caller so the scorer stays pure. Every field
  * can be null, meaning the explorer could not say — never "fine".
  */
