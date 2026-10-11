@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { motion, useScroll, useTransform } from 'framer-motion';
-import { ArrowDown, ArrowRight, ArrowUpRight, Check, CirclePause, Fingerprint, GitBranch, LockKeyhole, RotateCcw, ShieldCheck } from 'lucide-react';
+import { motion, useInView, useScroll, useTransform } from 'framer-motion';
+import { ArrowRight, ArrowUpRight, Check, CirclePause, Fingerprint, GitBranch, LockKeyhole, RotateCcw, ShieldCheck } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import Logo from '@/components/Logo';
@@ -9,7 +9,7 @@ import DecodeText from '@/components/motion/DecodeText';
 import RevealText from '@/components/motion/RevealText';
 import VelocityMarquee from '@/components/motion/VelocityMarquee';
 import { Magnetic, TiltCard } from '@/components/motion/pointer';
-import { EASE, useReducedMotion, useRise, useRiseInView, useStagger } from '@/lib/motion';
+import { EASE, useReducedMotion, useRise, useStagger } from '@/lib/motion';
 import '../styles/tripwire-site.css';
 
 const DOCS = 'https://github.com/shokkanuly/Chainstory/blob/main/docs/plans/';
@@ -28,9 +28,37 @@ const FAQ = [
   { q: 'What is ready today?', a: 'The repository includes the screened escrow, operator, discovery, receipt checks and operations viewer. A separate guardian bridge demo has a recorded Sepolia deployment. The screened payment pilot still needs an independent review, an issuer integration, a fresh deployment and real payment evidence.' },
 ];
 
+const CYCLE_MS = 5600;
+const glow = (color: string) => ({ '--glow': color, '--spot': color }) as CSSProperties;
+
+/** Cards rise out of the page in 3D as they scroll in (the pre-#21 RiseCard motion). */
+function useRiseTilt(delay = 0) {
+  const reduce = useReducedMotion();
+  return {
+    style: { transformPerspective: 1200, transformOrigin: '50% 100%' },
+    initial: reduce ? false : { opacity: 0, y: 48, rotateX: -11 },
+    whileInView: { opacity: 1, y: 0, rotateX: 0 },
+    viewport: { once: true, amount: 0.2 },
+    transition: { duration: 0.95, ease: EASE, delay: reduce ? 0 : delay },
+  } as const;
+}
+
 export default function Landing() {
   const [example, setExample] = useState(0);
   const reduce = useReducedMotion();
+  // The example card cycles while it is visible, until someone reads it (hover, focus) or picks one.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const cardInView = useInView(cardRef, { amount: 0.4 });
+  const [held, setHeld] = useState(false);
+  const [picked, setPicked] = useState(false);
+  const auto = !reduce && cardInView && !held && !picked;
+  useEffect(() => {
+    if (!auto) return;
+    const t = window.setTimeout(() => setExample((n) => (n + 1) % EXAMPLES.length), CYCLE_MS);
+    return () => window.clearTimeout(t);
+  }, [auto, example]);
+  const timingRef = useRef<HTMLDivElement>(null);
+  const timingInView = useInView(timingRef, { once: true, amount: 0.5 });
   const hero = useRef<HTMLDivElement>(null);
   const [wide, setWide] = useState(false);
   useEffect(() => {
@@ -49,7 +77,7 @@ export default function Landing() {
   const body = useRise(0.5);
   const ctas = useRise(0.65);
   const card = useRise(0.25, 30);
-  const reveal = useRiseInView();
+  const tilt = useRiseTilt;
   const stagger = useStagger(0.1);
   const selected = EXAMPLES[example];
   return <div className="tw-site min-h-[100dvh] text-foreground">
@@ -60,6 +88,7 @@ export default function Landing() {
           <ShaderField className="fx-hero-field tw-hero-field" />
         </motion.div>
         <div className="fx-hero-veil tw-hero-veil" aria-hidden />
+        <div className="tw-grid" aria-hidden />
         <section className="tw-hero tw-container">
         <motion.div className="tw-hero-copy" style={!reduce && wide ? { y: copyY } : undefined}>
           <motion.p className="tw-eyebrow" {...label}><span className="tw-dot" /> CROSS-CHAIN PAYMENTS / VERIFIED BEFORE RELEASE</motion.p>
@@ -67,28 +96,28 @@ export default function Landing() {
           <motion.p className="tw-lead" {...body}>A control layer for cross-chain USDC. Verify the source, check the policy, and hold the payment when the evidence doesn’t add up.</motion.p>
           <motion.div className="tw-actions" {...ctas}>
             <Magnetic><a href="/tripwire/operations" className="b-btn b-btn--primary">Open operations <ArrowUpRight size={17} /></a></Magnetic>
-            <Magnetic strength={0.15}><a href="/tripwire" className="tw-link">Run the replay <ArrowRight size={17} /></a></Magnetic>
+            <Magnetic strength={0.15}><a href="/tripwire" className="tw-btn-ghost">Run the replay <ArrowRight size={17} /></a></Magnetic>
           </motion.div>
-          <p className="tw-footnote">Read-only workspace · Testnet pilot tooling</p>
-          <a href="#workflow" className="tw-scroll"><ArrowDown size={15} /> Follow a payment</a>
+          <p className="tw-footnote tw-footnote--hero"><span>Read-only</span> · No connect · No sign · Testnet pilot tooling</p>
         </motion.div>
-        <motion.div className="tw-payment-motion" style={!reduce && wide ? { y: cardY } : undefined} aria-label="Illustrative payment checks">
+        <motion.div ref={cardRef} className="tw-payment-motion" style={!reduce && wide ? { y: cardY } : undefined} aria-label="Illustrative payment checks" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)} onFocus={() => setHeld(true)} onBlur={() => setHeld(false)}>
         <motion.div {...card}>
-        <TiltCard className="tw-payment" baseX={wide && !reduce ? 2 : 0} baseY={wide && !reduce ? -5 : 0} max={wide ? 6 : 0}>
+        <TiltCard className="tw-payment tw-glow" style={glow(selected.held ? 'var(--b-warn)' : 'var(--b-purple)')} baseX={wide && !reduce ? 2 : 0} baseY={wide && !reduce ? -5 : 0} max={wide ? 6 : 0}>
           <div className="tw-payment-top"><Logo size={25} /><span className="tw-chip">ILLUSTRATIVE EXAMPLE</span></div>
           <div className="tw-route"><span>BASE SEPOLIA</span><ArrowRight size={15} /><span>ETHEREUM SEPOLIA</span></div>
           <div className="tw-amount">1,200<span>USDC</span></div>
           <p className="tw-payment-caption">One payment. Every required check.</p>
           <div className="tw-example-picker" role="group" aria-label="Payment examples">
-            {EXAMPLES.map((item, i) => <button key={item.label} type="button" aria-pressed={i === example} onClick={() => setExample(i)}>{item.label}</button>)}
+            {EXAMPLES.map((item, i) => <button key={item.label} type="button" aria-pressed={i === example} onClick={() => { setPicked(true); setExample(i); }}>{item.label}</button>)}
           </div>
           <motion.ol key={example} className="tw-checks" variants={stagger.container} initial={reduce ? false : 'hidden'} animate="show">{selected.checks.map((check, i) => <motion.li key={check} variants={stagger.child} className="fx-scan" data-scan={reduce ? undefined : 'on'} style={{ '--scan': selected.held ? 'var(--b-warn)' : 'var(--b-purple)' } as CSSProperties}><span className="tw-check-index">0{i + 1}</span><span>{check}</span>{selected.held && (i >= 2 || (example === 1 && i === 0)) ? <CirclePause size={17} className="tw-warn" /> : <Check size={17} className="tw-pass" />}</motion.li>)}</motion.ol>
-          <div className={`tw-decision ${selected.held ? 'tw-decision--held' : ''}`} aria-live="polite" aria-atomic="true"><div><span className="tw-eyebrow">PAYMENT STATUS</span><strong><DecodeText text={selected.state} duration={550} /></strong><p>{selected.reason}</p></div><motion.span key={selected.state} initial={reduce ? false : { scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: reduce ? 0 : 0.45, ease: EASE }}>{selected.held ? <CirclePause size={27} /> : <ShieldCheck size={27} />}</motion.span></div>
+          <div className={`tw-decision ${selected.held ? 'tw-decision--held' : ''}`} aria-live={picked ? 'polite' : 'off'} aria-atomic="true"><div><span className="tw-eyebrow">PAYMENT STATUS</span><strong><DecodeText text={selected.state} duration={550} /></strong><p>{selected.reason}</p></div><motion.span key={selected.state} initial={reduce ? false : { scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: reduce ? 0 : 0.45, ease: EASE }}>{selected.held ? <CirclePause size={27} /> : <ShieldCheck size={27} />}</motion.span></div>
           <p className="tw-example-note">Synthetic scenario · No funds moved or execution permission issued.</p>
         </TiltCard>
         </motion.div>
         </motion.div>
         </section>
+        <a href="#workflow" className="tw-cue"><span className="tw-eyebrow">Follow a payment</span><span className="fx-cue" aria-hidden /></a>
       </div>
 
       <div className="tw-strip"><p className="sr-only">Authenticated backing, independent screening, customer rules and a fixed return path.</p><VelocityMarquee baseSpeed={1.8}>{['AUTHENTICATED BACKING', 'INDEPENDENT SCREENING', 'CUSTOMER RULES', 'FIXED RETURN PATH'].map((text) => <span className="tw-ticker-item" key={text}><span>+</span>{text}</span>)}</VelocityMarquee></div>
@@ -106,48 +135,48 @@ export default function Landing() {
       </section>
 
       <section id="controls" className="tw-section tw-container tw-controls">
-        <div className="tw-section-heading"><p className="tw-eyebrow">02 / BUILT INTO THE PATH</p><Heading first="Evidence first." accent="Control all the way through." /></div>
+        <div className="tw-section-heading"><p className="tw-eyebrow">02 / BUILT INTO THE PATH</p><Heading first="Evidence first." accent="Control all the way through." color="var(--b-cyan)" /></div>
         <div className="tw-control-grid">
           {[
-            { icon: Fingerprint, title: 'A payment with provenance.', text: 'Bind the source burn and destination mint to one operation, exact net amount and intended recipient. A missing proof remains a hold.' },
-            { icon: LockKeyhole, title: 'The customer sets the rules.', text: 'Recipient permissions, amount and budget limits, approvals, delays and pause state remain execution constraints.' },
-            { icon: ShieldCheck, title: 'Screening with a receipt.', text: 'The screened escrow checks independent issuer evidence at review and execution. Expired, missing or matched evidence blocks release.' },
-            { icon: RotateCcw, title: 'A defined way back.', text: 'Return an authenticated credit to its fixed destination beneficiary after the customer requests it and the required delay passes.' },
-          ].map(({ icon: Icon, title, text }) => <motion.article key={title} className="fx-spot" {...reveal}><Icon size={24} strokeWidth={1.5} /><h3>{title}</h3><p>{text}</p></motion.article>)}
+            { icon: Fingerprint, title: 'A payment with provenance.', text: 'Bind the source burn and destination mint to one operation, exact net amount and intended recipient. A missing proof remains a hold.', color: 'var(--b-purple)' },
+            { icon: LockKeyhole, title: 'The customer sets the rules.', text: 'Recipient permissions, amount and budget limits, approvals, delays and pause state remain execution constraints.', color: 'var(--b-cyan)' },
+            { icon: ShieldCheck, title: 'Screening with a receipt.', text: 'The screened escrow checks independent issuer evidence at review and execution. Expired, missing or matched evidence blocks release.', color: 'var(--b-gain)' },
+            { icon: RotateCcw, title: 'A defined way back.', text: 'Return an authenticated credit to its fixed destination beneficiary after the customer requests it and the required delay passes.', color: 'var(--b-amber)' },
+          ].map(({ icon: Icon, title, text, color }, i) => <motion.article key={title} className="fx-spot tw-glow" {...tilt(i * 0.09)} style={{ ...tilt().style, ...glow(color) }}><Icon size={24} strokeWidth={1.5} /><h3>{title}</h3><p>{text}</p></motion.article>)}
         </div>
         <p className="tw-scope-note">Controls cover the configured escrow path. Treasury owners and guardian authorities retain the powers documented in the integration’s trust model.</p>
       </section>
 
       <section id="operations" className="tw-section tw-container tw-operations">
-        <div className="tw-section-heading"><p className="tw-eyebrow">03 / THE OPERATOR’S VIEW</p><Heading first="Know what’s held." accent="Know what happened." /><p>Inspect reported payment states, hold reasons, policy versions and receipt timelines. Import a public report or follow a local report folder.</p><a href="/tripwire/operations" className="tw-link">Explore the operations workspace <ArrowUpRight size={17} /></a></div>
-        <motion.div className="tw-queue fx-spot" {...reveal}><div className="tw-queue-heading"><GitBranch size={17} /><span>PAYMENT QUEUE</span><span className="tw-chip">SYNTHETIC PREVIEW</span></div>
+        <div className="tw-section-heading"><p className="tw-eyebrow">03 / THE OPERATOR’S VIEW</p><Heading first="Know what’s held." accent="Know what happened." color="var(--b-amber)" /><p>Inspect reported payment states, hold reasons, policy versions and receipt timelines. Import a public report or follow a local report folder.</p><a href="/tripwire/operations" className="tw-link">Explore the operations workspace <ArrowUpRight size={17} /></a></div>
+        <motion.div className="tw-queue fx-spot tw-glow" {...tilt()} style={{ ...tilt().style, ...glow('var(--b-cyan)') }}><div className="tw-queue-heading"><GitBranch size={17} /><span>PAYMENT QUEUE</span><span className="tw-chip">SYNTHETIC PREVIEW</span></div>
           {[
             ['01', 'Held', 'Customer approval required', 'tw-warn'],
             ['02', 'Paid', 'Payout receipt reported', 'tw-pass'],
             ['03', 'Returned', 'Fixed return receipt reported', 'tw-muted'],
-          ].map(([id, state, reason, color]) => <motion.div className="tw-queue-row" key={id} {...reveal}><span className="tw-queue-id">PAYMENT / {id}</span><strong className={color}>{state}</strong><p>{reason}</p></motion.div>)}
+          ].map(([id, state, reason, color]) => <motion.div className="tw-queue-row" key={id} initial={reduce ? false : { opacity: 0, x: -12 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: 0.6 }} transition={{ duration: 0.5, ease: EASE, delay: reduce ? 0 : 0.25 + Number(id) * 0.12 }}><span className="tw-queue-id">PAYMENT / {id}</span><strong className={color}>{state}</strong><p>{reason}</p></motion.div>)}
           <p className="tw-example-note">Public reports describe a captured snapshot. They do not prove current liveness or a complete treasury inventory.</p>
         </motion.div>
       </section>
 
       <section id="replay" className="tw-section tw-container tw-replay">
-        <div><p className="tw-eyebrow">04 / TEST THE TIMING</p><Heading first="Before execution" accent="makes the difference." /><p className="tw-lead">Compare a guardian acting before a modeled payout with one reacting after inclusion. Step through synthetic patterns inspired by Kelp DAO, Verus and Syscoin.</p><Magnetic><a href="/tripwire?incident=kelp" className="b-btn b-btn--primary">Open incident replay <ArrowUpRight size={17} /></a></Magnetic><p className="tw-footnote">Local EVM · Compiled guardian · Synthetic inputs</p></div>
-        <motion.div className="tw-timing fx-spot" {...reveal}><div><span className="tw-eyebrow">BEFORE EXECUTION</span><div className="tw-timing-line"><span>Check</span><ArrowRight size={18} /><span className="tw-timing-gate">Hold</span><ArrowRight size={18} /><span>Payout waits</span></div></div><div><span className="tw-eyebrow">AFTER INCLUSION</span><div className="tw-timing-line"><span>Payout</span><ArrowRight size={18} /><span>Check</span><ArrowRight size={18} /><span className="tw-warn">Too late</span></div></div><p>This replay illustrates guardian timing. It does not reproduce original exploit transactions or establish prevented historical losses.</p></motion.div>
+        <div><p className="tw-eyebrow">04 / TEST THE TIMING</p><Heading first="Before execution" accent="makes the difference." color="var(--b-red)" /><p className="tw-lead">Compare a guardian acting before a modeled payout with one reacting after inclusion. Step through synthetic patterns inspired by Kelp DAO, Verus and Syscoin.</p><Magnetic><a href="/tripwire?incident=kelp" className="b-btn b-btn--primary">Open incident replay <ArrowUpRight size={17} /></a></Magnetic><p className="tw-footnote">Local EVM · Compiled guardian · Synthetic inputs</p></div>
+        <motion.div ref={timingRef} className="tw-timing fx-spot tw-glow" {...tilt()} style={{ ...tilt().style, ...glow('var(--b-red)') }}><div><span className="tw-eyebrow">BEFORE EXECUTION</span><div className="tw-timing-line"><span>Check</span><ArrowRight size={18} /><span className={`tw-timing-gate ${timingInView && !reduce ? 'fx-stamp' : ''}`}>Hold</span><ArrowRight size={18} /><span>Payout waits</span></div></div><div><span className="tw-eyebrow">AFTER INCLUSION</span><div className="tw-timing-line"><span>Payout</span><ArrowRight size={18} /><span>Check</span><ArrowRight size={18} /><span className={`tw-late ${timingInView && !reduce ? 'fx-stamp' : ''}`}>Too late</span></div></div><p>This replay illustrates guardian timing. It does not reproduce original exploit transactions or establish prevented historical losses.</p></motion.div>
       </section>
 
       <section id="readiness" className="tw-section tw-container">
         <div className="tw-section-heading"><p className="tw-eyebrow">05 / CURRENT RELEASE</p><Heading first="Built in the repo." accent="Pilot gates still open." /><p>The engineering and the deployment gates are separate. Here is the current payment-pilot scope.</p></div>
-        <div className="tw-readiness"><motion.article {...reveal}><span className="tw-chip">IMPLEMENTED LOCALLY</span><h3>Screened payment workflow</h3><ul><li>Escrow, customer policy and fixed returns</li><li>Independent screening receipt verification</li><li>Operator recovery and payment discovery</li><li>Public reports and operations viewer</li></ul><a href={`${DOCS}tripwire-progress.md`} target="_blank" rel="noopener noreferrer" className="tw-link">Read the engineering checkpoint <ArrowUpRight size={16} /></a></motion.article><motion.article {...reveal}><span className="tw-chip">PILOT GATES OPEN</span><h3>Next: real payment evidence</h3><ul><li>Independent review of the pinned release</li><li>Screening issuer/provider integration</li><li>Fresh screened escrow deployment and consent</li><li>Real payout, hold and return receipts</li></ul><a href={`${DOCS}tripwire-product.md`} target="_blank" rel="noopener noreferrer" className="tw-link">Read the product contract <ArrowUpRight size={16} /></a></motion.article></div>
+        <div className="tw-readiness"><motion.article {...tilt()}><span className="tw-chip">IMPLEMENTED LOCALLY</span><h3>Screened payment workflow</h3><ul><li>Escrow, customer policy and fixed returns</li><li>Independent screening receipt verification</li><li>Operator recovery and payment discovery</li><li>Public reports and operations viewer</li></ul><a href={`${DOCS}tripwire-progress.md`} target="_blank" rel="noopener noreferrer" className="tw-link">Read the engineering checkpoint <ArrowUpRight size={16} /></a></motion.article><motion.article {...tilt(0.09)}><span className="tw-chip">PILOT GATES OPEN</span><h3>Next: real payment evidence</h3><ul><li>Independent review of the pinned release</li><li>Screening issuer/provider integration</li><li>Fresh screened escrow deployment and consent</li><li>Real payout, hold and return receipts</li></ul><a href={`${DOCS}tripwire-product.md`} target="_blank" rel="noopener noreferrer" className="tw-link">Read the product contract <ArrowUpRight size={16} /></a></motion.article></div>
         <p className="tw-scope-note">First payment route: Base Sepolia → Ethereum Sepolia · CCTP v2 Standard · USDC. The recorded Sepolia guardian demo is separate from the screened payment pilot.</p>
       </section>
 
       <section id="faq" className="tw-section tw-container tw-faq"><div className="tw-section-heading"><p className="tw-eyebrow">06 / THE DETAILS</p><Heading first="Clear boundaries." accent="Useful answers." /></div><div>{FAQ.map(({ q, a }) => <details key={q}><summary>{q}<span aria-hidden>+</span></summary><p>{a}</p></details>)}</div></section>
-      <div className="fx-horizon"><section className="tw-close tw-container"><p className="tw-eyebrow">TRIPWIRE / VERIFY BEFORE RELEASE</p><Heading first="Put evidence" accent="in front of the payout." /><div className="tw-actions"><Magnetic><a href="/tripwire/operations" className="b-btn b-btn--primary">Open operations <ArrowUpRight size={17} /></a></Magnetic><Magnetic strength={0.15}><a href="/tripwire" className="tw-link">Try the replay <ArrowRight size={17} /></a></Magnetic></div></section></div>
+      <div className="fx-horizon"><section className="tw-close tw-container"><p className="tw-eyebrow">TRIPWIRE / VERIFY BEFORE RELEASE</p><Heading first="Put evidence" accent="in front of the payout." /><div className="tw-actions"><Magnetic><a href="/tripwire/operations" className="b-btn b-btn--primary">Open operations <ArrowUpRight size={17} /></a></Magnetic><Magnetic strength={0.15}><a href="/tripwire" className="tw-btn-ghost">Try the replay <ArrowRight size={17} /></a></Magnetic></div></section></div>
     </main>
     <Footer />
   </div>;
 }
 
-function Heading({ first, accent }: { first: string; accent: string }) {
-  return <RevealText parts={[{ text: first, className: 'tw-heading-line' }, { text: accent, className: 'tw-heading-line tw-heading-accent' }]} />;
+function Heading({ first, accent, color }: { first: string; accent: string; color?: string }) {
+  return <RevealText parts={[{ text: first, className: 'tw-heading-line' }, { text: accent, className: 'tw-heading-line tw-heading-accent', color }]} />;
 }

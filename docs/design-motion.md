@@ -50,9 +50,31 @@ and payment card move at different scroll speeds; parallax and tilt angles are
 zero below 851 px or without a fine hover pointer. The mobile field is dimmer
 with a stronger canvas veil behind reading text. Section reveals play once.
 
-The payment example stays under explicit visitor control: selecting a scenario
-restarts its check sweep and decodes the resulting status. There is no timer
-changing an announced payment state. Screen readers receive plain headings,
+The payment example cycles through its three scenarios every 5.6 s while it is
+on screen, as the pre-redesign hero card did, and stops for good on hover,
+focus or the first pick. Selecting a scenario restarts its check sweep and
+decodes the resulting status. The status is announced (`aria-live`) only after
+a visitor picks one, so no timer changes an announced payment state. Screen readers receive plain headings,
 one static ticker description and the selected payment status. Reduced motion
 uses plain text, visible sections, a still shader frame, a wrapped ticker with
 one visual copy and no scanning, parallax, magnetic movement or card tilt.
+
+## Restored landing motion — 11 October 2026
+
+The Tripwire redesign (#21/#22) dropped part of the earlier landing motion.
+Restored on the new copy, not the old: cards rise in with a 3D tilt
+(`rotateX -11° → 0`, once), cards carry their section accent as a corner glow
+(`.tw-glow`, `--glow`), the ledger grid sits behind the hero, the scroll cue
+returns under it, payment-queue rows slide in in order, and the replay's
+"Hold" / "Too late" verdicts land with the `fx-stamp` ring. Reduced motion
+shows all of it still: no tilt, no cycling, no stamp, no cue.
+
+## Pre-redesign look on the Tripwire structure — 11 October 2026
+
+The Tripwire sections, copy and order stay as they are. Their surface returns
+to the earlier landing: display headline 600 at up to 5.9rem with −0.06em
+tracking, section headings 600 at up to 4.4rem, 12 px mono labels, 17 px body,
+translucent 17 px glow cards (`--glow`) as separate tiles, pill secondary
+buttons, a cyan "READ-ONLY" line under the hero actions, a centred
+"Follow a payment" scroll cue, and one accent per section (purple, cyan,
+amber, red). Fonts and colour tokens are unchanged (`brand.css`).
