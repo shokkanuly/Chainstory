@@ -1,10 +1,14 @@
-> **Superseded.** This is the first launch copy, kept for reference. Its link
-> (retold-nu.vercel.app) no longer works. Use [launch-posts.md](launch-posts.md)
-> and the posters in [posters/](posters/).
+> **Superseded.** This is the first launch copy, kept for reference. Its links
+> now point at the live site (chainstory-iota.vercel.app); the old
+> retold-nu.vercel.app project no longer exists. Prefer
+> [launch-posts.md](launch-posts.md) and the posters in [posters/](posters/).
+> The three older `poster-*.png` files still show the old address in their
+> pixels; their SVGs are updated. Re-render them on a Mac with
+> `python3 docs/social/build.py` (needs Pillow), or use [posters/](posters/).
 
 # Launch copy — X and Threads
 
-App: **https://retold-nu.vercel.app** — this is the link that should go in
+App: **https://chainstory-iota.vercel.app** — this is the link that should go in
 every post. The GitHub repo is mentioned only where the point is that the
 project is open source.
 
@@ -68,7 +72,7 @@ something the beta does not do.
 > I'm looking for people who will actually paste an address and tell me where
 > it gets it wrong. That feedback is worth more to me than stars.
 >
-> Open source, MIT. Try it: https://retold-nu.vercel.app
+> Open source, MIT. Try it: https://chainstory-iota.vercel.app
 > Break it and tell me how: github.com/shokkanuly/Chainstory
 
 ---
@@ -83,7 +87,7 @@ Attach `poster-x-card.png`.
 > 5 EVM chains. No wallet connection — it's read-only.
 > Beta, open source, and the limitations are documented.
 >
-> https://retold-nu.vercel.app
+> https://chainstory-iota.vercel.app
 
 ---
 
@@ -116,7 +120,7 @@ Attach `poster-plain-english.png`.
 > It's open source. If you paste an address and it gets something wrong, that
 > is exactly what I want to hear.
 >
-> https://retold-nu.vercel.app
+> https://chainstory-iota.vercel.app
 
 ## Threads — follow-up post, a day or two later
 

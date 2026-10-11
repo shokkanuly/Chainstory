@@ -20,7 +20,7 @@ BRAND = ROOT / "public" / "brand"
 OUT = ROOT / "docs" / "social"
 
 # --- the only line you normally edit -------------------------------------
-SITE_URL = "retold-nu.vercel.app"
+SITE_URL = "chainstory-iota.vercel.app"
 
 # --- brand constants, measured from the supplied logo --------------------
 GRADIENT = (
