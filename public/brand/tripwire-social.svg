@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <title>Tripwire — Every payout. Prove it first.</title>
+  <rect width="1200" height="630" fill="#0d0d12"/>
+  <path d="M0 560H1200M900 0V630" stroke="#2e2e38"/>
+  <g fill="#a664fc" transform="translate(65,45) scale(.075)">
+    <polygon points="300,66.8 667,0 667,127.3 300,194.1"/>
+    <polygon points="0,236.8 667,170.1 667,297.4 0,364.1"/>
+    <polygon points="0,406.9 500,340.2 500,467.5 0,534.2"/>
+  </g>
+  <g font-family="Arial, sans-serif">
+    <text x="134" y="79" font-size="32" font-weight="700" fill="#f5f2eb">Tripwire</text>
+    <text x="65" y="245" font-size="88" font-weight="700" letter-spacing="-4" fill="#f5f2eb">Every payout.</text>
+    <text x="65" y="350" font-size="88" font-weight="700" letter-spacing="-4" fill="#a664fc">Prove it first.</text>
+    <text x="68" y="427" font-size="24" fill="#a9a9b8">Evidence-backed controls for cross-chain USDC.</text>
+    <text x="68" y="601" font-size="17" letter-spacing="2" fill="#a9a9b8">VERIFY THE SOURCE. CHECK THE POLICY. CONTROL THE RELEASE.</text>
+  </g>
+  <g stroke="#a664fc" fill="none" stroke-width="4">
+    <rect x="953" y="210" width="150" height="175" rx="18"/>
+    <path d="M976 259H1080M976 298H1080M976 337H1080"/>
+  </g>
+</svg>

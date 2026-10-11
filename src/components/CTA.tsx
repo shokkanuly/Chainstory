@@ -32,7 +32,7 @@ export default function CTA() {
               <span className="text-gradient-chain">Crypto Tax Liability</span>
             </h2>
             <p className="text-lg text-muted-foreground max-w-xl mx-auto mb-8 leading-relaxed">
-              Retold is read-only: no wallet connection, nothing to sign, nothing to approve.
+              Tripwire is read-only: no wallet connection, nothing to sign, nothing to approve.
               Lookups go through our API to the chain explorer; your tax report is built in your browser.
             </p>
 

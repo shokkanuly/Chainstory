@@ -286,14 +286,14 @@ function screeningSignal(transfer: BridgeTransfer, screening: ScreeningSource, f
   };
 }
 
-/** A contract this young has no track record. Retold's scanner uses 30 days; a week is the sharper edge. */
+/** A contract this young has no track record. Tripwire's scanner uses 30 days; a week is the sharper edge. */
 const NEW_CONTRACT_DAYS = 7;
 const YOUNG_CONTRACT_DAYS = 30;
 
 /**
  * Rule 5 — what the money is going to.
  *
- * Retold's contract facts (verified source, age, upgradeability, admin
+ * Tripwire's contract facts (verified source, age, upgradeability, admin
  * functions), scored against the outflow's target. Each is a fetched fact,
  * not an estimate, but no single one is damning: plenty of honest contracts
  * are young, or upgradeable. All three at once — unpublished code, deployed
@@ -362,7 +362,7 @@ export interface ScoreInput {
   screening: ScreeningSource;
   now: number;
   config?: ScorerConfig;
-  /** Retold's facts about the contract the outflow goes to. Optional: fetched by the caller. */
+  /** Tripwire's facts about the contract the outflow goes to. Optional: fetched by the caller. */
   targetContract?: ContractRiskSummary;
 }
 

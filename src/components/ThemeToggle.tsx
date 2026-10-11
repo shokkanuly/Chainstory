@@ -11,11 +11,11 @@ import { MonitorIcon, MoonIcon, SunIcon } from '@phosphor-icons/react';
 
 type Theme = 'light' | 'dark' | 'system';
 
-const STORAGE_KEY = 'chainstory-theme';
+const STORAGE_KEY = 'tripwire-theme';
 
 function readStored(): Theme {
   try {
-    const value = localStorage.getItem(STORAGE_KEY);
+    const value = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem('chainstory-theme');
     return value === 'light' || value === 'system' ? value : 'dark';
   } catch {
     // Private windows and blocked storage both throw. Keep the default.

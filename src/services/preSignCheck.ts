@@ -123,7 +123,7 @@ export interface PreSignDeps {
 }
 
 export const PRE_SIGN_DISCLAIMER =
-  'Advisory only. Retold never connects to your wallet and cannot sign or send anything. ' +
+  'Advisory only. Tripwire never connects to your wallet and cannot sign or send anything. ' +
   'This reads the calldata and public explorer facts; it is not an audit, and a clean result is not a guarantee.';
 
 const short = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;

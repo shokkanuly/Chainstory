@@ -1,19 +1,18 @@
 <p align="center">
-  <img src="public/brand/chainstory-mark.svg" width="72" alt="" />
+  <img src="public/brand/tripwire-mark.svg" width="72" alt="Tripwire" />
 </p>
 
-<h1 align="center">Retold · Tripwire</h1>
+<h1 align="center">Tripwire</h1>
 
 <p align="center">
-  <strong>Read any wallet. Protect every bridge.</strong><br />
-  A settlement firewall that stops a bridge drain <em>before</em> the payout executes,<br />
-  and a wallet reader that explains every transaction in plain English.
+  <strong>Every payout. Prove it first.</strong><br />
+  Evidence-backed controls for cross-chain USDC escrow payouts:<br />
+  source backing, independent screening, customer policy and fixed returns.
 </p>
 
 <p align="center">
   <a href="https://chainstory-iota.vercel.app/tripwire?incident=kelp"><strong>▶ Tripwire replay</strong></a> ·
-  <a href="https://chainstory-iota.vercel.app/check"><strong>▶ Check before you sign</strong></a> ·
-  <a href="https://chainstory-iota.vercel.app/app"><strong>▶ Retold app</strong></a> ·
+  <a href="https://chainstory-iota.vercel.app/tripwire/operations"><strong>▶ Payment operations</strong></a> ·
   <a href="#live-on-sepolia-policy-v4">Live on Sepolia</a> ·
   <a href="#we-attacked-our-own-system">Security audit</a> ·
   <a href="#run-it-locally">Run it locally</a>
@@ -43,20 +42,26 @@
 | **27 decision records** | Every security trade-off is written down in [docs/07-decisions-adr.md](docs/07-decisions-adr.md): context, decision, limits and tests |
 | **5 contracts, 916 lines of Solidity** | Small enough to read in one sitting; guardian runtime 9,599 bytes, escrow 10,358 bytes (EIP-170 limit 24,576) |
 
-## Two products, one idea
+## One product, one payment path
 
-On-chain data is machine-readable and human-incomprehensible. We built two
-tools on that insight:
+Tripwire controls payouts through a configured USDC escrow. The screened payment
+workflow binds the source operation and exact destination credit to customer
+rules and independent issuer evidence. Missing mandatory evidence means HOLD;
+authenticated credits retain a fixed, customer-requested return path.
 
-| | For | What it does |
-| :--- | :--- | :--- |
-| **[Retold](https://chainstory-iota.vercel.app/app)** | Anyone with a wallet | Paste an address or ENS name: get its history in plain English, a draft Form 8949 tax report, token approvals and a counterparty risk check. **[Check before you sign](https://chainstory-iota.vercel.app/check)**: paste a pending transaction and get a green, yellow or red badge with its reasons. Read-only: no wallet connection, nothing to sign. |
-| **[Tripwire](https://chainstory-iota.vercel.app/tripwire)** | Bridge teams | Checks each bridge payout *before* it executes, and tightens just that route in proportion: throttle, delay, or freeze. |
+The website has three surfaces: a product overview at `/`, the read-only
+operations viewer at `/tripwire/operations`, and a synthetic local guardian
+replay at `/tripwire`. Operations offers an explicit example report and public
+JSON import; historical example capture times are preserved.
 
-Retold explains what a transaction did, before or after it is signed. Tripwire
-applies the same verification before a bridge payout can do damage, and reuses
-Retold's contract checks to do it. The rest of this README is about Tripwire;
-Retold's full documentation is in [docs/chainstory.md](docs/chainstory.md).
+The retired wallet-analysis routes no longer expose a separate product. `/app`
+redirects to operations; `/check` and `/v2` redirect to the overview. Shared
+analysis services remain for contract facts and regression coverage, outside
+the site's route graph. See the [site runbook](docs/plans/tripwire-site.md).
+
+The recorded policy-v4 Sepolia guardian deployment is a **bridge demo**, separate
+from the screened payment pilot. Independent review, issuer integration, a fresh
+screened deployment and real payment receipts remain open at H4c4.
 
 ## The problem
 
@@ -134,7 +139,7 @@ flowchart LR
 | **Size vs baseline** | A release far outside what the route normally does (rolling baseline from finalized source burns) | Estimate |
 | **Withdrawal velocity** | A burst that drains the pool under a per-transfer cap | Estimate |
 | **Counterparty** | A recipient already tied to a hack or sanctions | Proof, when flagged |
-| **Receiving contract** | Money sent to a contract that is unverified, days old and upgradeable, read from the explorer by Retold's contract check | Estimate: alone, at most THROTTLE |
+| **Receiving contract** | Money sent to a contract that is unverified, days old and upgradeable, read from the explorer by the shared contract check | Estimate: alone, at most THROTTLE |
 
 One strong suspicion throttles; two independent ones (a drain-profile contract
 *and* an anomalous size or burst) delay; proof freezes. The first rule catches
@@ -324,15 +329,15 @@ approval refused after a rule change.
 git clone https://github.com/shokkanuly/Chainstory.git
 cd Chainstory
 npm install
-npm run dev                    # Retold at /app and /check, Tripwire at /tripwire
+npm run dev                    # Tripwire overview at /, operations at /tripwire/operations
 npm test                       # 1,787 tests
 npm run test:mutants           # 97 broken contract variants, each must be caught
 npm run demo:attack            # the four-step attack against real bytecode in a local EVM, ~2 s
 ```
 
-No API keys are needed for the Tripwire replay or the local demo. Retold needs
-an `ETHERSCAN_API_KEY` for live wallet data; see [`.env.example`](.env.example).
-AI descriptions are off unless you switch them on in the app.
+No API keys are needed for the website, example report, replay or local demo.
+The standalone operator has its own configuration and role boundaries; see
+[`.env.example`](.env.example) and the operator runbooks.
 
 **Deploy your own:** put one key per role and your Safe's address in
 `.env.tripwire` (git-ignored), then `npm run tripwire:deploy`,
@@ -352,9 +357,8 @@ shared key and an owner that is not a contract. Step-by-step:
 | [`src/chains/evm/`](src/chains/evm/) | Pure EVM codecs: CCTP v2 messages, payment policy, the screening evidence verifier |
 | [`src/pages/TripwireOperations.tsx`](src/pages/TripwireOperations.tsx) | The read-only payment operations page at `/tripwire/operations` |
 | [`scripts/smoke/`](scripts/smoke/) | Real-browser checks: every route at desktop and phone width, and the report-folder flow |
-| [`src/services/preSignCheck.ts`](src/services/preSignCheck.ts) | Check before you sign, at `/check` |
-| [`src/pages/Workspace.tsx`](src/pages/Workspace.tsx) | Retold, the wallet analyser at `/app` |
-| [`api/`](api/), [`server/`](server/) | Retold's stateless API proxy; keeps explorer keys server-side |
+| [`src/pages/Landing.tsx`](src/pages/Landing.tsx) | Tripwire product overview and illustrative payment gates |
+| [`api/`](api/), [`server/`](server/) | Stateless API proxy for the shared contract-analysis services |
 
 | Document | Read it for |
 | :--- | :--- |
@@ -370,7 +374,7 @@ shared key and an owner that is not a contract. Step-by-step:
 
 | | Built and tested | Roadmap |
 | :--- | :--- | :--- |
-| Retold | Wallet stories, draft Form 8949, approvals, contract risk, Check before you sign, opt-in AI wording | Solana analysis in the app (adapters exist, not wired in) |
+| Website | Tripwire overview, read-only operations, example report, local replay and legacy route redirects | Real screened payment evidence and reviewed pilot deployment |
 | Tripwire oracle | Five rules, graduated tiers, `indeterminate` when blind, rolling baseline from finalized burns, proof-first verdict | A trained model |
 | Guardian | THROTTLE / DELAY / FREEZE, escalate-only, 24 h expiry, 72 h oracle span, time-locked oracle rotation, kill switch; **policy v4 live on Sepolia, owned by a Safe** | External audit; mainnet; a Solana (Anchor) guardian |
 | Operations | Durable journal, finalized and safe-head feeds, reorg quarantine, multi-RPC proof agreement, separate key roles and nonce lanes, fee-bumped replacement, RPC failover, authenticated CCTP v2 escrow | Live CCTP pilot; quorum members on separate machines |
