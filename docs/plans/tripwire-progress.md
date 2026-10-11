@@ -1,12 +1,33 @@
 # Tripwire: current continuation point
 
-Updated **11 October 2026, Almaty**. Website branch: `codex/tripwire-site`, based
-on current `main` at `b3d88e3`. Main plan and limits:
+Updated **11 October 2026, Almaty**. Website motion branch: `codex/tripwire-motion`, based
+on current `main` at `adaf99b` (merged website PR #21). Main plan and limits:
 [handoff](tripwire-handoff.md). This file is updated with every completed step,
 together with its code and checks. Find this file's current commit with
 `git log -1 -- docs/plans/tripwire-progress.md`; do not paste a commit's own
 future hash into it. History before 9 October was translated from Russian;
 its facts and numbers are unchanged.
+
+## Completed step: Tripwire motion restored — 2026-10-11
+
+The existing shared animation layer is adapted to the Tripwire-only landing:
+silk shader, hex headline/status decode, once-only word/card reveals, desktop
+hero parallax, payment-card tilt, magnetic actions, spotlights and velocity
+ticker. Example checks scan in sequence and the selected status icon lands.
+Examples remain explicitly selected; no timer changes the announced state.
+Mobile uses a dimmer field/stronger reading veil with no parallax or tilt.
+Reduced motion leaves all content visible and renders plain text, a still
+shader and one wrapped ticker copy. No new dependencies or payment logic.
+
+Checks: **1,792 tests / 88 files**, build/typechecks and lint pass. Browser QA
+covers 1280/390/320 px, heading colours and settled reveals, pointer tilt,
+scenario switching, mobile zero angles, navigation and overflow. A temporary
+local fixture exercised reduced-motion JS behavior and the matching ticker
+CSS, without changing native OS preferences or shipping a test route.
+
+Delivery: own branch and PR into `main`; production is updated only once the
+PR is merged and the exact Vercel deployment succeeds. The next product task
+remains **H4c4**, independent review and real screened payment-pilot evidence.
 
 ## Completed step: Tripwire-only public website — 2026-10-11
 
@@ -32,8 +53,8 @@ in the [site runbook](tripwire-site.md). No contract/artifact/operator changes,
 wallet keys, chain transactions, new provider or hosting project.
 
 Delivery: own working branch and PR into `main`, per current `AGENTS.md`.
-Production remains on the existing Vercel deployment until this PR is merged
-and its deployment succeeds; do not claim the local preview changed production.
+PR #21 was merged as `adaf99b`; its exact Vercel production deployment
+succeeded and the live Tripwire overview/operations routes were verified.
 The next product task is still **H4c4**: independent review, issuer integration,
 fresh screened deployment/consent and real payment/hold/return evidence below.
 
