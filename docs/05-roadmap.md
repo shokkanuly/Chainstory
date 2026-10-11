@@ -14,7 +14,7 @@ remain historical context.
 
 | Milestone | Status |
 | :--- | :--- |
-| Tripwire-only public website | Product overview, operations/example report, replay, shared brand/navigation/metadata, restored silk/decode/reveal/pointer motion and legacy redirects; [site runbook](plans/tripwire-site.md). Payment pilot gates remain separate from website delivery. |
+| Tripwire-only public website | Product overview, operations/example report, replay, shared brand/navigation/metadata, restored silk/decode/reveal/pointer motion, 3D card rise, accent glows, ledger grid, scroll cue, cycling payment example and verdict stamps, and legacy redirects; [site runbook](plans/tripwire-site.md). Payment pilot gates remain separate from website delivery. |
 | Signed per-release execution gate, retryable source/recipient observations and event cursor recovery | Implemented locally; see hardening plan for validation and trust boundaries |
 | Durable operator state, signed transaction journal and HOLD/delay recovery | Implemented locally; [operator runbook](plans/tripwire-operator.md); no live deployment |
 | Ethereum/Sepolia finalized observations, receipt reorg recovery and durable quarantine | Implemented locally; ADR-016; no live deployment |

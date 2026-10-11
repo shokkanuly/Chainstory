@@ -104,7 +104,21 @@
 @media (max-width: 850px) { .tw-hero { grid-template-columns: 1fr; padding-top: 130px; gap: 45px; } .tw-hero-copy { max-width: 620px; } .tw-hero h1 { font-size: clamp(58px, 10vw, 80px); } .tw-scroll { display: none; } .tw-payment { max-width: 600px; width: 100%; } .tw-flow { grid-template-columns: 1fr 1fr; gap: 32px; } .tw-operations, .tw-replay, .tw-faq { grid-template-columns: 1fr; } .tw-section { padding-block: 65px; } }
 @media (max-width: 540px) { .tw-container { width: calc(100% - 36px); } .tw-hero { padding-block: 112px 50px; } .tw-hero h1 { font-size: clamp(46px, 12vw, 64px); margin-block: 23px; } .tw-lead { font-size: 15px; } .tw-actions { gap: 22px; } .tw-payment { padding: 20px; } .tw-payment-top .tw-chip { font-size: 8px; } .tw-example-picker button { padding-inline: 7px; font-size: 9px; } .tw-control-grid, .tw-readiness { grid-template-columns: 1fr; } .tw-control-grid article { padding: 26px; } .tw-flow { gap: 24px 20px; } .tw-flow h3 { font-size: 25px; } .tw-flow .tw-eyebrow { font-size: 9px; } .tw-queue { padding: 20px; } .tw-queue-heading { flex-wrap: wrap; } .tw-queue-heading .tw-chip { font-size: 8px; } .tw-timing { padding: 23px; } .tw-timing-line { font-size: 10px; gap: 6px; } .tw-close { padding-block: 75px; } }
 
+/* Restored from the pre-#21 landing: the faint ledger grid behind the hero,
+ * accent glows on cards (set --glow), the scroll cue and the replay stamp. */
+.tw-grid { position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background-image: linear-gradient(color-mix(in srgb, var(--b-text) 4%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--b-text) 4%, transparent) 1px, transparent 1px);
+  background-size: 56px 56px; mask-image: radial-gradient(ellipse 80% 70% at 50% 0%, #000 30%, transparent 75%); }
+.tw-glow { --glow: var(--b-purple); background-image: radial-gradient(circle at 80% 19%, color-mix(in oklab, var(--glow) 16%, transparent), transparent 220px); }
+.tw-control-grid article.tw-glow svg { color: var(--glow); }
+.tw-cue { padding-bottom: 32px; }
+.tw-timing-gate, .tw-late { border-radius: 5px; --stamp: var(--b-purple); }
+.tw-late { padding: 8px 14px; color: var(--b-warn); --stamp: var(--b-red); }
+@media (max-width: 850px) { .tw-cue { display: none; } }
+@media (max-width: 540px) { .tw-late { padding: 6px 8px; } }
+
 @media (prefers-reduced-motion: reduce) {
+  .tw-cue { display: none; }
   .tw-strip > div > div { width: 100%; flex-wrap: wrap; }
   .tw-strip > div > div > span { width: 100%; flex-wrap: wrap; justify-content: center; }
   .tw-strip > div > div > span:not(:first-child) { display: none; }
