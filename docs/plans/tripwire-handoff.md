@@ -193,8 +193,10 @@ engineering preparation tools below are keyless/unsigned.
    ```
 
    Replace the placeholders with real blocks. The signing operator uses its own
-   journal and explicit receipt locators: handing discovery to signing is not
-   implemented yet. One writer per journal and one owner per account nonce.
+   journal. It takes explicit receipt locators from its manifest, or (since
+   ADR-050) runs discovery itself with `--discover-resume=SOURCE:DESTINATION` on
+   an empty manifest 3 or 4; the hints never skip receipt authentication. One
+   writer per journal and one owner per account nonce.
 7. Record a normal payout, customer approval/delay, policy invalidation, pause,
    HOLD→retry, recovery request→maturity→fixed return and restart/outage. Separate
    receipt inclusion from finality and from operator-added latency.

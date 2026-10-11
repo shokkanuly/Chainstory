@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-1%2C781_passing-brightgreen" alt="1,781 tests passing" />
+  <img src="https://img.shields.io/badge/tests-1%2C787_passing-brightgreen" alt="1,787 tests passing" />
   <img src="https://img.shields.io/badge/mutation_tests-111%2F111_caught-brightgreen" alt="111 of 111 mutants caught" />
   <img src="https://img.shields.io/badge/Sepolia-policy_v4_live-6f42c1" alt="Policy v4 live on Sepolia" />
   <img src="https://img.shields.io/badge/owner-Safe_multisig-12ff80" alt="Owned by a Safe" />
@@ -36,7 +36,7 @@
 | | |
 | :--- | :--- |
 | **$313.6M → $0** | Three real 2026 bridge exploits (Kelp DAO, Verus, Syscoin) replayed through Tripwire: every drain is stopped before execution |
-| **1,781 tests, 85 suites** | Contracts run in a real EVM, the operator is killed mid-write with SIGKILL, RPCs lie, blocks reorg, and the gas spikes |
+| **1,787 tests, 86 suites** | Contracts run in a real EVM, the operator is killed mid-write with SIGKILL, RPCs lie, blocks reorg, and the gas spikes |
 | **111 / 111 mutants caught** | Every safety rule in the contracts and the operator's screening gate is deliberately broken by a script, and a test catches each break |
 | **11 findings fixed** | We audited our own code, then the merged work of all three contributors; every finding was proven with a failing test, fixed, and kept as a regression test |
 | **Live on Sepolia** | Policy v4, every contract verified on Etherscan, the guardian owned by a Safe; the live attack ran NONE → THROTTLE → DELAY → FREEZE |
@@ -267,10 +267,11 @@ if a rotation is ever pending ([runbook](docs/plans/tripwire-operator.md#redeplo
 | On-chain screening gate: receipts, list heads, consent and execution recheck (S03–S27) | 33 tests |
 | Screening in the operator: evidence gate and journal, head relay, format-4 reviews, advisory consent, manifest 4, restarts (S02–S28) | 49 tests |
 | Screened pilot tooling: deploy package, receipt-backed acceptance, keyless screened report and discovery, provider-call floor | 31 tests |
+| Discovery handed to the signing operator: locators only, cursor committed after the round | 6 tests |
 | Every page in real Chromium at desktop and phone width; report-folder flow | 20 / 20 and 12 / 12 browser checks |
 | Guardian, release-review, quorum, CCTP, payment-escrow, screening and operator-gate rules broken on purpose (`npm run test:mutants`) | **111 / 111 mutants caught** |
 | Gas: check an outflow · accept an attestation | 79.0k · 88.3k |
-| **Total** | **1,781 tests passing** |
+| **Total** | **1,787 tests passing** |
 
 ## Next: the customer payment escrow
 
@@ -324,7 +325,7 @@ git clone https://github.com/shokkanuly/Chainstory.git
 cd Chainstory
 npm install
 npm run dev                    # Retold at /app and /check, Tripwire at /tripwire
-npm test                       # 1,781 tests
+npm test                       # 1,787 tests
 npm run test:mutants           # 97 broken contract variants, each must be caught
 npm run demo:attack            # the four-step attack against real bytecode in a local EVM, ~2 s
 ```
@@ -357,7 +358,7 @@ shared key and an owner that is not a contract. Step-by-step:
 
 | Document | Read it for |
 | :--- | :--- |
-| [Decision records](docs/07-decisions-adr.md) | 49 ADRs: every trade-off, its limits and its tests |
+| [Decision records](docs/07-decisions-adr.md) | 50 ADRs: every trade-off, its limits and its tests |
 | [Payment product plan](docs/plans/tripwire-product.md) · [handoff](docs/plans/tripwire-handoff.md) · [checkpoint](docs/plans/tripwire-progress.md) | The 12-week plan, what is done, and the next step |
 | [Audit package](docs/plans/tripwire-audit-package.md) | Scope, exact build, role powers and bypass paths for an external auditor |
 | [Settlement firewall build map](docs/plans/tripwire-settlement-firewall.md) | How each part of the brief maps to code, and what is still open |

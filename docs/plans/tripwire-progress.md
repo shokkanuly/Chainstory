@@ -57,6 +57,14 @@ Tests: deploy plan (8) and acceptance (10), policy-hash agreement with the compi
 escrow, keyless screened audit and discovery (8, through the public schema),
 fetch floor (4), 2 new mutants. Full suite: 1,781 tests / 85 files.
 
+## Completed step: discovery handed to the signing operator — 2026-10-11
+
+ADR-050. `npm run tripwire:cctp:operator -- … --discover-resume=SOURCE:DESTINATION`
+on an empty manifest 3 or 4 lets the signing operator find its own proof
+locators. They are hints: the source adapter authenticates both receipts before
+any ALLOW. The cursor is committed to the operator's journal only after the
+round's work and a canonical re-check. 6 tests; full suite 1,787 / 86 files.
+
 ## Next step: H4c4 — human-owned review, deployment and consent
 
 Engineering for H4c is complete locally. What remains needs people:

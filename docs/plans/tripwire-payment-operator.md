@@ -143,7 +143,14 @@ the manifest, command arguments or chat. Set `SEPOLIA_RPC_URL` and
 ```bash
 npm run tripwire:cctp:observe -- manifest.json observer.sqlite --watch
 npm run tripwire:cctp:operator -- manifest.json operator.sqlite SOURCE_START_BLOCK DESTINATION_START_BLOCK --watch
+# Or let the operator find its own locators (empty manifest 3 or 4; ADR-050):
+npm run tripwire:cctp:operator -- manifest.json operator.sqlite SOURCE_START_BLOCK DESTINATION_START_BLOCK --watch --discover-resume=SOURCE_START_BLOCK:DESTINATION_START_BLOCK
 ```
+
+With `--discover-resume`, discovered burn/credit pairs are proof locators only.
+The operator still fetches and authenticates both receipts before any ALLOW. The
+discovery cursor is kept in the operator's journal and committed only after the
+round's operator work and a canonical re-check, so a crash or reorg re-scans.
 
 Use one writer per journal and exclusive control of its account's transaction
 nonce. Keep observer and running operator databases separate to avoid lease

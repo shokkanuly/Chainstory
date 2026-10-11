@@ -422,3 +422,15 @@ Keys are server environment variables (`ETHERSCAN_API_KEY`, `GEMINI_API_KEY`), n
 
 **Limits:** No real provider and no deployment. The floor delays noticing a newer head by up to 30 s while a hold is cached.
 **Validation:** 8 deploy-plan and 10 acceptance tests, a policy-hash agreement test against the compiled escrow, 8 keyless audit and discovery tests that round-trip through the public schema and page parser, 4 fetch-floor tests and 2 new mutants. Full suite: 1,781 tests / 85 files; lint, typecheck and build clean.
+
+### ADR-050 — The signing operator can discover its own proof locators
+
+**Status:** Implemented locally 2026-10-11 under the human's instruction to continue the plan (H3 listed "handing discovery to signing" as not implemented).
+**Problem:** The keyless observer could discover payments from finalized burn and credit events, but the signing operator only accepted locators written by hand into its manifest. A pilot would need a person, or a second process, to copy locators across journals.
+**Decision:** `operatorDiscovery` runs the existing discovery inside the operator, behind an explicit `--discover-resume=SOURCE:DESTINATION` flag and only for an empty manifest 3 or 4.
+- Discovered pairs only feed the operator's `locate`. The source adapter still fetches and authenticates both receipts, the exact net mint and the credit binding before any ALLOW; a hint cannot create one.
+- The cursor lives in the operator's own journal (one writer). It is committed only after the round's operator work and a final canonical check, so a failed tick, a crash or a reorg re-scans instead of skipping.
+- Manifest 4 discovery decodes only the v2 hook (ADR-049).
+
+**Limits:** Discovery keeps its existing bounds (4096 blocks per scan, 100 hints per chain per journal); reaching capacity stops the operator for reconciliation. The observer and the operator keep separate journals.
+**Validation:** 6 tests (locator handoff for both hook versions, no commit on a failed tick or a changed history, refusal of manual or non-customer manifests, strict flag parsing). Full suite: 1,787 tests / 86 files; lint, typecheck and build clean.
