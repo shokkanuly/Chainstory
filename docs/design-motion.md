@@ -68,3 +68,13 @@ Restored on the new copy, not the old: cards rise in with a 3D tilt
 returns under it, payment-queue rows slide in in order, and the replay's
 "Hold" / "Too late" verdicts land with the `fx-stamp` ring. Reduced motion
 shows all of it still: no tilt, no cycling, no stamp, no cue.
+
+## Pre-redesign look on the Tripwire structure — 11 October 2026
+
+The Tripwire sections, copy and order stay as they are. Their surface returns
+to the earlier landing: display headline 600 at up to 5.9rem with −0.06em
+tracking, section headings 600 at up to 4.4rem, 12 px mono labels, 17 px body,
+translucent 17 px glow cards (`--glow`) as separate tiles, pill secondary
+buttons, a cyan "READ-ONLY" line under the hero actions, a centred
+"Follow a payment" scroll cue, and one accent per section (purple, cyan,
+amber, red). Fonts and colour tokens are unchanged (`brand.css`).

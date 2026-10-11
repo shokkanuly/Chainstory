@@ -96,13 +96,36 @@
 .tw-close h2 { font-size: clamp(38px, 5.5vw, 70px); }
 .tw-close .tw-actions { justify-content: center; }
 .tw-site :is(button, a, summary):focus-visible { outline: 2px solid var(--b-purple); outline-offset: 5px; }
-@media (max-width: 850px) {
-  .tw-hero-field { opacity: .65; }
-  .tw-hero-veil { background: linear-gradient(90deg, color-mix(in srgb, var(--b-canvas) 70%, transparent), color-mix(in srgb, var(--b-canvas) 40%, transparent)); }
-}
-@media (max-width: 1100px) { .tw-hero { gap: 35px; } .tw-hero .tw-eyebrow { font-size: 9px; } .tw-operations, .tw-replay, .tw-faq { gap: 35px; } }
-@media (max-width: 850px) { .tw-hero { grid-template-columns: 1fr; padding-top: 130px; gap: 45px; } .tw-hero-copy { max-width: 620px; } .tw-hero h1 { font-size: clamp(58px, 10vw, 80px); } .tw-scroll { display: none; } .tw-payment { max-width: 600px; width: 100%; } .tw-flow { grid-template-columns: 1fr 1fr; gap: 32px; } .tw-operations, .tw-replay, .tw-faq { grid-template-columns: 1fr; } .tw-section { padding-block: 65px; } }
-@media (max-width: 540px) { .tw-container { width: calc(100% - 36px); } .tw-hero { padding-block: 112px 50px; } .tw-hero h1 { font-size: clamp(46px, 12vw, 64px); margin-block: 23px; } .tw-lead { font-size: 15px; } .tw-actions { gap: 22px; } .tw-payment { padding: 20px; } .tw-payment-top .tw-chip { font-size: 8px; } .tw-example-picker button { padding-inline: 7px; font-size: 9px; } .tw-control-grid, .tw-readiness { grid-template-columns: 1fr; } .tw-control-grid article { padding: 26px; } .tw-flow { gap: 24px 20px; } .tw-flow h3 { font-size: 25px; } .tw-flow .tw-eyebrow { font-size: 9px; } .tw-queue { padding: 20px; } .tw-queue-heading { flex-wrap: wrap; } .tw-queue-heading .tw-chip { font-size: 8px; } .tw-timing { padding: 23px; } .tw-timing-line { font-size: 10px; gap: 6px; } .tw-close { padding-block: 75px; } }
+
+/* The pre-redesign look on the new structure: the old landing's display and
+ * section type scale, translucent glow cards (17 px), pill secondary buttons,
+ * a per-section accent and the centred scroll cue. Same tokens and fonts. */
+.tw-container { width: min(100% - 64px, 1216px); }
+.tw-eyebrow { font: 500 12px/1.6 var(--b-mono); letter-spacing: .1em; }
+.tw-hero h1 { font: 600 clamp(3.4rem, 7.4vw, 5.9rem)/.92 var(--b-font-display); letter-spacing: -.06em; }
+.tw-site h2 { font: 600 clamp(2.4rem, 5.4vw, 4.4rem)/1 var(--b-font-display); letter-spacing: -.045em; }
+.tw-close h2 { font-size: clamp(2.6rem, 6vw, 4.8rem); }
+.tw-lead, .tw-section-heading > p:not(.tw-eyebrow) { font-size: 17px; line-height: 1.65; }
+.tw-hero .tw-lead { font-size: 18px; max-width: 540px; }
+.tw-btn-ghost { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--b-line-strong); border-radius: 999px; padding: 12px 20px; font-size: 14px; font-weight: 600; background: color-mix(in srgb, var(--b-canvas) 55%, transparent); backdrop-filter: blur(6px); transition: background-color .2s; }
+.tw-btn-ghost:hover { background: var(--b-surface); }
+.tw-footnote--hero { font: 500 12px/1.7 var(--b-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--b-text-muted); }
+.tw-footnote--hero span { color: var(--b-cyan); }
+.tw-cue { display: flex; flex-direction: column; align-items: center; gap: 12px; padding-bottom: 32px; }
+.tw-cue:hover .tw-eyebrow { color: var(--b-text); }
+/* Cards: the old .l-card surface. */
+.tw-payment, .tw-queue, .tw-timing, .tw-control-grid article, .tw-readiness article {
+  background-color: color-mix(in srgb, var(--b-raised) 72%, transparent); border: 1px solid var(--b-line); border-radius: 17px; }
+.tw-payment { box-shadow: 0 40px 120px -40px rgba(166, 100, 252, .45); }
+.tw-control-grid { gap: 16px; background: none; border: 0; border-radius: 0; overflow: visible; }
+.tw-control-grid article { padding: 28px; min-height: 240px; }
+.tw-control-grid h3, .tw-flow h3, .tw-readiness h3 { font: 500 clamp(1.6rem, 2.6vw, 2.1rem)/1.05 var(--b-font-display); letter-spacing: -.035em; }
+.tw-control-grid p, .tw-flow li > p:last-child { font-size: 15px; line-height: 1.65; }
+.tw-readiness { gap: 16px; }
+.tw-readiness article { padding: 28px; }
+.tw-readiness li { font-size: 15px; }
+.tw-faq summary { font-size: 16px; font-weight: 500; }
+.tw-faq details p { font-size: 15px; line-height: 1.65; }
 
 /* Restored from the pre-#21 landing: the faint ledger grid behind the hero,
  * accent glows on cards (set --glow), the scroll cue and the replay stamp. */
@@ -114,11 +137,19 @@
 .tw-cue { padding-bottom: 32px; }
 .tw-timing-gate, .tw-late { border-radius: 5px; --stamp: var(--b-purple); }
 .tw-late { padding: 8px 14px; color: var(--b-warn); --stamp: var(--b-red); }
-@media (max-width: 850px) { .tw-cue { display: none; } }
 @media (max-width: 540px) { .tw-late { padding: 6px 8px; } }
 
+/* Breakpoints last, so they win over the desktop rules above. */
+@media (max-width: 850px) {
+  .tw-hero-field { opacity: .65; }
+  .tw-hero-veil { background: linear-gradient(90deg, color-mix(in srgb, var(--b-canvas) 70%, transparent), color-mix(in srgb, var(--b-canvas) 40%, transparent)); }
+}
+@media (max-width: 1100px) { .tw-hero { gap: 35px; } .tw-hero .tw-eyebrow { font-size: 10px; } .tw-hero h1 { font-size: clamp(3.2rem, 7vw, 4.6rem); } .tw-operations, .tw-replay, .tw-faq { gap: 35px; } }
+@media (max-width: 850px) { .tw-hero { grid-template-columns: 1fr; padding-top: 130px; gap: 45px; } .tw-hero-copy { max-width: 620px; } .tw-hero h1 { font-size: clamp(58px, 10vw, 80px); } .tw-scroll { display: none; } .tw-payment { max-width: 600px; width: 100%; } .tw-flow { grid-template-columns: 1fr 1fr; gap: 32px; } .tw-operations, .tw-replay, .tw-faq { grid-template-columns: 1fr; } .tw-section { padding-block: 65px; } }
+@media (max-width: 540px) { .tw-container { width: calc(100% - 36px); } .tw-site h2 { font-size: clamp(2.1rem, 9vw, 2.6rem); } .tw-hero .tw-lead { font-size: 16px; } .tw-control-grid article { min-height: 0; } .tw-readiness article { padding: 22px; } .tw-btn-ghost { padding: 11px 16px; } .tw-footnote--hero { font-size: 10px; } .tw-hero { padding-block: 112px 50px; } .tw-hero h1 { font-size: clamp(46px, 12vw, 64px); margin-block: 23px; } .tw-lead { font-size: 15px; } .tw-actions { gap: 22px; } .tw-payment { padding: 20px; } .tw-payment-top .tw-chip { font-size: 8px; } .tw-example-picker button { padding-inline: 7px; font-size: 9px; } .tw-control-grid, .tw-readiness { grid-template-columns: 1fr; } .tw-control-grid article { padding: 26px; } .tw-flow { gap: 24px 20px; } .tw-flow h3 { font-size: 25px; } .tw-flow .tw-eyebrow { font-size: 9px; } .tw-queue { padding: 20px; } .tw-queue-heading { flex-wrap: wrap; } .tw-queue-heading .tw-chip { font-size: 8px; } .tw-timing { padding: 23px; } .tw-timing-line { font-size: 10px; gap: 6px; } .tw-close { padding-block: 75px; } }
+
 @media (prefers-reduced-motion: reduce) {
-  .tw-cue { display: none; }
+  .tw-cue .fx-cue { display: none; }
   .tw-strip > div > div { width: 100%; flex-wrap: wrap; }
   .tw-strip > div > div > span { width: 100%; flex-wrap: wrap; justify-content: center; }
   .tw-strip > div > div > span:not(:first-child) { display: none; }

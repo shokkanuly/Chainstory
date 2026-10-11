@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { motion, useInView, useScroll, useTransform } from 'framer-motion';
-import { ArrowDown, ArrowRight, ArrowUpRight, Check, CirclePause, Fingerprint, GitBranch, LockKeyhole, RotateCcw, ShieldCheck } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Check, CirclePause, Fingerprint, GitBranch, LockKeyhole, RotateCcw, ShieldCheck } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import Logo from '@/components/Logo';
@@ -96,10 +96,9 @@ export default function Landing() {
           <motion.p className="tw-lead" {...body}>A control layer for cross-chain USDC. Verify the source, check the policy, and hold the payment when the evidence doesn’t add up.</motion.p>
           <motion.div className="tw-actions" {...ctas}>
             <Magnetic><a href="/tripwire/operations" className="b-btn b-btn--primary">Open operations <ArrowUpRight size={17} /></a></Magnetic>
-            <Magnetic strength={0.15}><a href="/tripwire" className="tw-link">Run the replay <ArrowRight size={17} /></a></Magnetic>
+            <Magnetic strength={0.15}><a href="/tripwire" className="tw-btn-ghost">Run the replay <ArrowRight size={17} /></a></Magnetic>
           </motion.div>
-          <p className="tw-footnote">Read-only workspace · Testnet pilot tooling</p>
-          <a href="#workflow" className="tw-scroll"><ArrowDown size={15} /> Follow a payment</a>
+          <p className="tw-footnote tw-footnote--hero"><span>Read-only</span> · No connect · No sign · Testnet pilot tooling</p>
         </motion.div>
         <motion.div ref={cardRef} className="tw-payment-motion" style={!reduce && wide ? { y: cardY } : undefined} aria-label="Illustrative payment checks" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)} onFocus={() => setHeld(true)} onBlur={() => setHeld(false)}>
         <motion.div {...card}>
@@ -118,7 +117,7 @@ export default function Landing() {
         </motion.div>
         </motion.div>
         </section>
-        <div className="tw-cue" aria-hidden><div className="fx-cue" /></div>
+        <a href="#workflow" className="tw-cue"><span className="tw-eyebrow">Follow a payment</span><span className="fx-cue" aria-hidden /></a>
       </div>
 
       <div className="tw-strip"><p className="sr-only">Authenticated backing, independent screening, customer rules and a fixed return path.</p><VelocityMarquee baseSpeed={1.8}>{['AUTHENTICATED BACKING', 'INDEPENDENT SCREENING', 'CUSTOMER RULES', 'FIXED RETURN PATH'].map((text) => <span className="tw-ticker-item" key={text}><span>+</span>{text}</span>)}</VelocityMarquee></div>
@@ -136,7 +135,7 @@ export default function Landing() {
       </section>
 
       <section id="controls" className="tw-section tw-container tw-controls">
-        <div className="tw-section-heading"><p className="tw-eyebrow">02 / BUILT INTO THE PATH</p><Heading first="Evidence first." accent="Control all the way through." /></div>
+        <div className="tw-section-heading"><p className="tw-eyebrow">02 / BUILT INTO THE PATH</p><Heading first="Evidence first." accent="Control all the way through." color="var(--b-cyan)" /></div>
         <div className="tw-control-grid">
           {[
             { icon: Fingerprint, title: 'A payment with provenance.', text: 'Bind the source burn and destination mint to one operation, exact net amount and intended recipient. A missing proof remains a hold.', color: 'var(--b-purple)' },
@@ -149,7 +148,7 @@ export default function Landing() {
       </section>
 
       <section id="operations" className="tw-section tw-container tw-operations">
-        <div className="tw-section-heading"><p className="tw-eyebrow">03 / THE OPERATOR’S VIEW</p><Heading first="Know what’s held." accent="Know what happened." /><p>Inspect reported payment states, hold reasons, policy versions and receipt timelines. Import a public report or follow a local report folder.</p><a href="/tripwire/operations" className="tw-link">Explore the operations workspace <ArrowUpRight size={17} /></a></div>
+        <div className="tw-section-heading"><p className="tw-eyebrow">03 / THE OPERATOR’S VIEW</p><Heading first="Know what’s held." accent="Know what happened." color="var(--b-amber)" /><p>Inspect reported payment states, hold reasons, policy versions and receipt timelines. Import a public report or follow a local report folder.</p><a href="/tripwire/operations" className="tw-link">Explore the operations workspace <ArrowUpRight size={17} /></a></div>
         <motion.div className="tw-queue fx-spot tw-glow" {...tilt()} style={{ ...tilt().style, ...glow('var(--b-cyan)') }}><div className="tw-queue-heading"><GitBranch size={17} /><span>PAYMENT QUEUE</span><span className="tw-chip">SYNTHETIC PREVIEW</span></div>
           {[
             ['01', 'Held', 'Customer approval required', 'tw-warn'],
@@ -161,7 +160,7 @@ export default function Landing() {
       </section>
 
       <section id="replay" className="tw-section tw-container tw-replay">
-        <div><p className="tw-eyebrow">04 / TEST THE TIMING</p><Heading first="Before execution" accent="makes the difference." /><p className="tw-lead">Compare a guardian acting before a modeled payout with one reacting after inclusion. Step through synthetic patterns inspired by Kelp DAO, Verus and Syscoin.</p><Magnetic><a href="/tripwire?incident=kelp" className="b-btn b-btn--primary">Open incident replay <ArrowUpRight size={17} /></a></Magnetic><p className="tw-footnote">Local EVM · Compiled guardian · Synthetic inputs</p></div>
+        <div><p className="tw-eyebrow">04 / TEST THE TIMING</p><Heading first="Before execution" accent="makes the difference." color="var(--b-red)" /><p className="tw-lead">Compare a guardian acting before a modeled payout with one reacting after inclusion. Step through synthetic patterns inspired by Kelp DAO, Verus and Syscoin.</p><Magnetic><a href="/tripwire?incident=kelp" className="b-btn b-btn--primary">Open incident replay <ArrowUpRight size={17} /></a></Magnetic><p className="tw-footnote">Local EVM · Compiled guardian · Synthetic inputs</p></div>
         <motion.div ref={timingRef} className="tw-timing fx-spot tw-glow" {...tilt()} style={{ ...tilt().style, ...glow('var(--b-red)') }}><div><span className="tw-eyebrow">BEFORE EXECUTION</span><div className="tw-timing-line"><span>Check</span><ArrowRight size={18} /><span className={`tw-timing-gate ${timingInView && !reduce ? 'fx-stamp' : ''}`}>Hold</span><ArrowRight size={18} /><span>Payout waits</span></div></div><div><span className="tw-eyebrow">AFTER INCLUSION</span><div className="tw-timing-line"><span>Payout</span><ArrowRight size={18} /><span>Check</span><ArrowRight size={18} /><span className={`tw-late ${timingInView && !reduce ? 'fx-stamp' : ''}`}>Too late</span></div></div><p>This replay illustrates guardian timing. It does not reproduce original exploit transactions or establish prevented historical losses.</p></motion.div>
       </section>
 
@@ -172,12 +171,12 @@ export default function Landing() {
       </section>
 
       <section id="faq" className="tw-section tw-container tw-faq"><div className="tw-section-heading"><p className="tw-eyebrow">06 / THE DETAILS</p><Heading first="Clear boundaries." accent="Useful answers." /></div><div>{FAQ.map(({ q, a }) => <details key={q}><summary>{q}<span aria-hidden>+</span></summary><p>{a}</p></details>)}</div></section>
-      <div className="fx-horizon"><section className="tw-close tw-container"><p className="tw-eyebrow">TRIPWIRE / VERIFY BEFORE RELEASE</p><Heading first="Put evidence" accent="in front of the payout." /><div className="tw-actions"><Magnetic><a href="/tripwire/operations" className="b-btn b-btn--primary">Open operations <ArrowUpRight size={17} /></a></Magnetic><Magnetic strength={0.15}><a href="/tripwire" className="tw-link">Try the replay <ArrowRight size={17} /></a></Magnetic></div></section></div>
+      <div className="fx-horizon"><section className="tw-close tw-container"><p className="tw-eyebrow">TRIPWIRE / VERIFY BEFORE RELEASE</p><Heading first="Put evidence" accent="in front of the payout." /><div className="tw-actions"><Magnetic><a href="/tripwire/operations" className="b-btn b-btn--primary">Open operations <ArrowUpRight size={17} /></a></Magnetic><Magnetic strength={0.15}><a href="/tripwire" className="tw-btn-ghost">Try the replay <ArrowRight size={17} /></a></Magnetic></div></section></div>
     </main>
     <Footer />
   </div>;
 }
 
-function Heading({ first, accent }: { first: string; accent: string }) {
-  return <RevealText parts={[{ text: first, className: 'tw-heading-line' }, { text: accent, className: 'tw-heading-line tw-heading-accent' }]} />;
+function Heading({ first, accent, color }: { first: string; accent: string; color?: string }) {
+  return <RevealText parts={[{ text: first, className: 'tw-heading-line' }, { text: accent, className: 'tw-heading-line tw-heading-accent', color }]} />;
 }
