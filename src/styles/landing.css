@@ -5,6 +5,10 @@
   /* The silk field lives in the hero only (components/motion/ShaderField.tsx);
    * below it the page is plain canvas, so body text never sits on moving light. */
   background: var(--b-canvas);
+  /* Cards tilt in from below as they scroll into view; before that, the 3D
+   * transform pokes a few pixels past a phone's edge. Clip, not hidden: no
+   * new scroll container, so sticky headers keep working. */
+  overflow-x: clip;
 }
 
 /* The ledger grid: blocks, faintly. Masked so it fades out below the fold. */

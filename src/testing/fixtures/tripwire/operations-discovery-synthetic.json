@@ -1,0 +1,326 @@
+{
+  "version": 1,
+  "mode": "observe",
+  "status": "ok",
+  "fixture": true,
+  "enforcement": false,
+  "route": "cctp-v2:base-sepolia:ethereum-sepolia:USDC",
+  "policy": "customer-payment",
+  "observedAt": "2026-10-06T07:00:00.000Z",
+  "finalized": {
+    "number": "200",
+    "hash": "0x00000000000000000000000000000000000000000000000000000000000000c8",
+    "timestamp": "1791270000"
+  },
+  "scope": {
+    "manifestVersion": 3,
+    "vault": "0x000000000000000000000000000000000000014d",
+    "guardian": "0x00000000000000000000000000000000000001bc",
+    "operator": "0x000000000000000000000000000000000000022b"
+  },
+  "counts": {
+    "verified": 4,
+    "pending": 0,
+    "unavailable": 0,
+    "invalid": 0
+  },
+  "results": [
+    {
+      "messageId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "evidence": {
+        "status": "verified",
+        "amount": "1000001"
+      },
+      "release": {
+        "recipient": "0x000000000000000000000000000000000000007b",
+        "amount": "1000001",
+        "state": "HELD",
+        "reviewedUntil": "0",
+        "delayUntil": "0"
+      },
+      "payment": {
+        "version": "1",
+        "hash": "0x0000000000000000000000000000000000000000000000000000000000000016",
+        "reviewedVersion": "0",
+        "returnAt": "0",
+        "returned": false,
+        "now": "1791270000",
+        "blockers": [
+          "approval"
+        ]
+      },
+      "proof": {
+        "sourceTransactionHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+        "destinationTransactionHash": "0x00000000000000000000000000000000000000000000000000000000000000c9",
+        "sourceBlock": "50",
+        "destinationBlock": "100",
+        "sourceBlockHash": "0x0000000000000000000000000000000000000000000000000000000000000032",
+        "destinationBlockHash": "0x0000000000000000000000000000000000000000000000000000000000000064",
+        "operationId": "0x000000000000000000000000000000000000000000000000000000000000012d",
+        "returnRecipient": "0x00000000000000000000000000000000000001c8",
+        "intentPolicyHash": "0x0000000000000000000000000000000000000000000000000000000000000016"
+      },
+      "recommendation": "HOLD",
+      "reason": "Synthetic fixture: no real payment or public receipt.",
+      "lifecycle": {
+        "version": 1,
+        "status": "verified",
+        "burn": {
+          "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000065",
+          "blockNumber": "50",
+          "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000032",
+          "timestamp": "1791263600",
+          "logIndex": 3
+        },
+        "mint": {
+          "transactionHash": "0x00000000000000000000000000000000000000000000000000000000000000c9",
+          "blockNumber": "100",
+          "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000064",
+          "timestamp": "1791263700",
+          "logIndex": 6
+        }
+      }
+    },
+    {
+      "messageId": "0x0000000000000000000000000000000000000000000000000000000000000002",
+      "evidence": {
+        "status": "verified",
+        "amount": "1000001"
+      },
+      "release": {
+        "recipient": "0x000000000000000000000000000000000000007b",
+        "amount": "1000001",
+        "state": "REJECTED",
+        "reviewedUntil": "0",
+        "delayUntil": "0"
+      },
+      "payment": {
+        "version": "1",
+        "hash": "0x0000000000000000000000000000000000000000000000000000000000000016",
+        "reviewedVersion": "0",
+        "returnAt": "0",
+        "returned": false,
+        "now": "1791270000",
+        "blockers": []
+      },
+      "proof": {
+        "sourceTransactionHash": "0x0000000000000000000000000000000000000000000000000000000000000066",
+        "destinationTransactionHash": "0x00000000000000000000000000000000000000000000000000000000000000ca",
+        "sourceBlock": "50",
+        "destinationBlock": "100",
+        "sourceBlockHash": "0x0000000000000000000000000000000000000000000000000000000000000032",
+        "destinationBlockHash": "0x0000000000000000000000000000000000000000000000000000000000000064",
+        "operationId": "0x000000000000000000000000000000000000000000000000000000000000012e",
+        "returnRecipient": "0x00000000000000000000000000000000000001c8",
+        "intentPolicyHash": "0x0000000000000000000000000000000000000000000000000000000000000016"
+      },
+      "recommendation": "NONE",
+      "reason": "Synthetic fixture: no real payment or public receipt.",
+      "lifecycle": {
+        "version": 1,
+        "status": "verified",
+        "burn": {
+          "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000066",
+          "blockNumber": "50",
+          "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000032",
+          "timestamp": "1791263600",
+          "logIndex": 3
+        },
+        "mint": {
+          "transactionHash": "0x00000000000000000000000000000000000000000000000000000000000000ca",
+          "blockNumber": "100",
+          "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000064",
+          "timestamp": "1791263700",
+          "logIndex": 6
+        }
+      }
+    },
+    {
+      "messageId": "0x0000000000000000000000000000000000000000000000000000000000000003",
+      "evidence": {
+        "status": "verified",
+        "amount": "1000001"
+      },
+      "release": {
+        "recipient": "0x000000000000000000000000000000000000007b",
+        "amount": "1000001",
+        "state": "EXECUTED",
+        "reviewedUntil": "0",
+        "delayUntil": "0"
+      },
+      "payment": {
+        "version": "1",
+        "hash": "0x0000000000000000000000000000000000000000000000000000000000000016",
+        "reviewedVersion": "0",
+        "returnAt": "0",
+        "returned": false,
+        "now": "1791270000",
+        "blockers": []
+      },
+      "proof": {
+        "sourceTransactionHash": "0x0000000000000000000000000000000000000000000000000000000000000067",
+        "destinationTransactionHash": "0x00000000000000000000000000000000000000000000000000000000000000cb",
+        "sourceBlock": "50",
+        "destinationBlock": "100",
+        "sourceBlockHash": "0x0000000000000000000000000000000000000000000000000000000000000032",
+        "destinationBlockHash": "0x0000000000000000000000000000000000000000000000000000000000000064",
+        "operationId": "0x000000000000000000000000000000000000000000000000000000000000012f",
+        "returnRecipient": "0x00000000000000000000000000000000000001c8",
+        "intentPolicyHash": "0x0000000000000000000000000000000000000000000000000000000000000016"
+      },
+      "recommendation": "NONE",
+      "reason": "Synthetic fixture: no real payment or public receipt.",
+      "lifecycle": {
+        "version": 1,
+        "status": "verified",
+        "burn": {
+          "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000067",
+          "blockNumber": "50",
+          "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000032",
+          "timestamp": "1791263600",
+          "logIndex": 3
+        },
+        "mint": {
+          "transactionHash": "0x00000000000000000000000000000000000000000000000000000000000000cb",
+          "blockNumber": "100",
+          "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000064",
+          "timestamp": "1791263700",
+          "logIndex": 6
+        },
+        "outcome": {
+          "kind": "paid",
+          "transactionHash": "0x00000000000000000000000000000000000000000000000000000000000001f6",
+          "blockNumber": "120",
+          "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000078",
+          "timestamp": "1791264000",
+          "logIndex": 10
+        }
+      }
+    },
+    {
+      "messageId": "0x0000000000000000000000000000000000000000000000000000000000000004",
+      "evidence": {
+        "status": "verified",
+        "amount": "1000001"
+      },
+      "release": {
+        "recipient": "0x000000000000000000000000000000000000007b",
+        "amount": "1000001",
+        "state": "RETURNED",
+        "reviewedUntil": "0",
+        "delayUntil": "0"
+      },
+      "payment": {
+        "version": "1",
+        "hash": "0x0000000000000000000000000000000000000000000000000000000000000016",
+        "reviewedVersion": "0",
+        "returnAt": "1791269000",
+        "returned": true,
+        "now": "1791270000",
+        "blockers": []
+      },
+      "proof": {
+        "sourceTransactionHash": "0x0000000000000000000000000000000000000000000000000000000000000068",
+        "destinationTransactionHash": "0x00000000000000000000000000000000000000000000000000000000000000cc",
+        "sourceBlock": "50",
+        "destinationBlock": "100",
+        "sourceBlockHash": "0x0000000000000000000000000000000000000000000000000000000000000032",
+        "destinationBlockHash": "0x0000000000000000000000000000000000000000000000000000000000000064",
+        "operationId": "0x0000000000000000000000000000000000000000000000000000000000000130",
+        "returnRecipient": "0x00000000000000000000000000000000000001c8",
+        "intentPolicyHash": "0x0000000000000000000000000000000000000000000000000000000000000016"
+      },
+      "recommendation": "NONE",
+      "reason": "Synthetic fixture: no real payment or public receipt.",
+      "lifecycle": {
+        "version": 1,
+        "status": "verified",
+        "burn": {
+          "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000068",
+          "blockNumber": "50",
+          "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000032",
+          "timestamp": "1791263600",
+          "logIndex": 3
+        },
+        "mint": {
+          "transactionHash": "0x00000000000000000000000000000000000000000000000000000000000000cc",
+          "blockNumber": "100",
+          "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000064",
+          "timestamp": "1791263700",
+          "logIndex": 6
+        },
+        "returnRequest": {
+          "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000193",
+          "blockNumber": "125",
+          "blockHash": "0x000000000000000000000000000000000000000000000000000000000000007d",
+          "timestamp": "1791265400",
+          "logIndex": 10,
+          "readyAt": "1791269000"
+        },
+        "outcome": {
+          "kind": "returned",
+          "transactionHash": "0x00000000000000000000000000000000000000000000000000000000000001f7",
+          "blockNumber": "150",
+          "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000096",
+          "timestamp": "1791269200",
+          "logIndex": 10
+        }
+      }
+    }
+  ],
+  "blockers": [
+    "Synthetic example only. No authorization, deployment, real receipts or audit.",
+    "Synthetic discovery gaps: one source hint, two unmatched credits and one conflicting operation. Not a treasury balance."
+  ],
+  "discovery": {
+    "version": 1,
+    "mode": "bounded-finalized-hints",
+    "hintOnly": true,
+    "source": {
+      "from": "0",
+      "through": {
+        "number": "75",
+        "hash": "0x000000000000000000000000000000000000000000000000000000000000004b",
+        "parentHash": "0x000000000000000000000000000000000000000000000000000000000000004a",
+        "timestamp": "1791263600"
+      }
+    },
+    "destination": {
+      "from": "0",
+      "through": {
+        "number": "200",
+        "hash": "0x00000000000000000000000000000000000000000000000000000000000000c8",
+        "timestamp": "1791270000"
+      }
+    },
+    "counts": {
+      "sourceHints": 7,
+      "destinationHints": 6,
+      "paired": 4
+    },
+    "pendingSource": [
+      {
+        "operationId": "0x0000000000000000000000000000000000000000000000000000000000000258",
+        "transactionHash": "0x00000000000000000000000000000000000000000000000000000000000002bc",
+        "logIndex": 3
+      }
+    ],
+    "unmatchedDestination": [
+      {
+        "operationId": "0x0000000000000000000000000000000000000000000000000000000000000259",
+        "messageId": "0x0000000000000000000000000000000000000000000000000000000000000320",
+        "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000321",
+        "reason": "ambiguous-operation"
+      },
+      {
+        "operationId": "0x000000000000000000000000000000000000000000000000000000000000025a",
+        "messageId": "0x0000000000000000000000000000000000000000000000000000000000000322",
+        "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000323",
+        "reason": "source-not-in-range"
+      }
+    ],
+    "conflicts": [
+      "0x0000000000000000000000000000000000000000000000000000000000000259"
+    ]
+  }
+}

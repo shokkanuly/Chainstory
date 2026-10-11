@@ -8,5 +8,5 @@ describe('CCTP escrow artifact', () => {
     expect(fresh.errors).toEqual([]);
     expect(committed).toEqual(fresh.artifact);
     expect(fresh.runtimeBytes).toBeLessThan(24576);
-  });
+  }, 60_000); // A full solc compile: over 6 s on GitHub's runners.
 });

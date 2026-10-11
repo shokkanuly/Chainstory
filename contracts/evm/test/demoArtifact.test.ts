@@ -13,5 +13,5 @@ describe('demo contract artifacts', () => {
         (artifact as { bytecode: string }).bytecode
       );
     }
-  });
+  }, 60_000); // A full solc compile: over 6 s on GitHub's runners.
 });

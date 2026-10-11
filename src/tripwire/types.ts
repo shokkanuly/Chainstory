@@ -55,11 +55,11 @@ export interface RouteBaseline {
 
 /** What the oracle could actually see when it scored. */
 export interface OracleHealth {
-  /** A baseline exists and is recent enough to compare against. */
+  /** Valid route-matched statistics exist, with sufficient samples and a nonfuture fresh timestamp. */
   baselineFresh: boolean;
-  /** The counterparty screening list loaded. */
+  /** One screening lookup returned a boolean; unavailable, malformed or thrown results mean false. */
   screeningAvailable: boolean;
-  /** The transfer could be priced. */
+  /** The transfer has a finite nonnegative illustrative USD value. */
   priceAvailable: boolean;
 }
 

@@ -71,7 +71,7 @@ export default function WalletInput({ onSubmit, isLoading, error }: Props) {
           <input
             id="wallet-address-input"
             type="text"
-            className="flex-1 bg-transparent border-none text-foreground placeholder:text-muted-foreground px-2 py-3.5 font-mono text-sm outline-none"
+            className="min-w-0 flex-1 bg-transparent border-none text-foreground placeholder:text-muted-foreground px-2 py-3.5 font-mono text-sm outline-none"
             placeholder="Enter wallet address or ENS name (e.g. vitalik.eth)"
             value={value}
             onChange={e => { setValue(e.target.value); setValidationError(''); }}

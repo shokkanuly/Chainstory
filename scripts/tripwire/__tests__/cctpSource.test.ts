@@ -113,9 +113,9 @@ describe('CCTP v2 USDC source authentication', () => {
     if (which === 'RPC exception') vi.mocked(f.source.port.getBlock).mockRejectedValueOnce(new Error('provider unavailable'));
     expect((await f.adapter.verify(f.release)).status).toBe('unavailable'); expect(f.store.sourceProofs()).toEqual([]);
   });
-  it('commits proof before VERIFIED, retries a failed disk write, and remains idempotent on restart', async () => {
+  it('commits proof before VERIFIED, propagates a failed disk write, and remains idempotent on restart', async () => {
     const f = setup(); vi.spyOn(f.store, 'saveSourceProof').mockImplementationOnce(() => { throw new Error('Disk full'); });
-    expect((await f.adapter.verify(f.release)).status).toBe('unavailable'); expect(f.store.sourceProofs()).toEqual([]);
+    await expect(f.adapter.verify(f.release)).rejects.toMatchObject({ reason: 'journal' }); expect(f.store.sourceProofs()).toEqual([]);
     expect((await f.adapter.verify(f.release)).status).toBe('verified'); f.store.close();
     const restored = open(f.path).store;
     const locator = vi.fn(async () => null);

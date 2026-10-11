@@ -31,7 +31,7 @@ export default function Footer() {
       </div>
       <div className="mx-auto max-w-7xl border-t border-border px-4 py-5 text-[11px] leading-relaxed text-muted-foreground sm:px-6 lg:px-8">
         © 2026 Retold · Tripwire · MIT. Retold’s tax output is a draft Form 8949 estimate to review with a qualified tax
-        professional, not tax advice. Tripwire is not yet deployed to a live chain.
+        professional, not tax advice. Tripwire runs on the Ethereum Sepolia testnet only and has not been externally audited.
       </div>
     </footer>
   )

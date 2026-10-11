@@ -1,5 +1,12 @@
 # Tripwire CCTP v2 USDC adapter
 
+2026-10-06: [customer policy and funded recovery](tripwire-payment-policy.md) now
+have an explicit [product operator profile](tripwire-payment-operator.md), manifest
+v3 and new receipt/hook/review validation. Examples below describe legacy
+`CctpEscrow` and its version-2 manifest; that profile refuses format-3 escrow.
+Use the product runbook for new customer policy/return deployments. Public receipts
+and deployment acceptance remain pending for both current escrow profiles.
+
 Adapter implemented locally on 2026-09-30; authenticated on-chain escrow added
 on 2026-10-01 (ADR-018). The first supported route is **Base Sepolia
 (chain 84532, CCTP domain 6) → Ethereum Sepolia (chain 11155111, domain 0)**,
@@ -91,8 +98,10 @@ SQLite schema **v3** binds the adapter policy fingerprint to the deployment. Bef
 VERIFIED, one atomic insert uniquely claims the source event position, destination
 settlement position and Circle nonce. Exact recipient/net amount, block anchors
 and payload hashes persist across restart. Rechecking the same release is
-idempotent; another release cannot claim those credits. A disk write failure
-returns unavailable, never VERIFIED.
+idempotent; another release cannot claim those credits. A disk read/write failure
+now propagates a terminal journal error (ADR-041), never VERIFIED or a per-payment
+RPC retry. Keep committed claims if a write completed before reporting failure;
+reconcile storage, then explicitly restart against the same file.
 
 Every tick, signature and raw-transaction publication also checks previously
 accepted proof anchors, including completed jobs. A changed committed finalized
@@ -179,6 +188,10 @@ The existing `tripwire:operator:sepolia` command remains the synthetic deploymen
 runner and does not enable this adapter automatically.
 
 ## Validation and remaining pilot work
+
+The [pilot runbook](tripwire-pilot.md) now provides a keyless continuous observer
+and unsigned deployment planner. They reuse the audit's authenticated proof
+claims without adding a signing path. Live deployment/traffic remain pending.
 
 45 adapter tests cover protocol vectors, exact large amounts/fees, wrong identities
 and payout fields, unsupported modes, missing/finalized evidence, malformed logs,

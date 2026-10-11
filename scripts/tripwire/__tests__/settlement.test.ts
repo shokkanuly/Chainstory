@@ -159,3 +159,31 @@ describe('programmable route policy', () => {
     })).toThrow();
   });
 });
+
+describe('advisory mode (ADR-045/048): only mandatory proofs decide', () => {
+  it.each([
+    ['a missing baseline', observation({ health: { baselineFresh: false } })],
+    ['an unpriced transfer', observation({ health: { priceAvailable: false } })],
+    ['no score at all', observation({ score: null })],
+    ['a score at the hold line', observation({ score: 0.99 })],
+    ['a local list hit', observation({ signals: [flagged] })],
+    ['a size above the route limit', observation({ policy: { maxSingleRelease: 1n } })],
+  ])('reports but does not hold on %s, and asks for no route tier', (_label, o) => {
+    expect(settlementVerdict(o).decision).toBe(ReleaseDecision.HOLD);
+    const advisory = settlementVerdict(o, 'advisory');
+    expect(advisory).toMatchObject({ decision: ReleaseDecision.ALLOW, routeTier: ResponseTier.NONE });
+    expect(advisory.checks).toEqual(settlementVerdict(o).checks);
+  });
+  it('still rejects a failed proof and holds an unproven one, without a freeze tier', () => {
+    expect(settlementVerdict(observation({ source: { status: 'invalid', reason: 'No burn.' } }), 'advisory'))
+      .toMatchObject({ decision: ReleaseDecision.REJECT, routeTier: ResponseTier.NONE, reason: 'No burn.' });
+    expect(settlementVerdict(observation({ signals: [mismatch] }), 'advisory').decision).toBe(ReleaseDecision.REJECT);
+    expect(settlementVerdict(observation({ source: { status: 'pending', reason: 'Not final.' } }), 'advisory'))
+      .toMatchObject({ decision: ReleaseDecision.HOLD, reason: 'Not final.' });
+    expect(settlementVerdict(observation({ burned: null }), 'advisory').decision).toBe(ReleaseDecision.HOLD);
+  });
+  it('leaves legacy mode exactly as before when no mode is given', () => {
+    const o = observation({ signals: [clean] });
+    expect(settlementVerdict(o)).toEqual(settlementVerdict(o, 'legacy'));
+  });
+});

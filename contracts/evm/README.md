@@ -22,9 +22,10 @@ volume cap cannot see.
   and it clears everything.
 - The oracle alone can hold a route for at most 72 hours. A new span opens only
   after 24 hours with no tier active, or when the owner calls `rearmProtection`.
-- The owner (a Safe) can switch the oracle off at once (`disableOracle`), but
-  replacing it takes two days' public notice: `proposeOracle`, then anyone may
-  call `acceptOracle` once the notice has run (ADR-024).
+- The owner (a Safe) can switch the oracle off at once (`disableOracle`, which
+  also cancels any pending rotation), but replacing it takes two days' public
+  notice: `proposeOracle`, then anyone may call `acceptOracle` once the notice
+  has run (ADR-024).
 - The oracle may be one key or a contract. `TripwireQuorum` (ADR-021) is a
   k-of-n attestor set answering ERC-1271: route attestations and release reviews
   then need `threshold` distinct attestor signatures, in ascending signer order.

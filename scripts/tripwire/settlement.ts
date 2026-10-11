@@ -107,9 +107,26 @@ export function settlementChecks(observation: Observation): InvariantCheck[] {
   ];
 }
 
-export function settlementVerdict(observation: Observation): SettlementVerdict {
+/**
+ * `legacy` (default): proofs and safety checks decide, as above.
+ * `advisory`: only on a screened escrow whose customer consented on chain
+ * (ADR-045/048). Proofs still decide; safety checks are reported but never
+ * hold, and the verdict asks for no route tier: nothing here feeds the
+ * aggregate attestor. The authenticated screening gate, customer policy and
+ * guardian execution checks still apply after this.
+ */
+export type SettlementMode = 'legacy' | 'advisory';
+
+export function settlementVerdict(observation: Observation, mode: SettlementMode = 'legacy'): SettlementVerdict {
   const checks = settlementChecks(observation);
   const failedProof = checks.find((c) => c.kind === 'proof' && c.status === 'fail');
+  if (mode === 'advisory') {
+    const unproven = checks.find((c) => c.kind === 'proof' && c.status === 'unknown');
+    if (failedProof) return { decision: ReleaseDecision.REJECT, routeTier: ResponseTier.NONE, reason: failedProof.detail, checks };
+    if (unproven) return { decision: ReleaseDecision.HOLD, routeTier: ResponseTier.NONE, reason: unproven.detail, checks };
+    return { decision: ReleaseDecision.ALLOW, routeTier: ResponseTier.NONE,
+      reason: 'Every proof invariant holds; behavioral signals are advisory under the customer\'s on-chain consent.', checks };
+  }
   const score = observation.assessment.score;
   const tier = score !== null && Number.isFinite(score) && score >= 0 && score <= 1 ? getTierForScore(score) : ResponseTier.NONE;
   if (failedProof) return { decision: ReleaseDecision.REJECT, routeTier: ResponseTier.FREEZE, reason: failedProof.detail, checks };

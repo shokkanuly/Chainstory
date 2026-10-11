@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "mode": "behavioral-shadow",
+  "enforcement": false,
+  "authorization": "none",
+  "executionPolicy": "legacy-enforced",
+  "source": "existing-scorer",
+  "synthetic": true,
+  "route": "synthetic:route",
+  "transferId": "synthetic-transfer",
+  "capturedAt": 1780000000,
+  "checkedAt": 1780000000,
+  "maxAgeSeconds": 300,
+  "freshness": "current",
+  "signals": [
+    { "id": "size_vs_baseline", "status": "reported", "score": 0.25, "evidence": "existing-scorer-signal" },
+    { "id": "withdrawal_velocity", "status": "reported", "score": 0.1, "evidence": "existing-scorer-signal" },
+    { "id": "contract_risk", "status": "unavailable", "score": null, "reason": "not-reported" }
+  ]
+}

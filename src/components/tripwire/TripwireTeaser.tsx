@@ -8,9 +8,9 @@ import { reportDate, usd } from '@/tripwire/replay/format';
 const kelp = INCIDENTS.find((i) => i.id === 'kelp')!;
 
 const ROWS = [
-  { label: 'What actually happened', value: usd(kelp.reportedLossUsd) },
-  { label: 'Tripwire, before execution', value: '$0', strong: true },
-  { label: 'Tripwire, one block later', value: usd(kelp.reportedLossUsd) },
+  { label: 'Reported incident loss', value: usd(kelp.reportedLossUsd) },
+  { label: 'Model: before execution', value: '$0', strong: true },
+  { label: 'Model: one block later', value: usd(kelp.reportedLossUsd) },
 ];
 
 export default function TripwireTeaser() {

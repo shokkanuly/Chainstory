@@ -328,7 +328,7 @@ export default function Workspace() {
               </motion.p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => setShowRiskModal(true)}
                 className="inline-flex items-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--b-purple)_40%,transparent)] bg-[color-mix(in_srgb,var(--b-purple)_10%,transparent)] px-4 py-2.5 text-[13px] font-semibold text-[var(--b-purple)] hover:bg-[color-mix(in_srgb,var(--b-purple)_18%,transparent)] transition-all duration-200 shrink-0"

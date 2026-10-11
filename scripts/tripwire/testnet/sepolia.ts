@@ -19,10 +19,8 @@ import {
   createPublicClient,
   createWalletClient,
   encodeFunctionData,
-  fallback,
   formatEther,
   getAddress,
-  http,
   isAddress,
   parseGwei,
   keccak256,
@@ -50,6 +48,8 @@ import { blockHeaderSchema, blockHashSchema, finalizedCheckpointSchema, Finality
 import { releaseDecision, releaseMinimumTier, signReleaseReview, type ReleaseReview } from '../review.js';
 import demo from './contracts.artifact.js';
 import { assertProtectionPolicy } from './protectionPolicy.js';
+import { rpcTransport, rpcUrls } from './rpc.js';
+import { RpcBehindError } from '../auditFailure.js';
 
 export const ROOT = resolve(import.meta.dirname, '../../..');
 export const EXPLORER = 'https://sepolia.etherscan.io';
@@ -173,21 +173,7 @@ export interface Clients {
   chainId: number;
 }
 
-/**
- * Several RPC URLs fail over in the order given (MED-3): each endpoint gets one
- * short try per round, then the next; the whole round retries. No background
- * ranking: its timer never stops, so a finished CLI would never exit.
- * Every read that matters is still hash-checked, so endpoints cannot be mixed silently.
- */
-export function rpcTransport(urls: readonly string[], fetchOptions?: { signal: AbortSignal }): Transport {
-  if (!urls.length) throw new Error('No RPC URL configured.');
-  if (urls.length === 1) return http(urls[0], { retryCount: 3, timeout: 30_000, fetchOptions });
-  return fallback(urls.map((url) => http(url, { timeout: 10_000, fetchOptions })), { retryCount: 2 });
-}
-
-/** Comma-separated RPC URLs from one env value. */
-export const rpcUrls = (value: string | undefined, fallbackUrl: string) =>
-  (value ?? fallbackUrl).split(',').map((url) => url.trim()).filter(Boolean);
+export { rpcTransport, rpcUrls } from './rpc.js';
 
 export async function connect(cfg: TestnetConfig, chain: Chain = sepolia): Promise<Clients> {
   const transport = rpcTransport(cfg.rpcUrls);
@@ -367,13 +353,21 @@ export function readDeployment(cfg: TestnetConfig): Deployment {
 // --- the demo -------------------------------------------------------------------
 
 /** eth_getLogs with a block cursor: the testnet counterpart of MemoryFeed. */
+export interface EventFeedClient {
+  chainId: number;
+  pub: {
+    getBlock(args: { blockTag: 'finalized' | 'safe' } | { blockNumber: bigint }): Promise<unknown>;
+    getBlockNumber(args: { cacheTime: number }): Promise<bigint>;
+    getContractEvents(args: { address: Hex; abi: Abi; eventName: string; fromBlock: bigint; toBlock: bigint; strict?: boolean }): Promise<unknown>;
+  };
+}
 export class ContractEventFeed<E> implements LogFeed<E> {
   private cursor: bigint;
   private times = new Map<bigint, number>();
   private anchor: { number: bigint; hash: Hex } | null = null;
 
   constructor(
-    private c: Pick<Clients, 'pub' | 'chainId'>,
+    private c: EventFeedClient,
     private address: Hex,
     private abi: Abi,
     private eventName: string,
@@ -384,9 +378,10 @@ export class ContractEventFeed<E> implements LogFeed<E> {
      * one epoch fresher) suits release requests: a reorg past it is caught by
      * the same hash-linked anchor and quarantines the operator.
      */
-    private opts: { finality?: 'finalized' | 'safe' } = {}
+    private opts: { finality?: 'finalized' | 'safe'; until?: bigint } = {}
   ) {
     this.cursor = from;
+    if (opts.until !== undefined && (!opts.finality || opts.until < from)) throw new Error('Bounded feeds require a valid finalized range.');
   }
 
   checkpoint(): string {
@@ -417,18 +412,19 @@ export class ContractEventFeed<E> implements LogFeed<E> {
     const head = await this.c.pub.getBlockNumber({ cacheTime: 0 });
     const latest = head < this.cursor + 1999n ? head : this.cursor + 1999n;
     if (latest < this.cursor) return [];
-    const logs = await this.c.pub.getContractEvents({
+    const rawLogs = await this.c.pub.getContractEvents({
       address: this.address,
       abi: this.abi,
       eventName: this.eventName,
       fromBlock: this.cursor,
       toBlock: latest,
     });
+    const logs = z.array(z.object({ blockNumber: z.bigint().nullable().optional(), args: z.record(z.string(), z.unknown()) })).parse(rawLogs);
     const out: E[] = [];
     for (const l of logs) {
       const bn = l.blockNumber ?? latest;
-      if (!this.times.has(bn)) this.times.set(bn, Number((await this.c.pub.getBlock({ blockNumber: bn })).timestamp));
-      const mapped = this.map((l as unknown as { args: Record<string, unknown> }).args, this.times.get(bn) ?? 0);
+      if (!this.times.has(bn)) this.times.set(bn, Number(z.object({ timestamp: z.bigint().nonnegative().max(BigInt(Number.MAX_SAFE_INTEGER)) }).parse(await this.c.pub.getBlock({ blockNumber: bn })).timestamp));
+      const mapped = this.map(l.args, this.times.get(bn) ?? 0);
       if (mapped !== null) out.push(mapped);
     }
     // Commit only after every RPC lookup and decode has succeeded. Otherwise
@@ -446,7 +442,7 @@ export class ContractEventFeed<E> implements LogFeed<E> {
 
   private async checkAnchor(finalizedNumber: bigint): Promise<void> {
     if (!this.anchor) return;
-    if (finalizedNumber < this.anchor.number) throw new Error('Finalized RPC is behind the committed checkpoint; retry another healthy endpoint.');
+    if (finalizedNumber < this.anchor.number) throw new RpcBehindError('Finalized RPC is behind the committed checkpoint; retry another healthy endpoint.');
     const block = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: this.anchor.number }));
     if (block.number !== this.anchor.number) throw new Error('RPC returned the wrong checkpoint block.');
     if (block.hash !== this.anchor.hash) throw new FinalityConflictError('A committed finalized block changed; operator reconciliation is required.');
@@ -456,10 +452,11 @@ export class ContractEventFeed<E> implements LogFeed<E> {
     const tag = this.opts.finality ?? 'finalized';
     const head = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: tag }));
     await this.checkAnchor(head.number);
-    if (head.number < this.cursor) return [];
+    const ceiling = this.opts.until !== undefined && this.opts.until < head.number ? this.opts.until : head.number;
+    if (ceiling < this.cursor) return [];
     // Hash-link every header so a load-balanced RPC cannot mix log blocks
     // from one fork with an endpoint from another. Bound this work to 64 blocks.
-    const end = head.number < this.cursor + 63n ? head.number : this.cursor + 63n;
+    const end = ceiling < this.cursor + 63n ? ceiling : this.cursor + 63n;
     const endpoint = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: end }));
     if (endpoint.number !== end || (end === head.number && endpoint.hash !== head.hash)) throw new Error('RPC finalized endpoint is inconsistent.');
     const headers = new Map<bigint, z.infer<typeof blockHeaderSchema>>();
@@ -506,7 +503,7 @@ export class ContractEventFeed<E> implements LogFeed<E> {
       out.push({ ...mapped, origin });
     }
     const final = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockTag: tag }));
-    if (final.number < end) throw new Error('Finalized RPC moved behind the queried range.');
+    if (final.number < end) throw new RpcBehindError('Finalized RPC moved behind the queried range.');
     await this.checkAnchor(final.number);
     const checked = blockHeaderSchema.parse(await this.c.pub.getBlock({ blockNumber: end }));
     if (checked.number !== end || checked.hash !== endpoint.hash) throw new Error('Canonical endpoint changed while fetching logs.');
@@ -575,6 +572,7 @@ export async function runTestnetDemo(
     await assertProtectionPolicy({
       guardianVersion: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'GUARDIAN_POLICY_VERSION' }),
       releaseVersion: () => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'RELEASE_POLICY_VERSION' }),
+      reviewFormat: () => c.pub.readContract({ address: vault.address, abi: demo.ProtectedVault.abi, functionName: 'REVIEW_FORMAT_VERSION' }),
       routePermission: () => c.pub.readContract({ address: guardian.address, abi: guardianArtifact.abi, functionName: 'isProtected', args: [vault.address, ROUTE_ID] }),
     });
   } catch {

@@ -354,7 +354,7 @@ npm run validate   # Run just the end-to-end wallet fixture suite
 | `services/__tests__/approvals.test.ts` | `approve()` calldata decoding, unlimited detection, revocation netting, per-spender tracking, ignoring third-party approvals |
 | `services/knownWallet.test.ts` | End-to-end: story narrative, FIFO report and Form 8949 CSV over a fixed three-transaction fixture |
 
-CI runs `lint`, `build` and `test` on every push and pull request — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+CI runs `lint`, `build` and `test` on every push and pull request — see [`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
 
 ### Training the ML Model (Optional)
 
@@ -410,7 +410,7 @@ Next, by impact:
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](../LICENSE).
 
 ---
 

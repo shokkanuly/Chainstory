@@ -194,8 +194,15 @@ contract TripwireGuardian is ITripwireGuardian, Ownable2Step, EIP712 {
     /// @notice Kill switch, for a compromised or misbehaving oracle. Instant:
     ///         with no oracle no attestation or release review verifies
     ///         (ECDSA recovery never yields the zero address), so every gated
-    ///         payout fails closed until a replacement is accepted.
+    ///         payout fails closed until a replacement is accepted. It also
+    ///         cancels a pending rotation, which anyone could otherwise accept
+    ///         once its notice ends and so quietly undo the switch.
     function disableOracle() external onlyOwner {
+        if (pendingOracle != address(0)) {
+            emit OracleRotationCancelled(pendingOracle);
+            pendingOracle = address(0);
+            pendingOracleAt = 0;
+        }
         emit OracleUpdated(oracle, address(0));
         oracle = address(0);
     }

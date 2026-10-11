@@ -72,6 +72,12 @@ describe('continuous protection refresh', () => {
     await f.vm.send(actors.owner, 'disableOracle'); f.vm.warp(86400 - 1);
     expect((await f.attestor.handle(ROUTE, assessment(0.85))).action).toBe('unavailable'); expect(f.sign).not.toHaveBeenCalled();
   });
+  it('stops before signing once a rotated oracle has been accepted', async () => {
+    const f = await setup(); await f.attestor.handle(ROUTE, assessment(0.85)); f.sign.mockClear();
+    await f.vm.send(actors.owner, 'proposeOracle', [actors.relayer.address]); f.vm.warp(2 * 86_400);
+    expect((await f.vm.send(actors.attacker, 'acceptOracle')).ok).toBe(true);
+    expect((await f.attestor.handle(ROUTE, assessment(0.95))).action).toBe('unavailable'); expect(f.sign).not.toHaveBeenCalled();
+  });
   it('uses the bound chain clock even when the caller clock is incorrect', async () => {
     const f = await setup(); const result = await f.create(() => 1).handle(ROUTE, assessment(0.85));
     expect(result).toMatchObject({ action: 'submitted', attestation: { validUntil: f.vm.now + 300n } });

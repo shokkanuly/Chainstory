@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "manifest": "../../../.tripwire/pilot/payment-manifest.json",
+  "journal": "../../../.tripwire/pilot/observer.sqlite",
+  "reports": "../../../.tripwire/pilot/public-reports",
+  "incidents": "../../../.tripwire/pilot/observer-incidents",
+  "intervalSeconds": 10,
+  "keepReports": 500,
+  "maxRestarts": 3,
+  "restartOnCrash": false,
+  "backoffSeconds": 10,
+  "maxBackoffSeconds": 300,
+  "stopGraceSeconds": 30,
+  "checkSeconds": 5,
+  "staleSeconds": 300
+}

@@ -11,7 +11,7 @@ Open these tabs, in this order, so each cut is one click:
 1. <https://chainstory-iota.vercel.app/tripwire?incident=kelp>
 2. Terminal in `~/Desktop/Chainstory`, with `npm run tripwire:demo:local` typed and not yet run.
    It prints the same four steps as the Sepolia run, in seconds.
-3. The guardian on Sepolia: <https://sepolia.etherscan.io/address/0x6d01c906fa1615791641e17aca615f53885db61f>
+3. The guardian on Sepolia: <https://sepolia.etherscan.io/address/0xf58c0711fed0f425383e5d07345880488889fe0f>
 4. <https://chainstory-iota.vercel.app/check>
 
 ## Script
@@ -27,5 +27,6 @@ Open these tabs, in this order, so each cut is one click:
 
 ## If you have 10 more seconds
 
-Say the limit before a judge asks: "Today one key signs the attestations;
-threshold signing is next."
+Say the limit before a judge asks: "On Sepolia today one key signs the
+attestations; a k-of-n quorum oracle is built and tested, and installing it is
+next."
